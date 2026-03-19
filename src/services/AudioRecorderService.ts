@@ -1,13 +1,11 @@
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
-import { TranscriptEntry } from '../types';
-import { transcribeAudio } from './TranscriptionService';
+import { PendingClip } from '../types';
 import { StorageService } from './StorageService';
 
-export type RecordingStatus = 'idle' | 'monitoring' | 'recording' | 'transcribing';
+export type RecordingStatus = 'idle' | 'monitoring' | 'recording';
 
 type StatusCallback = (status: RecordingStatus) => void;
-type TranscriptCallback = (entry: TranscriptEntry) => void;
+type PendingClipCallback = (clip: PendingClip) => void;
 type ErrorCallback = (error: string) => void;
 
 const DEFAULT_VAD_THRESHOLD = -35; // dB
@@ -15,23 +13,22 @@ const DEFAULT_SILENCE_DURATION = 2000; // ms
 
 class AudioRecorderService {
   private recording: Audio.Recording | null = null;
-  private monitorInterval: ReturnType<typeof setInterval> | null = null;
   private silenceTimer: ReturnType<typeof setTimeout> | null = null;
   private isMonitoring = false;
   private currentStatus: RecordingStatus = 'idle';
   private recordingStartTime = 0;
 
   private onStatus: StatusCallback = () => {};
-  private onTranscript: TranscriptCallback = () => {};
+  private onPendingClip: PendingClipCallback = () => {};
   private onError: ErrorCallback = () => {};
 
   setCallbacks(callbacks: {
     onStatus: StatusCallback;
-    onTranscript: TranscriptCallback;
+    onPendingClip: PendingClipCallback;
     onError: ErrorCallback;
   }) {
     this.onStatus = callbacks.onStatus;
-    this.onTranscript = callbacks.onTranscript;
+    this.onPendingClip = callbacks.onPendingClip;
     this.onError = callbacks.onError;
   }
 
@@ -62,20 +59,14 @@ class AudioRecorderService {
 
     this.isMonitoring = true;
     this.setStatus('monitoring');
-
-    // Use a recording with metering to detect voice activity
-    this.monitorInterval = setInterval(() => this.checkAudioLevel(), 200);
-    await this.startLevelMonitorRecording();
+    await this.startListening();
   }
 
-  private async startLevelMonitorRecording(): Promise<void> {
+  private async startListening(): Promise<void> {
     if (!this.isMonitoring) return;
     try {
       const { recording } = await Audio.Recording.createAsync(
-        {
-          ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-          isMeteringEnabled: true,
-        },
+        { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
         (status) => this.handleRecordingStatus(status),
         100,
       );
@@ -96,16 +87,12 @@ class AudioRecorderService {
     const isSpeaking = db > threshold;
 
     if (isSpeaking && this.currentStatus === 'monitoring') {
-      // Voice detected — start capturing
       this.clearSilenceTimer();
       this.setStatus('recording');
       this.recordingStartTime = Date.now();
     } else if (!isSpeaking && this.currentStatus === 'recording') {
-      // Silence detected — start silence timer
       if (!this.silenceTimer) {
-        this.silenceTimer = setTimeout(() => {
-          this.finishRecording();
-        }, silenceDuration);
+        this.silenceTimer = setTimeout(() => this.saveClip(), silenceDuration);
       }
     }
   }
@@ -117,60 +104,50 @@ class AudioRecorderService {
     }
   }
 
-  private async finishRecording(): Promise<void> {
+  private async saveClip(): Promise<void> {
     if (!this.recording || this.currentStatus !== 'recording') return;
 
     this.clearSilenceTimer();
-    this.setStatus('transcribing');
-
     const duration = (Date.now() - this.recordingStartTime) / 1000;
+    const startTime = this.recordingStartTime;
     const recordingRef = this.recording;
     this.recording = null;
 
-    try {
-      await recordingRef.stopAndUnloadAsync();
-      const uri = recordingRef.getURI();
+    await recordingRef.stopAndUnloadAsync();
+    const uri = recordingRef.getURI();
 
-      if (uri && duration > 0.5) {
-        // Only transcribe if more than 0.5 seconds of speech
-        const text = await transcribeAudio(uri);
-
-        if (text.length > 2) {
-          const entry: TranscriptEntry = {
-            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: this.recordingStartTime,
-            text,
-            duration,
-            audioUri: uri,
-          };
-          await StorageService.addTranscript(entry);
-          this.onTranscript(entry);
-        }
-
-        // Clean up audio file to save storage
-        try {
-          await FileSystem.deleteAsync(uri, { idempotent: true });
-        } catch {}
-      }
-    } catch (err: any) {
-      this.onError(`Transcription failed: ${err.message}`);
-    }
-
+    // Restart listening immediately
     if (this.isMonitoring) {
       this.setStatus('monitoring');
-      // Restart a fresh recording for level monitoring
-      await this.startLevelMonitorRecording();
+      await this.startListening();
+    }
+
+    // Save clip locally — no API call yet
+    if (uri && duration > 0.5) {
+      const clip: PendingClip = {
+        id: `${startTime}-${Math.random().toString(36).substr(2, 9)}`,
+        uri,
+        timestamp: startTime,
+        duration,
+      };
+      await StorageService.addPendingClip(clip);
+      this.onPendingClip(clip);
+
+      // Auto-transcribe if batch size reached
+      const settings = await StorageService.getSettings();
+      const batchSize = settings?.batchSize ?? 0;
+      if (batchSize > 0) {
+        const pending = await StorageService.getPendingClips();
+        if (pending.length >= batchSize) {
+          this.onError('__BATCH_READY__'); // signal to UI to trigger batch
+        }
+      }
     }
   }
 
   async stopMonitoring(): Promise<void> {
     this.isMonitoring = false;
     this.clearSilenceTimer();
-
-    if (this.monitorInterval) {
-      clearInterval(this.monitorInterval);
-      this.monitorInterval = null;
-    }
 
     if (this.recording) {
       try {
@@ -184,12 +161,6 @@ class AudioRecorderService {
 
   getStatus(): RecordingStatus {
     return this.currentStatus;
-  }
-
-  // Placeholder to satisfy the setInterval call structure (actual VAD is via status callback)
-  private checkAudioLevel(): void {
-    // Audio level checking is handled via the recording status callback
-    // This interval exists as a keepalive mechanism
   }
 }
 

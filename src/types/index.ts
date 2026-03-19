@@ -3,7 +3,13 @@ export interface TranscriptEntry {
   timestamp: number;
   text: string;
   duration: number; // seconds
-  audioUri?: string;
+}
+
+export interface PendingClip {
+  id: string;
+  uri: string;
+  timestamp: number;
+  duration: number;
 }
 
 export interface DailySummary {
@@ -19,6 +25,7 @@ export interface AppSettings {
   vadThreshold: number; // -60 to 0 dB, default -35
   silenceDuration: number; // ms to wait before stopping, default 2000
   summaryTime: string; // HH:MM, default "21:00"
+  batchSize: number; // auto-transcribe when pending clips reach this count, 0 = manual only
 }
 
-export type RecordingStatus = 'idle' | 'monitoring' | 'recording' | 'transcribing';
+export type RecordingStatus = 'idle' | 'monitoring' | 'recording';

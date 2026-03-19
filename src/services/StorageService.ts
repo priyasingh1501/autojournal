@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { TranscriptEntry, DailySummary, AppSettings } from '../types';
+import { TranscriptEntry, DailySummary, AppSettings, PendingClip } from '../types';
 
 const KEYS = {
   TRANSCRIPTS_PREFIX: 'transcripts_',
   SUMMARIES_PREFIX: 'summaries_',
   SETTINGS: 'app_settings',
+  PENDING_CLIPS: 'pending_clips',
 };
 
 function todayKey(): string {
@@ -44,6 +45,19 @@ export const StorageService = {
     await AsyncStorage.setItem(key, JSON.stringify(entries));
   },
 
+  async deleteTranscript(id: string, date: string): Promise<void> {
+    const key = KEYS.TRANSCRIPTS_PREFIX + date;
+    const existing = await AsyncStorage.getItem(key);
+    if (!existing) return;
+    const entries: TranscriptEntry[] = JSON.parse(existing);
+    const filtered = entries.filter(e => e.id !== id);
+    if (filtered.length === 0) {
+      await AsyncStorage.removeItem(key);
+    } else {
+      await AsyncStorage.setItem(key, JSON.stringify(filtered));
+    }
+  },
+
   async getTranscriptDates(): Promise<string[]> {
     const allKeys = await AsyncStorage.getAllKeys();
     return allKeys
@@ -51,6 +65,28 @@ export const StorageService = {
       .map(k => k.replace(KEYS.TRANSCRIPTS_PREFIX, ''))
       .sort()
       .reverse();
+  },
+
+  // Pending clips (saved locally, not yet transcribed)
+  async getPendingClips(): Promise<PendingClip[]> {
+    const json = await AsyncStorage.getItem(KEYS.PENDING_CLIPS);
+    return json ? JSON.parse(json) : [];
+  },
+
+  async addPendingClip(clip: PendingClip): Promise<void> {
+    const clips = await this.getPendingClips();
+    clips.push(clip);
+    await AsyncStorage.setItem(KEYS.PENDING_CLIPS, JSON.stringify(clips));
+  },
+
+  async removePendingClip(id: string): Promise<void> {
+    const clips = await this.getPendingClips();
+    const filtered = clips.filter(c => c.id !== id);
+    await AsyncStorage.setItem(KEYS.PENDING_CLIPS, JSON.stringify(filtered));
+  },
+
+  async clearPendingClips(): Promise<void> {
+    await AsyncStorage.removeItem(KEYS.PENDING_CLIPS);
   },
 
   // Summaries
