@@ -17,6 +17,10 @@ class AudioRecorderService {
   private isMonitoring = false;
   private currentStatus: RecordingStatus = 'idle';
   private recordingStartTime = 0;
+  // Cached settings — read once on startMonitoring, not on every 100ms callback
+  private vadThreshold = DEFAULT_VAD_THRESHOLD;
+  private silenceDuration = DEFAULT_SILENCE_DURATION;
+  private batchSize = 0;
 
   private onStatus: StatusCallback = () => {};
   private onPendingClip: PendingClipCallback = () => {};
@@ -57,6 +61,12 @@ class AudioRecorderService {
       staysActiveInBackground: true,
     });
 
+    // Cache settings once so the 100ms metering callback never hits AsyncStorage
+    const settings = await StorageService.getSettings();
+    this.vadThreshold = settings?.vadThreshold ?? DEFAULT_VAD_THRESHOLD;
+    this.silenceDuration = settings?.silenceDuration ?? DEFAULT_SILENCE_DURATION;
+    this.batchSize = settings?.batchSize ?? 0;
+
     this.isMonitoring = true;
     this.setStatus('monitoring');
     await this.startListening();
@@ -76,15 +86,11 @@ class AudioRecorderService {
     }
   }
 
-  private async handleRecordingStatus(status: Audio.RecordingStatus): Promise<void> {
+  private handleRecordingStatus(status: Audio.RecordingStatus): void {
     if (!status.isRecording || !this.isMonitoring) return;
 
-    const settings = await StorageService.getSettings();
-    const threshold = settings?.vadThreshold ?? DEFAULT_VAD_THRESHOLD;
-    const silenceDuration = settings?.silenceDuration ?? DEFAULT_SILENCE_DURATION;
-
     const db = status.metering ?? -160;
-    const isSpeaking = db > threshold;
+    const isSpeaking = db > this.vadThreshold;
 
     if (isSpeaking && this.currentStatus === 'monitoring') {
       this.clearSilenceTimer();
@@ -92,7 +98,7 @@ class AudioRecorderService {
       this.recordingStartTime = Date.now();
     } else if (!isSpeaking && this.currentStatus === 'recording') {
       if (!this.silenceTimer) {
-        this.silenceTimer = setTimeout(() => this.saveClip(), silenceDuration);
+        this.silenceTimer = setTimeout(() => this.saveClip(), this.silenceDuration);
       }
     }
   }
@@ -133,13 +139,11 @@ class AudioRecorderService {
       await StorageService.addPendingClip(clip);
       this.onPendingClip(clip);
 
-      // Auto-transcribe if batch size reached
-      const settings = await StorageService.getSettings();
-      const batchSize = settings?.batchSize ?? 0;
-      if (batchSize > 0) {
+      // Auto-transcribe if batch size threshold is reached
+      if (this.batchSize > 0) {
         const pending = await StorageService.getPendingClips();
-        if (pending.length >= batchSize) {
-          this.onError('__BATCH_READY__'); // signal to UI to trigger batch
+        if (pending.length >= this.batchSize) {
+          this.onError('__BATCH_READY__');
         }
       }
     }

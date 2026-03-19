@@ -72,11 +72,7 @@ export default function HomeScreen() {
 
   const toggleMonitoring = async () => {
     if (status === 'idle') {
-      const settings = await StorageService.getSettings();
-      if (!settings?.openaiApiKey || !settings?.anthropicApiKey) {
-        Alert.alert('Setup Required', 'Please configure your API keys in Settings before starting.');
-        return;
-      }
+      // API keys are only needed for transcription, not for saving clips locally
       await audioRecorderService.startMonitoring();
     } else {
       await audioRecorderService.stopMonitoring();
