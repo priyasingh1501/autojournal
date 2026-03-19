@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(brew install:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm install:*)",
+      "Bash(npx expo:*)",
+      "Bash(watchman watch-del:*)",
+      "Bash(watchman watch-project:*)",
+      "Bash(xargs kill:*)",
+      "Bash(node -e \"console.log\\(require\\(''/Users/priyasingh/Documents/Auto journal/node_modules/babel-preset-expo/package.json''\\).version\\)\")",
+      "Bash(node -e \"require\\(''babel-preset-expo''\\)\")",
+      "Bash(head -5 find '/Users/priyasingh/Documents/Auto journal/node_modules/metro' -path */node_modules/@babel/core -type d)",
+      "Bash(node -e \":*)",
+      "Bash(node -e \"const p = require\\(''./node_modules/babel-preset-expo/package.json''\\); console.log\\(JSON.stringify\\(p.dependencies, null, 2\\)\\)\")",
+      "Bash(node -e \"console.log\\(''babel-preset-expo:'', require\\(''/Users/priyasingh/Documents/Auto journal/node_modules/babel-preset-expo/package.json''\\).version\\)\")",
+      "Bash(eas --version)"
+    ]
+  }
+}

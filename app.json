@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Auto Journal",
+    "slug": "auto-journal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Auto Journal needs microphone access to record your voice and create your daily journal.",
+        "UIBackgroundModes": [
+          "audio",
+          "fetch",
+          "processing"
+        ]
+      }
+    },
+    "android": {
+      "package": "com.priyasingh.autojournal",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a2e"
+      },
+      "permissions": [
+        "RECORD_AUDIO",
+        "FOREGROUND_SERVICE",
+        "RECEIVE_BOOT_COMPLETED",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK"
+      ]
+    },
+    "plugins": [
+      "expo-av",
+      "expo-notifications",
+      [
+        "expo-background-fetch",
+        {
+          "statusBarColor": "#1a1a2e"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "5dddd28c-4e99-4303-afef-ba88d7266fa9"
+      }
+    },
+    "owner": "acolourfulnoises-organization"
+  }
+}
