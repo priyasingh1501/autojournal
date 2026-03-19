@@ -46,11 +46,17 @@ export const StorageService = {
   },
 
   async deleteTranscript(id: string, date: string): Promise<void> {
+    return this.deleteTranscripts([id], date);
+  },
+
+  // Atomic bulk delete — single read/filter/write per date key, avoids race conditions
+  async deleteTranscripts(ids: string[], date: string): Promise<void> {
     const key = KEYS.TRANSCRIPTS_PREFIX + date;
     const existing = await AsyncStorage.getItem(key);
     if (!existing) return;
+    const idSet = new Set(ids);
     const entries: TranscriptEntry[] = JSON.parse(existing);
-    const filtered = entries.filter(e => e.id !== id);
+    const filtered = entries.filter(e => !idSet.has(e.id));
     if (filtered.length === 0) {
       await AsyncStorage.removeItem(key);
     } else {
@@ -80,8 +86,14 @@ export const StorageService = {
   },
 
   async removePendingClip(id: string): Promise<void> {
+    return this.removeManyPendingClips([id]);
+  },
+
+  // Atomic bulk remove — single read/filter/write
+  async removeManyPendingClips(ids: string[]): Promise<void> {
+    const idSet = new Set(ids);
     const clips = await this.getPendingClips();
-    const filtered = clips.filter(c => c.id !== id);
+    const filtered = clips.filter(c => !idSet.has(c.id));
     await AsyncStorage.setItem(KEYS.PENDING_CLIPS, JSON.stringify(filtered));
   },
 

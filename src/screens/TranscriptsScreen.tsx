@@ -138,27 +138,41 @@ export default function TranscriptsScreen() {
   const deleteItems = async (items: JournalItem[]) => {
     setLoading(true);
     try {
-      await Promise.all(
-        items.map(async (item) => {
-          if (item.kind === 'transcript' || item.kind === 'manual') {
-            await StorageService.deleteTranscript(item.data.id, item.date);
-            // Clean up attached photo file if present
-            if (item.kind === 'manual' && (item.data as TranscriptEntry).photoUri) {
-              try {
-                await FileSystem.deleteAsync(
-                  (item.data as TranscriptEntry).photoUri!,
-                  { idempotent: true }
-                );
-              } catch {}
-            }
-          } else {
-            await StorageService.removePendingClip(item.data.id);
-            try {
-              await FileSystem.deleteAsync(item.data.uri, { idempotent: true });
-            } catch {}
-          }
-        })
-      );
+      // Group transcript/manual IDs by date so each date key gets ONE atomic read-filter-write
+      const byDate = new Map<string, string[]>();
+      const clipIds: string[] = [];
+      const photoUris: string[] = [];
+      const audioUris: string[] = [];
+
+      for (const item of items) {
+        if (item.kind === 'transcript' || item.kind === 'manual') {
+          const group = byDate.get(item.date) ?? [];
+          group.push(item.data.id);
+          byDate.set(item.date, group);
+          const photoUri = (item.data as TranscriptEntry).photoUri;
+          if (photoUri) photoUris.push(photoUri);
+        } else {
+          clipIds.push(item.data.id);
+          audioUris.push((item.data as PendingClip).uri);
+        }
+      }
+
+      // One storage write per date key + one write for clips — no races
+      await Promise.all([
+        ...Array.from(byDate.entries()).map(([date, ids]) =>
+          StorageService.deleteTranscripts(ids, date)
+        ),
+        clipIds.length > 0
+          ? StorageService.removeManyPendingClips(clipIds)
+          : Promise.resolve(),
+      ]);
+
+      // Clean up files after storage is updated
+      await Promise.all([
+        ...photoUris.map(uri => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {})),
+        ...audioUris.map(uri => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {})),
+      ]);
+
       await loadAll();
     } finally {
       setLoading(false);
