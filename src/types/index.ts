@@ -2,7 +2,9 @@ export interface TranscriptEntry {
   id: string;
   timestamp: number;
   text: string;
-  duration: number; // seconds
+  duration: number; // seconds; 0 for manual entries
+  kind?: 'voice' | 'manual'; // undefined treated as 'voice' for backward-compat
+  photoUri?: string; // local file path, manual entries only
 }
 
 export interface PendingClip {

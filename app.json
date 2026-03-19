@@ -15,6 +15,8 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Auto Journal needs microphone access to record your voice and create your daily journal.",
+        "NSCameraUsageDescription": "Auto Journal uses the camera so you can add photos to your journal entries.",
+        "NSPhotoLibraryUsageDescription": "Auto Journal accesses your photo library so you can attach images to journal entries.",
         "UIBackgroundModes": [
           "audio",
           "fetch",
@@ -35,11 +37,15 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "plugins": [
       "expo-av",
+      "expo-image-picker",
       "expo-notifications",
       [
         "expo-background-fetch",

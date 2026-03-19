@@ -8,6 +8,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,8 +16,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { StorageService } from '../services/StorageService';
 import { TranscriptEntry, PendingClip } from '../types';
 
+// 'transcript' = voice (auto-recorded), 'manual' = typed/photo, 'clip' = pending audio
 type JournalItem =
   | { kind: 'transcript'; data: TranscriptEntry; date: string }
+  | { kind: 'manual'; data: TranscriptEntry; date: string }
   | { kind: 'clip'; data: PendingClip; date: string };
 
 type DaySection = {
@@ -70,7 +73,11 @@ export default function TranscriptsScreen() {
       .map((date) => {
         const txItems: JournalItem[] = (
           transcriptsByDate.find((t) => t.date === date)?.entries ?? []
-        ).map((data) => ({ kind: 'transcript' as const, data, date }));
+        ).map((data) => ({
+          kind: (data.kind === 'manual' ? 'manual' : 'transcript') as 'transcript' | 'manual',
+          data,
+          date,
+        }));
 
         const clipItems: JournalItem[] = (clipsByDate[date] ?? []).map(
           (data) => ({ kind: 'clip' as const, data, date })
@@ -94,11 +101,12 @@ export default function TranscriptsScreen() {
     return sections
       .map((s) => ({
         ...s,
-        data: s.data.filter((item) =>
-          item.kind === 'transcript'
-            ? item.data.text.toLowerCase().includes(q)
-            : formatTime(item.data.timestamp).includes(q)
-        ),
+        data: s.data.filter((item) => {
+          if (item.kind === 'transcript' || item.kind === 'manual') {
+            return item.data.text.toLowerCase().includes(q);
+          }
+          return formatTime(item.data.timestamp).includes(q);
+        }),
       }))
       .filter((s) => s.data.length > 0);
   }, [sections, search]);
@@ -132,8 +140,17 @@ export default function TranscriptsScreen() {
     try {
       await Promise.all(
         items.map(async (item) => {
-          if (item.kind === 'transcript') {
+          if (item.kind === 'transcript' || item.kind === 'manual') {
             await StorageService.deleteTranscript(item.data.id, item.date);
+            // Clean up attached photo file if present
+            if (item.kind === 'manual' && (item.data as TranscriptEntry).photoUri) {
+              try {
+                await FileSystem.deleteAsync(
+                  (item.data as TranscriptEntry).photoUri!,
+                  { idempotent: true }
+                );
+              } catch {}
+            }
           } else {
             await StorageService.removePendingClip(item.data.id);
             try {
@@ -218,16 +235,30 @@ export default function TranscriptsScreen() {
       second: '2-digit',
     });
 
+  const BADGE: Record<JournalItem['kind'], string> = {
+    transcript: '🎙️',
+    manual: '🗒️',
+    clip: '🎵',
+  };
+
+  const BORDER: Record<JournalItem['kind'], string> = {
+    transcript: '#e94560',
+    manual: '#818cf8',
+    clip: '#f59e0b',
+  };
+
   const renderItem = ({ item }: { item: JournalItem }) => {
     const id = item.data.id;
     const isSelected = selected.has(id);
     const isClip = item.kind === 'clip';
+    const isManual = item.kind === 'manual';
+    const entry = item.kind !== 'clip' ? (item.data as TranscriptEntry) : null;
 
     return (
       <TouchableOpacity
         style={[
           styles.card,
-          isClip && styles.cardClip,
+          { borderLeftColor: BORDER[item.kind] },
           isSelected && styles.cardSelected,
         ]}
         onPress={() => (selectMode ? toggleSelect(id) : undefined)}
@@ -247,9 +278,11 @@ export default function TranscriptsScreen() {
         <View style={styles.cardBody}>
           <View style={styles.cardHeader}>
             <View style={styles.cardHeaderLeft}>
-              <Text style={styles.kindBadge}>{isClip ? '🎵' : '📝'}</Text>
+              <Text style={styles.kindBadge}>{BADGE[item.kind]}</Text>
               <Text style={styles.cardTime}>{formatTime(item.data.timestamp)}</Text>
-              <Text style={styles.cardDuration}> · {item.data.duration.toFixed(1)}s</Text>
+              {!isManual && (
+                <Text style={styles.cardDuration}> · {item.data.duration.toFixed(1)}s</Text>
+              )}
             </View>
             {!selectMode && (
               <TouchableOpacity
@@ -261,10 +294,21 @@ export default function TranscriptsScreen() {
               </TouchableOpacity>
             )}
           </View>
-          {isClip ? (
+
+          {isClip && (
             <Text style={styles.clipLabel}>Pending · not yet transcribed</Text>
-          ) : (
-            <Text style={styles.cardText}>{(item.data as TranscriptEntry).text}</Text>
+          )}
+
+          {entry && entry.text.length > 0 && (
+            <Text style={styles.cardText}>{entry.text}</Text>
+          )}
+
+          {entry?.photoUri && (
+            <Image
+              source={{ uri: entry.photoUri }}
+              style={styles.photoThumb}
+              resizeMode="cover"
+            />
           )}
         </View>
       </TouchableOpacity>
@@ -272,17 +316,18 @@ export default function TranscriptsScreen() {
   };
 
   const renderSectionHeader = ({ section }: { section: DaySection }) => {
-    const txCount = section.data.filter((i) => i.kind === 'transcript').length;
+    const voiceCount = section.data.filter((i) => i.kind === 'transcript').length;
+    const manualCount = section.data.filter((i) => i.kind === 'manual').length;
     const clipCount = section.data.filter((i) => i.kind === 'clip').length;
+    const parts: string[] = [];
+    if (voiceCount > 0) parts.push(`${voiceCount} voice`);
+    if (manualCount > 0) parts.push(`${manualCount} manual`);
+    if (clipCount > 0) parts.push(`${clipCount} clip${clipCount !== 1 ? 's' : ''}`);
     return (
       <View style={styles.sectionHeader}>
         <View style={styles.sectionHeaderLeft}>
           <Text style={styles.sectionTitle}>{section.title}</Text>
-          <Text style={styles.sectionCount}>
-            {txCount > 0 ? `${txCount} transcript${txCount !== 1 ? 's' : ''}` : ''}
-            {txCount > 0 && clipCount > 0 ? ' · ' : ''}
-            {clipCount > 0 ? `${clipCount} clip${clipCount !== 1 ? 's' : ''}` : ''}
-          </Text>
+          <Text style={styles.sectionCount}>{parts.join(' · ')}</Text>
         </View>
         {!selectMode && (
           <TouchableOpacity
@@ -485,6 +530,12 @@ const styles = StyleSheet.create({
   deleteBtnText: { color: '#9ca3af', fontSize: 10, fontWeight: '700' },
   clipLabel: { fontSize: 13, color: '#f59e0b', fontStyle: 'italic' },
   cardText: { fontSize: 14, color: '#e5e7eb', lineHeight: 20 },
+  photoThumb: {
+    width: '100%',
+    height: 160,
+    borderRadius: 8,
+    marginTop: 8,
+  },
   emptyText: {
     color: '#6b7280',
     textAlign: 'center',

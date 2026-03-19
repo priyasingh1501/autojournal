@@ -8,6 +8,7 @@ import {
   Alert,
   Animated,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -15,6 +16,7 @@ import { audioRecorderService, RecordingStatus } from '../services/AudioRecorder
 import { transcribePendingClips, BatchProgress } from '../services/BatchTranscriptionService';
 import { StorageService } from '../services/StorageService';
 import { TranscriptEntry, PendingClip } from '../types';
+import ComposeModal from '../components/ComposeModal';
 
 export default function HomeScreen() {
   const [status, setStatus] = useState<RecordingStatus>('idle');
@@ -22,6 +24,7 @@ export default function HomeScreen() {
   const [pendingClips, setPendingClips] = useState<PendingClip[]>([]);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
+  const [showCompose, setShowCompose] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -125,6 +128,14 @@ export default function HomeScreen() {
     }
   };
 
+  const handleManualEntrySaved = (entry: TranscriptEntry) => {
+    const today = new Date().toISOString().split('T')[0];
+    const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+    if (entryDate === today) {
+      setTodayTranscripts(prev => [entry, ...prev]);
+    }
+  };
+
   const isActive = status !== 'idle';
   const isTranscribing = batchProgress !== null;
 
@@ -183,28 +194,63 @@ export default function HomeScreen() {
 
       {/* Recent Transcripts */}
       <View style={styles.recentSection}>
-        <Text style={styles.sectionTitle}>Recent</Text>
+        <Text style={styles.sectionTitle}>Today</Text>
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {todayTranscripts.slice(0, 5).map((entry) => (
-            <View key={entry.id} style={styles.transcriptCard}>
-              <Text style={styles.transcriptTime}>
-                {new Date(entry.timestamp).toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </Text>
-              <Text style={styles.transcriptText} numberOfLines={3}>
-                {entry.text}
-              </Text>
+          {todayTranscripts.slice(0, 8).map((entry) => (
+            <View
+              key={entry.id}
+              style={[
+                styles.transcriptCard,
+                entry.kind === 'manual' && styles.transcriptCardManual,
+              ]}
+            >
+              <View style={styles.transcriptCardHeader}>
+                <Text style={styles.kindBadge}>
+                  {entry.kind === 'manual' ? '🗒️' : '🎙️'}
+                </Text>
+                <Text style={styles.transcriptTime}>
+                  {new Date(entry.timestamp).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+              {entry.text.length > 0 && (
+                <Text style={styles.transcriptText} numberOfLines={3}>
+                  {entry.text}
+                </Text>
+              )}
+              {entry.photoUri && (
+                <Image
+                  source={{ uri: entry.photoUri }}
+                  style={styles.photoThumb}
+                  resizeMode="cover"
+                />
+              )}
             </View>
           ))}
           {todayTranscripts.length === 0 && (
             <Text style={styles.emptyText}>
-              No transcripts yet. Start monitoring and tap "Transcribe" when ready.
+              No entries yet.{'\n'}Tap the mic to start listening, or ✏️ to write.
             </Text>
           )}
         </ScrollView>
       </View>
+
+      {/* Compose FAB */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => setShowCompose(true)}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.fabIcon}>✏️</Text>
+      </TouchableOpacity>
+
+      <ComposeModal
+        visible={showCompose}
+        onClose={() => setShowCompose(false)}
+        onSaved={handleManualEntrySaved}
+      />
     </SafeAreaView>
   );
 }
@@ -268,7 +314,33 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#e94560',
   },
-  transcriptTime: { fontSize: 12, color: '#9ca3af', marginBottom: 4 },
+  transcriptCardManual: { borderLeftColor: '#818cf8' },
+  transcriptCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  kindBadge: { fontSize: 11 },
+  transcriptTime: { fontSize: 12, color: '#9ca3af' },
   transcriptText: { fontSize: 15, color: '#e5e7eb', lineHeight: 22 },
+  photoThumb: {
+    width: '100%',
+    height: 140,
+    borderRadius: 8,
+    marginTop: 8,
+  },
   emptyText: { color: '#6b7280', textAlign: 'center', marginTop: 40, fontSize: 15, lineHeight: 24 },
+  fab: {
+    position: 'absolute',
+    bottom: 28,
+    right: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#818cf8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#818cf8',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+  },
+  fabIcon: { fontSize: 22 },
 });
