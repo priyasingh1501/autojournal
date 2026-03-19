@@ -1,6 +1,33 @@
 import Anthropic from '@anthropic-ai/sdk';
+import * as FileSystem from 'expo-file-system';
 import { TranscriptEntry, DailySummary } from '../types';
 import { StorageService } from './StorageService';
+
+const MAX_PHOTOS = 8; // Claude handles up to ~20 but keep cost/latency reasonable
+
+function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function mediaTypeFromUri(uri: string): 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' {
+  const ext = uri.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'gif') return 'image/gif';
+  return 'image/jpeg';
+}
+
+async function readPhotoAsBase64(uri: string): Promise<string | null> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists) return null;
+    return await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+  } catch {
+    return null;
+  }
+}
 
 export async function generateDailySummary(
   transcripts: TranscriptEntry[],
@@ -10,48 +37,104 @@ export async function generateDailySummary(
   if (!settings?.anthropicApiKey) {
     throw new Error('Anthropic API key not configured. Go to Settings.');
   }
-
   if (transcripts.length === 0) {
-    throw new Error('No transcripts recorded today.');
+    throw new Error('No entries recorded today.');
   }
 
-  const client = new Anthropic({ apiKey: settings.anthropicApiKey, dangerouslyAllowBrowser: true });
+  const client = new Anthropic({
+    apiKey: settings.anthropicApiKey,
+    dangerouslyAllowBrowser: true,
+  });
 
-  // Build a readable transcript log
-  const transcriptLog = transcripts
-    .map((t, i) => {
-      const time = new Date(t.timestamp).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      return `[${time}] ${t.text}`;
+  // Sort chronologically
+  const sorted = [...transcripts].sort((a, b) => a.timestamp - b.timestamp);
+
+  // Build the text log — label voice vs manual, placeholder for photo-only
+  const photoEntries = sorted.filter(t => t.photoUri);
+  const hasPhotos = photoEntries.length > 0;
+
+  const textLog = sorted
+    .map(t => {
+      const time = formatTime(t.timestamp);
+      const label = t.kind === 'manual' ? '[Note]' : '[Voice]';
+      if (t.text.trim()) {
+        return `${label} [${time}] ${t.text.trim()}`;
+      } else if (t.photoUri) {
+        return `[Photo] [${time}] (see attached image)`;
+      }
+      return null;
     })
+    .filter(Boolean)
     .join('\n');
 
+  // System prompt — mention photos if present
   const systemPrompt = `You are an intelligent personal journal assistant.
-You receive transcripts of a person's spoken thoughts and conversations throughout the day,
-captured automatically. Your job is to synthesize them into a meaningful, insightful daily summary.
+You receive a mix of voice transcripts, written notes, and photos from a person's day,
+captured automatically and manually. Your job is to synthesize them into a meaningful,
+insightful daily summary.
 
 The summary should:
 - Be written in second person ("You...") to feel personal
-- Highlight the key themes, activities, and thoughts of the day
-- Note any decisions made, problems solved, or goals mentioned
-- Capture mood and energy levels if apparent
-- Be organized with clear sections using markdown (## headers, bullet points)
+- Incorporate insights from both text entries and any photos shared
+- Highlight key themes, activities, decisions, and thoughts
+- Capture mood and energy if apparent
+- Be organised with clear sections using markdown (## headers, bullet points)
 - Be warm, reflective, and encouraging
 - Be 200-400 words`;
 
-  const userMessage = `Here are today's (${date}) voice transcripts captured throughout the day:
+  // Build multimodal content
+  const content: Anthropic.ContentBlockParam[] = [];
 
-${transcriptLog}
+  content.push({
+    type: 'text',
+    text: `Here are today's (${date}) journal entries:\n\n${textLog}`,
+  });
 
-Please create a thoughtful daily summary based on these transcripts.`;
+  // Attach photos (up to MAX_PHOTOS, in chronological order)
+  const photosToEmbed = photoEntries.slice(0, MAX_PHOTOS);
+  if (photosToEmbed.length > 0) {
+    content.push({
+      type: 'text',
+      text: `\nAttached photo${photosToEmbed.length !== 1 ? 's' : ''} (${photosToEmbed.length}):`,
+    });
+
+    for (const entry of photosToEmbed) {
+      const base64 = await readPhotoAsBase64(entry.photoUri!);
+      if (!base64) continue; // file missing — skip silently
+
+      content.push({
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: mediaTypeFromUri(entry.photoUri!),
+          data: base64,
+        },
+      });
+      // Brief caption so Claude knows when each photo was taken
+      content.push({
+        type: 'text',
+        text: `↑ Photo taken at ${formatTime(entry.timestamp)}${entry.text.trim() ? ` — "${entry.text.trim()}"` : ''}`,
+      });
+    }
+
+    if (photoEntries.length > MAX_PHOTOS) {
+      content.push({
+        type: 'text',
+        text: `(${photoEntries.length - MAX_PHOTOS} additional photo${photoEntries.length - MAX_PHOTOS !== 1 ? 's' : ''} not shown)`,
+      });
+    }
+  }
+
+  content.push({
+    type: 'text',
+    text: 'Please create a thoughtful daily summary based on all the entries above.',
+  });
 
   const response = await client.messages.create({
-    model: 'claude-opus-4-6',
+    model: 'claude-opus-4-5',   // opus-4-5 supports vision; swap back to opus-4-6 when it launches with vision
     max_tokens: 1024,
     system: systemPrompt,
-    messages: [{ role: 'user', content: userMessage }],
+    messages: [{ role: 'user', content }],
   });
 
   const summaryText = response.content
