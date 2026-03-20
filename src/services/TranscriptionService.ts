@@ -17,11 +17,13 @@ export async function transcribeAudio(audioUri: string): Promise<string> {
   formData.append('model', 'whisper-1');
   formData.append('language', 'en');
 
+  // Do NOT set Content-Type manually — React Native's fetch sets it automatically
+  // as "multipart/form-data; boundary=..." when the body is FormData.
+  // Setting it manually strips the boundary and breaks the API request.
   const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${settings.openaiApiKey}`,
-      'Content-Type': 'multipart/form-data',
     },
     body: formData,
   });

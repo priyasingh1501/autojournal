@@ -30,7 +30,11 @@ export default function SummaryScreen() {
   const loadDates = async () => {
     const today = new Date().toISOString().split('T')[0];
     const transcriptDates = await StorageService.getTranscriptDates();
-    setDates(transcriptDates);
+    // Always include today so the user can generate a summary even before any transcripts exist
+    const allDates = transcriptDates.includes(today)
+      ? transcriptDates
+      : [today, ...transcriptDates];
+    setDates(allDates);
     selectDate(today);
   };
 

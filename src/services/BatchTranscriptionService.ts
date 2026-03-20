@@ -29,6 +29,7 @@ export async function transcribePendingClips(
           timestamp: clip.timestamp,
           text,
           duration: clip.duration,
+          kind: 'voice',
         };
         await StorageService.addTranscript(entry);
         onTranscript(entry);
