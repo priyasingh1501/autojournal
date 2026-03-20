@@ -85,9 +85,9 @@ export default function TranscriptsScreen() {
           (data) => ({ kind: 'clip' as const, data, date })
         );
 
-        // Sort by timestamp ascending within the day (oldest first)
+        // Sort by timestamp descending within the day (latest first)
         const merged = [...txItems, ...clipItems].sort(
-          (a, b) => a.data.timestamp - b.data.timestamp
+          (a, b) => b.data.timestamp - a.data.timestamp
         );
 
         return { date, title: formatDateHeading(date), data: merged };

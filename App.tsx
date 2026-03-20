@@ -36,7 +36,7 @@ export default function App() {
             }}
           />
           <Tab.Screen
-            name="Transcripts"
+            name="Notes"
             component={TranscriptsScreen}
             options={{
               tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>📝</Text>,
