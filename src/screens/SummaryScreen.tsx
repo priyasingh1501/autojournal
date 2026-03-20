@@ -106,12 +106,29 @@ export default function SummaryScreen() {
         Alert.alert('Not supported', 'Sharing is not available on this device.');
         return;
       }
-      const header =
-        `AUTO JOURNAL — DAILY SUMMARY\n${formatDate(item.date)}\n${'─'.repeat(40)}\n`;
-      const meta =
-        `Entries: ${item.transcriptCount}  |  Generated: ${formatCreatedAt(item.createdAt)}\n\n`;
-      const fileUri = FileSystem.cacheDirectory + `auto-journal-${item.date}.txt`;
-      await FileSystem.writeAsStringAsync(fileUri, header + meta + item.summary + '\n', {
+
+      const cacheDir = FileSystem.cacheDirectory;
+      if (!cacheDir) {
+        Alert.alert('Error', 'Device storage is not accessible. Please try again.');
+        return;
+      }
+
+      const separator = '-'.repeat(40);
+      const header = `AUTO JOURNAL - DAILY SUMMARY\n${formatDate(item.date)}\n${separator}\n`;
+      const meta = `Entries: ${item.transcriptCount}  |  Generated: ${formatCreatedAt(item.createdAt)}\n\n`;
+
+      // Plain-text version of the markdown summary
+      const plainSummary = toPlainText(item.summary);
+
+      // Include insight sections if available
+      const insightBlock = item.insightText
+        ? `\n${separator}\nDAILY INSIGHTS\n${separator}\n${item.insightText}\n`
+        : '';
+
+      const fileContent = header + meta + plainSummary + insightBlock + '\n';
+      const fileUri = cacheDir + `auto-journal-${item.date}.txt`;
+
+      await FileSystem.writeAsStringAsync(fileUri, fileContent, {
         encoding: FileSystem.EncodingType.UTF8,
       });
       await Sharing.shareAsync(fileUri, {
@@ -119,8 +136,8 @@ export default function SummaryScreen() {
         dialogTitle: `Save summary for ${formatDate(item.date)}`,
         UTI: 'public.plain-text',
       });
-    } catch {
-      Alert.alert('Error', 'Could not export the summary. Please try again.');
+    } catch (err: any) {
+      Alert.alert('Export failed', err?.message ?? 'Could not export the summary. Please try again.');
     }
   };
 
