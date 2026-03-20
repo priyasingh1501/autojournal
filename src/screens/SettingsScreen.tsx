@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   vadThreshold: -35,
   silenceDuration: 2000,
   summaryTime: '21:00',
+  batchSize: 0,
 };
 
 export default function SettingsScreen() {

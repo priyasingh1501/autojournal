@@ -126,7 +126,14 @@ export default function ComposeModal({ visible, onClose, onSaved }: Props) {
     try {
       let savedPhotoUri: string | undefined;
       if (photoUri) {
-        savedPhotoUri = await copyPhotoToApp(photoUri);
+        try {
+          savedPhotoUri = await copyPhotoToApp(photoUri);
+        } catch (copyErr) {
+          // Copy failed — fall back to the original picker URI so the entry
+          // is never lost. The URI works for display even if not permanent.
+          console.warn('[ComposeModal] copyPhotoToApp failed, using original URI:', copyErr);
+          savedPhotoUri = photoUri;
+        }
       }
 
       const entry: TranscriptEntry = {
@@ -143,6 +150,7 @@ export default function ComposeModal({ visible, onClose, onSaved }: Props) {
       reset();
       onClose();
     } catch (e) {
+      console.error('[ComposeModal] handleSave failed:', e);
       Alert.alert('Error', 'Failed to save entry. Please try again.');
     } finally {
       setSaving(false);
