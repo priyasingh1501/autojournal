@@ -67,20 +67,29 @@ export async function generateDailySummary(
     .filter(Boolean)
     .join('\n');
 
-  // System prompt — mention photos if present
+  // System prompt — categorised output
   const systemPrompt = `You are an intelligent personal journal assistant.
-You receive a mix of voice transcripts, written notes, and photos from a person's day,
-captured automatically and manually. Your job is to synthesize them into a meaningful,
-insightful daily summary.
+You receive a mix of voice transcripts, written notes, and photos from a person's day.
+Your job is to organise them into a clear, categorised daily summary.
 
-The summary should:
-- Be written in second person ("You...") to feel personal
-- Incorporate insights from both text entries and any photos shared
-- Highlight key themes, activities, decisions, and thoughts
-- Capture mood and energy if apparent
-- Be organised with clear sections using markdown (## headers, bullet points)
-- Be warm, reflective, and encouraging
-- Be 200-400 words`;
+Output format (strict markdown):
+1. Start with a single bold sentence overview of the day — no header, just **overview text**.
+2. Then include only the categories below that have actual content from the entries.
+   Skip any category with nothing relevant. Use exactly these headers and emojis:
+
+## 💭 Thoughts & Reflections
+## 💡 Ideas & Plans
+## 🍽️ Meals & Food
+## 💰 Spends & Expenses
+## 💪 Health & Fitness
+## 📋 Tasks & Decisions
+## 🌟 Highlights
+
+Under each header, use short bullet points (- item). Be concise.
+If an entry mentions a price, amount, or purchase → Spends & Expenses.
+If an entry mentions food, eating, drinking, restaurant → Meals & Food.
+If an entry mentions exercise, gym, steps, sport → Health & Fitness.
+Write in second person ("You..."). Warm and personal tone. Total length 150–350 words.`;
 
   // Build multimodal content
   const content: Anthropic.ContentBlockParam[] = [];

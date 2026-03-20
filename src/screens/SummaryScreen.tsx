@@ -12,9 +12,28 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
+import Markdown from 'react-native-markdown-display';
 import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
 import { DailySummary } from '../types';
+
+// Markdown styles — dark theme to match the app
+const markdownStyles = {
+  body: { color: '#e5e7eb', fontSize: 15, lineHeight: 24 },
+  heading2: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700' as const,
+    marginTop: 14,
+    marginBottom: 4,
+    borderBottomWidth: 0,
+  },
+  bullet_list: { marginLeft: 0 },
+  bullet_list_item: { color: '#e5e7eb', marginBottom: 3 },
+  bullet_list_icon: { color: '#818cf8', marginTop: 6 },
+  strong: { color: '#ffffff', fontWeight: '700' as const },
+  paragraph: { marginTop: 0, marginBottom: 6 },
+};
 
 export default function SummaryScreen() {
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
@@ -35,7 +54,7 @@ export default function SummaryScreen() {
 
   const today = new Date().toISOString().split('T')[0];
 
-  const handleGenerate = async (date: string, regenerate = false) => {
+  const handleGenerate = async (date: string) => {
     if (generatingDate) return;
     setGeneratingDate(date);
     try {
@@ -67,8 +86,17 @@ export default function SummaryScreen() {
     });
   };
 
-  const formatCreatedAt = (ts: number): string =>
+  const formatCreatedAt = (ts: number) =>
     new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  // Strip markdown syntax for the 2-line collapsed preview
+  const toPlainText = (md: string) =>
+    md
+      .replace(/^##\s+/gm, '')   // headers
+      .replace(/\*\*(.*?)\*\*/g, '$1') // bold
+      .replace(/^\s*-\s+/gm, '• ')    // bullets
+      .replace(/\n{2,}/g, ' ')
+      .trim();
 
   const handleDownload = async (item: DailySummary) => {
     try {
@@ -77,24 +105,20 @@ export default function SummaryScreen() {
         Alert.alert('Not supported', 'Sharing is not available on this device.');
         return;
       }
-
-      // Build a nicely formatted text file
-      const header = `AUTO JOURNAL — DAILY SUMMARY\n${formatDate(item.date)}\n${'─'.repeat(40)}\n`;
-      const meta = `Entries: ${item.transcriptCount}  |  Generated: ${formatCreatedAt(item.createdAt)}\n\n`;
-      const content = header + meta + item.summary + '\n';
-
-      const filename = `auto-journal-${item.date}.txt`;
-      const fileUri = FileSystem.cacheDirectory + filename;
-      await FileSystem.writeAsStringAsync(fileUri, content, {
+      const header =
+        `AUTO JOURNAL — DAILY SUMMARY\n${formatDate(item.date)}\n${'─'.repeat(40)}\n`;
+      const meta =
+        `Entries: ${item.transcriptCount}  |  Generated: ${formatCreatedAt(item.createdAt)}\n\n`;
+      const fileUri = FileSystem.cacheDirectory + `auto-journal-${item.date}.txt`;
+      await FileSystem.writeAsStringAsync(fileUri, header + meta + item.summary + '\n', {
         encoding: FileSystem.EncodingType.UTF8,
       });
-
       await Sharing.shareAsync(fileUri, {
         mimeType: 'text/plain',
         dialogTitle: `Save summary for ${formatDate(item.date)}`,
         UTI: 'public.plain-text',
       });
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Could not export the summary. Please try again.');
     }
   };
@@ -105,54 +129,54 @@ export default function SummaryScreen() {
   const renderItem = ({ item }: { item: DailySummary }) => {
     const isExpanded = expandedDate === item.date;
     const isGenerating = generatingDate === item.date;
-    const preview = item.summary.replace(/#+\s/g, '').replace(/\*/g, '').slice(0, 120);
+    const preview = toPlainText(item.summary).slice(0, 130) + '…';
 
     return (
-      <TouchableOpacity
-        style={[styles.card, isExpanded && styles.cardExpanded]}
-        onPress={() => setExpandedDate(isExpanded ? null : item.date)}
-        activeOpacity={0.85}
-      >
-        {/* Card header */}
-        <View style={styles.cardHeader}>
+      <View style={[styles.card, isExpanded && styles.cardExpanded]}>
+        {/* Header row — always tappable to expand/collapse */}
+        <TouchableOpacity
+          onPress={() => setExpandedDate(isExpanded ? null : item.date)}
+          activeOpacity={0.8}
+          style={styles.cardHeader}
+        >
           <View style={styles.cardHeaderLeft}>
             <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
             <Text style={styles.cardMeta}>
-              {item.transcriptCount} entr{item.transcriptCount !== 1 ? 'ies' : 'y'} · {formatCreatedAt(item.createdAt)}
+              {item.transcriptCount} entr{item.transcriptCount !== 1 ? 'ies' : 'y'}
+              {' · '}{formatCreatedAt(item.createdAt)}
             </Text>
           </View>
           <View style={styles.cardHeaderRight}>
             <TouchableOpacity
               onPress={() => handleDownload(item)}
               style={styles.iconBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={styles.downloadBtnText}>⬇</Text>
+              <Text style={styles.downloadText}>⬇</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => handleGenerate(item.date, true)}
-              disabled={isGenerating}
+              onPress={() => handleGenerate(item.date)}
+              disabled={!!generatingDate}
               style={styles.iconBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               {isGenerating
                 ? <ActivityIndicator size="small" color="#9ca3af" />
-                : <Text style={styles.regenBtnText}>↻</Text>
-              }
+                : <Text style={styles.regenText}>↻</Text>}
             </TouchableOpacity>
             <Text style={styles.chevron}>{isExpanded ? '▲' : '▼'}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
-        {/* Preview or full summary */}
+        {/* Body */}
         {isExpanded ? (
-          <Text style={styles.summaryFull}>{item.summary}</Text>
+          <View style={styles.markdownWrapper}>
+            <Markdown style={markdownStyles}>{item.summary}</Markdown>
+          </View>
         ) : (
-          <Text style={styles.summaryPreview} numberOfLines={2}>
-            {preview}…
-          </Text>
+          <Text style={styles.preview} numberOfLines={2}>{preview}</Text>
         )}
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -168,17 +192,17 @@ export default function SummaryScreen() {
             <Text style={styles.emptyIcon}>✨</Text>
             <Text style={styles.emptyTitle}>No summaries yet</Text>
             <Text style={styles.emptySubtitle}>
-              Summaries are auto-generated at 11:59 PM each day.{'\n'}
-              Tap the button below to generate today's now.
+              Summaries are auto-generated at 11:59 PM.{'\n'}
+              Tap below to generate today's summary now.
             </Text>
           </View>
         }
       />
 
-      {/* FAB — generate today's summary */}
+      {/* FAB */}
       <TouchableOpacity
         style={[styles.fab, isGeneratingToday && styles.fabDisabled]}
-        onPress={() => handleGenerate(today, !!todaySummary)}
+        onPress={() => handleGenerate(today)}
         disabled={isGeneratingToday}
         activeOpacity={0.85}
       >
@@ -204,58 +228,57 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#16213e',
     borderRadius: 16,
-    padding: 16,
     marginBottom: 12,
     borderLeftWidth: 3,
     borderLeftColor: '#818cf8',
+    overflow: 'hidden',
   },
   cardExpanded: { borderLeftColor: '#e94560' },
+
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 10,
+    padding: 16,
+    paddingBottom: 10,
   },
   cardHeaderLeft: { flex: 1 },
   cardDate: { fontSize: 17, fontWeight: '700', color: '#ffffff' },
   cardMeta: { fontSize: 12, color: '#6b7280', marginTop: 3 },
+
   cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 8 },
   iconBtn: {
     width: 28, height: 28, borderRadius: 14,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#0f172a',
     alignItems: 'center', justifyContent: 'center',
   },
-  downloadBtnText: { color: '#60a5fa', fontSize: 14, fontWeight: '700' },
-  regenBtnText: { color: '#9ca3af', fontSize: 16, fontWeight: '700' },
-  chevron: { color: '#6b7280', fontSize: 12 },
+  downloadText: { color: '#60a5fa', fontSize: 13, fontWeight: '700' },
+  regenText: { color: '#9ca3af', fontSize: 16, fontWeight: '700' },
+  chevron: { color: '#6b7280', fontSize: 11 },
 
-  summaryPreview: { fontSize: 14, color: '#9ca3af', lineHeight: 21 },
-  summaryFull: { fontSize: 15, color: '#e5e7eb', lineHeight: 24 },
+  preview: {
+    fontSize: 14, color: '#9ca3af', lineHeight: 21,
+    paddingHorizontal: 16, paddingBottom: 14,
+  },
+  markdownWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#1f2d4e',
+    marginTop: 0,
+  },
 
   emptyState: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },
   emptyIcon: { fontSize: 64, marginBottom: 16 },
   emptyTitle: { fontSize: 22, fontWeight: '700', color: '#ffffff', marginBottom: 10 },
-  emptySubtitle: {
-    fontSize: 15, color: '#9ca3af', textAlign: 'center', lineHeight: 24,
-  },
+  emptySubtitle: { fontSize: 15, color: '#9ca3af', textAlign: 'center', lineHeight: 24 },
 
   fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    left: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#e94560',
-    borderRadius: 16,
-    paddingVertical: 16,
-    elevation: 6,
-    shadowColor: '#e94560',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
+    position: 'absolute', bottom: 24, right: 20, left: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#e94560', borderRadius: 16, paddingVertical: 16,
+    elevation: 6, shadowColor: '#e94560',
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 8,
   },
   fabDisabled: { opacity: 0.6 },
   fabIcon: { fontSize: 18, color: '#ffffff' },
