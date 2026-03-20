@@ -7,11 +7,11 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  ScrollView,
-  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
 import { DailySummary } from '../types';
@@ -70,6 +70,35 @@ export default function SummaryScreen() {
   const formatCreatedAt = (ts: number): string =>
     new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+  const handleDownload = async (item: DailySummary) => {
+    try {
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('Not supported', 'Sharing is not available on this device.');
+        return;
+      }
+
+      // Build a nicely formatted text file
+      const header = `AUTO JOURNAL — DAILY SUMMARY\n${formatDate(item.date)}\n${'─'.repeat(40)}\n`;
+      const meta = `Entries: ${item.transcriptCount}  |  Generated: ${formatCreatedAt(item.createdAt)}\n\n`;
+      const content = header + meta + item.summary + '\n';
+
+      const filename = `auto-journal-${item.date}.txt`;
+      const fileUri = FileSystem.cacheDirectory + filename;
+      await FileSystem.writeAsStringAsync(fileUri, content, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/plain',
+        dialogTitle: `Save summary for ${formatDate(item.date)}`,
+        UTI: 'public.plain-text',
+      });
+    } catch (e) {
+      Alert.alert('Error', 'Could not export the summary. Please try again.');
+    }
+  };
+
   const todaySummary = summaries.find(s => s.date === today);
   const isGeneratingToday = generatingDate === today;
 
@@ -94,9 +123,16 @@ export default function SummaryScreen() {
           </View>
           <View style={styles.cardHeaderRight}>
             <TouchableOpacity
+              onPress={() => handleDownload(item)}
+              style={styles.iconBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.downloadBtnText}>⬇</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               onPress={() => handleGenerate(item.date, true)}
               disabled={isGenerating}
-              style={styles.regenBtn}
+              style={styles.iconBtn}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               {isGenerating
@@ -184,11 +220,12 @@ const styles = StyleSheet.create({
   cardDate: { fontSize: 17, fontWeight: '700', color: '#ffffff' },
   cardMeta: { fontSize: 12, color: '#6b7280', marginTop: 3 },
   cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 8 },
-  regenBtn: {
+  iconBtn: {
     width: 28, height: 28, borderRadius: 14,
     backgroundColor: '#1a1a2e',
     alignItems: 'center', justifyContent: 'center',
   },
+  downloadBtnText: { color: '#60a5fa', fontSize: 14, fontWeight: '700' },
   regenBtnText: { color: '#9ca3af', fontSize: 16, fontWeight: '700' },
   chevron: { color: '#6b7280', fontSize: 12 },
 
