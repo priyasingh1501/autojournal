@@ -25,6 +25,7 @@ export default function HomeScreen() {
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
   const [showCompose, setShowCompose] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<(TranscriptEntry & { date: string }) | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -199,39 +200,49 @@ export default function HomeScreen() {
       <View style={styles.recentSection}>
         <Text style={styles.sectionTitle}>Today</Text>
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {todayTranscripts.slice(0, 8).map((entry) => (
-            <View
-              key={entry.id}
-              style={[
-                styles.transcriptCard,
-                entry.kind === 'manual' && styles.transcriptCardManual,
-              ]}
-            >
-              <View style={styles.transcriptCardHeader}>
-                <Text style={styles.kindBadge}>
-                  {entry.kind === 'manual' ? '🗒️' : '🎙️'}
-                </Text>
-                <Text style={styles.transcriptTime}>
-                  {new Date(entry.timestamp).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
+          {todayTranscripts.slice(0, 8).map((entry) => {
+            const today = new Date().toISOString().split('T')[0];
+            return (
+              <View
+                key={entry.id}
+                style={[
+                  styles.transcriptCard,
+                  entry.kind === 'manual' && styles.transcriptCardManual,
+                ]}
+              >
+                <View style={styles.transcriptCardHeader}>
+                  <Text style={styles.kindBadge}>
+                    {entry.kind === 'manual' ? '🗒️' : '🎙️'}
+                  </Text>
+                  <Text style={styles.transcriptTime}>
+                    {new Date(entry.timestamp).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.editBtn}
+                    onPress={() => setEditingEntry({ ...entry, date: today })}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.editBtnText}>✎</Text>
+                  </TouchableOpacity>
+                </View>
+                {entry.text.length > 0 && (
+                  <Text style={styles.transcriptText} numberOfLines={3}>
+                    {entry.text}
+                  </Text>
+                )}
+                {entry.photoUri && (
+                  <Image
+                    source={{ uri: entry.photoUri }}
+                    style={styles.photoThumb}
+                    resizeMode="cover"
+                  />
+                )}
               </View>
-              {entry.text.length > 0 && (
-                <Text style={styles.transcriptText} numberOfLines={3}>
-                  {entry.text}
-                </Text>
-              )}
-              {entry.photoUri && (
-                <Image
-                  source={{ uri: entry.photoUri }}
-                  style={styles.photoThumb}
-                  resizeMode="cover"
-                />
-              )}
-            </View>
-          ))}
+            );
+          })}
           {todayTranscripts.length === 0 && (
             <Text style={styles.emptyText}>
               No entries yet.{'\n'}Tap the mic to start listening, or ✏️ to write.
@@ -253,6 +264,18 @@ export default function HomeScreen() {
         visible={showCompose}
         onClose={() => setShowCompose(false)}
         onSaved={handleManualEntrySaved}
+      />
+
+      <ComposeModal
+        visible={editingEntry !== null}
+        editEntry={editingEntry ?? undefined}
+        onClose={() => setEditingEntry(null)}
+        onSaved={(updated) => {
+          setEditingEntry(null);
+          setTodayTranscripts(prev =>
+            prev.map(e => (e.id === updated.id ? updated : e))
+          );
+        }}
       />
     </SafeAreaView>
   );
@@ -320,7 +343,12 @@ const styles = StyleSheet.create({
   transcriptCardManual: { borderLeftColor: '#818cf8' },
   transcriptCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   kindBadge: { fontSize: 11 },
-  transcriptTime: { fontSize: 12, color: '#9ca3af' },
+  transcriptTime: { fontSize: 12, color: '#9ca3af', flex: 1 },
+  editBtn: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: '#1e3a5f', alignItems: 'center', justifyContent: 'center',
+  },
+  editBtnText: { color: '#60a5fa', fontSize: 11, fontWeight: '700' },
   transcriptText: { fontSize: 15, color: '#e5e7eb', lineHeight: 22 },
   photoThumb: {
     width: '100%',

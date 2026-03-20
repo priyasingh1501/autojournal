@@ -22,6 +22,8 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onSaved: (entry: TranscriptEntry) => void;
+  /** If provided the modal opens in edit mode pre-filled with this entry */
+  editEntry?: TranscriptEntry & { date: string };
 }
 
 const PHOTOS_DIR = FileSystem.documentDirectory + 'photos/';
@@ -56,11 +58,20 @@ async function copyPhotoToApp(uri: string): Promise<string> {
   return dest;
 }
 
-export default function ComposeModal({ visible, onClose, onSaved }: Props) {
+export default function ComposeModal({ visible, onClose, onSaved, editEntry }: Props) {
+  const isEditing = !!editEntry;
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<TextInput>(null);
+
+  // Pre-fill when opening in edit mode
+  React.useEffect(() => {
+    if (visible && editEntry) {
+      setText(editEntry.text);
+      setPhotoUri(editEntry.photoUri ?? null);
+    }
+  }, [visible, editEntry]);
 
   const reset = () => {
     setText('');
@@ -126,27 +137,41 @@ export default function ComposeModal({ visible, onClose, onSaved }: Props) {
     try {
       let savedPhotoUri: string | undefined;
       if (photoUri) {
-        try {
-          savedPhotoUri = await copyPhotoToApp(photoUri);
-        } catch (copyErr) {
-          // Copy failed — fall back to the original picker URI so the entry
-          // is never lost. The URI works for display even if not permanent.
-          console.warn('[ComposeModal] copyPhotoToApp failed, using original URI:', copyErr);
+        // Only copy if it's a new photo (not the existing permanent one)
+        const alreadySaved = editEntry && photoUri === editEntry.photoUri;
+        if (alreadySaved) {
           savedPhotoUri = photoUri;
+        } else {
+          try {
+            savedPhotoUri = await copyPhotoToApp(photoUri);
+          } catch (copyErr) {
+            console.warn('[ComposeModal] copyPhotoToApp failed, using original URI:', copyErr);
+            savedPhotoUri = photoUri;
+          }
         }
       }
 
-      const entry: TranscriptEntry = {
-        id: `manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        timestamp: Date.now(),
-        text: text.trim(),
-        duration: 0,
-        kind: 'manual',
-        photoUri: savedPhotoUri,
-      };
+      if (isEditing && editEntry) {
+        const updated: TranscriptEntry = {
+          ...editEntry,
+          text: text.trim(),
+          photoUri: savedPhotoUri,
+        };
+        await StorageService.updateTranscript(updated, editEntry.date);
+        onSaved(updated);
+      } else {
+        const entry: TranscriptEntry = {
+          id: `manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: Date.now(),
+          text: text.trim(),
+          duration: 0,
+          kind: 'manual',
+          photoUri: savedPhotoUri,
+        };
+        await StorageService.addTranscript(entry);
+        onSaved(entry);
+      }
 
-      await StorageService.addTranscript(entry);
-      onSaved(entry);
       reset();
       onClose();
     } catch (e) {
@@ -179,7 +204,7 @@ export default function ComposeModal({ visible, onClose, onSaved }: Props) {
             <TouchableOpacity onPress={handleClose} style={styles.headerBtn}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.title}>New Entry</Text>
+            <Text style={styles.title}>{isEditing ? 'Edit Entry' : 'New Entry'}</Text>
             {saving ? (
               <ActivityIndicator color="#e94560" style={styles.headerBtn} />
             ) : (

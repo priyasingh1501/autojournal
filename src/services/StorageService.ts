@@ -49,6 +49,18 @@ export const StorageService = {
     return this.deleteTranscripts([id], date);
   },
 
+  async updateTranscript(entry: TranscriptEntry, date: string): Promise<void> {
+    const key = KEYS.TRANSCRIPTS_PREFIX + date;
+    const existing = await AsyncStorage.getItem(key);
+    if (!existing) return;
+    const entries: TranscriptEntry[] = JSON.parse(existing);
+    const idx = entries.findIndex(e => e.id === entry.id);
+    if (idx !== -1) {
+      entries[idx] = entry;
+      await AsyncStorage.setItem(key, JSON.stringify(entries));
+    }
+  },
+
   // Atomic bulk delete — single read/filter/write per date key, avoids race conditions
   async deleteTranscripts(ids: string[], date: string): Promise<void> {
     const key = KEYS.TRANSCRIPTS_PREFIX + date;

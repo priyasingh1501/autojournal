@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { StorageService } from '../services/StorageService';
 import { TranscriptEntry, PendingClip } from '../types';
+import ComposeModal from '../components/ComposeModal';
 
 // 'transcript' = voice (auto-recorded), 'manual' = typed/photo, 'clip' = pending audio
 type JournalItem =
@@ -34,6 +35,7 @@ export default function TranscriptsScreen() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<(TranscriptEntry & { date: string }) | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -299,13 +301,26 @@ export default function TranscriptsScreen() {
               )}
             </View>
             {!selectMode && (
-              <TouchableOpacity
-                onPress={() => handleDeleteSingle(item)}
-                style={styles.deleteBtn}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.deleteBtnText}>✕</Text>
-              </TouchableOpacity>
+              <View style={styles.cardActions}>
+                {!isClip && (
+                  <TouchableOpacity
+                    onPress={() =>
+                      setEditingEntry({ ...(item.data as TranscriptEntry), date: item.date })
+                    }
+                    style={styles.editBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.editBtnText}>✎</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={() => handleDeleteSingle(item)}
+                  style={styles.deleteBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.deleteBtnText}>✕</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
 
@@ -427,6 +442,16 @@ export default function TranscriptsScreen() {
           </Text>
         }
       />
+
+      <ComposeModal
+        visible={editingEntry !== null}
+        editEntry={editingEntry ?? undefined}
+        onClose={() => setEditingEntry(null)}
+        onSaved={(updated) => {
+          setEditingEntry(null);
+          loadAll();
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -533,6 +558,16 @@ const styles = StyleSheet.create({
   kindBadge: { fontSize: 12, marginRight: 5 },
   cardTime: { fontSize: 12, color: '#9ca3af' },
   cardDuration: { fontSize: 11, color: '#6b7280' },
+  cardActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  editBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#1e3a5f',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editBtnText: { color: '#60a5fa', fontSize: 11, fontWeight: '700' },
   deleteBtn: {
     width: 20,
     height: 20,
