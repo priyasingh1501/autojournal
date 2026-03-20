@@ -35,9 +35,23 @@ async function ensurePhotosDir() {
 
 async function copyPhotoToApp(uri: string): Promise<string> {
   await ensurePhotosDir();
-  const ext = uri.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const filename = `photo_${Date.now()}.${ext}`;
-  const dest = PHOTOS_DIR + filename;
+
+  // Strip query-string before extracting extension (handles content:// URIs)
+  const cleanUri = uri.split('?')[0];
+  const rawExt = cleanUri.split('.').pop()?.toLowerCase() ?? '';
+  const ext = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(rawExt)
+    ? rawExt
+    : 'jpg';
+  const dest = PHOTOS_DIR + `photo_${Date.now()}.${ext}`;
+
+  if (uri.startsWith('content://')) {
+    // content:// URIs can't be copied with FileSystem.copyAsync on Android —
+    // use downloadAsync which handles them correctly
+    const result = await FileSystem.downloadAsync(uri, dest);
+    return result.uri;
+  }
+
+  // file:// URI (standard path from expo-image-picker v16+)
   await FileSystem.copyAsync({ from: uri, to: dest });
   return dest;
 }
