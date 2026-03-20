@@ -55,32 +55,41 @@ async function collectWeekStats(dates: string[]): Promise<{
 
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a thoughtful personal journal assistant helping someone reflect on their week.
-You have access to their daily journal summaries.
-Your role is to synthesise patterns across multiple days into a warm, insightful weekly reflection written directly to the person.
-Tone: warm, empathetic, observational — like a wise friend reviewing their week with them.
-Format: flowing prose only. No markdown, no headers, no bullet points, no bold text. 2–3 paragraphs.`;
+const SYSTEM_PROMPT = `You are a caring personal journal assistant helping someone understand their week at a glance.
+You have access to their daily journal summaries. Analyse them and produce a structured but warm weekly check-in.
+Tone: honest, warm, direct — like a trusted friend who notices patterns and gently calls them out.
+Format rules (strict):
+- Use EXACTLY these five section headings, each on its own line, followed by one or two sentences of insight:
+  Emotional check-in:
+  Meals:
+  Movement:
+  Spending:
+  Recurring thoughts:
+- No markdown symbols (no *, no #, no —). Plain text only.
+- Each section is 1–2 sentences. Be specific and reference actual events from the summaries, not generic advice.
+- For Meals: explicitly flag any unhealthy patterns (junk food, skipped meals, late-night eating). If meals look fine, say so briefly.
+- For Movement: explicitly call out any days with no workout or physical activity. If every day had movement, say so.
+- For Spending: give a short qualitative summary of the week's spending — high/low/unusual categories if mentioned.
+- For Recurring thoughts: name the actual themes, topics, or concerns that came up more than once.
+- Do not begin the Emotional check-in with the word "This".`;
 
 function buildPrompt(
   summaries: DailySummary[],
-  stats: { totalEntries: number; daysActive: number },
   weekStart: string,
   weekEnd: string,
 ): string {
   const dayLines = summaries
-    .map(s => `--- ${s.date} (${s.transcriptCount} entries) ---\n${s.summary}`)
+    .map(s => `--- ${s.date} ---\n${s.summary}`)
     .join('\n\n');
 
   return `Here are my journal summaries from this week (${weekStart} to ${weekEnd}).
-I was active on ${stats.daysActive} out of 7 days and recorded ${stats.totalEntries} total entries.
 
 ${dayLines}
 
-Based on these summaries, write a warm, personal weekly reflection about how I've been doing.
-Write in second person ("You..."). Around 120 words across 2–3 flowing paragraphs.
-Surface patterns across days: mood trends, recurring topics, habits around meals, fitness, or spending, emotional themes, any positive momentum or tension.
-Do not use markdown, headers, or bullets — flowing prose only.
-Do not begin with the words "This week".`;
+Using the five sections defined in your instructions (Emotional check-in, Meals, Movement, Spending, Recurring thoughts), write my weekly check-in.
+Write in second person ("You..."). Be specific — reference actual things mentioned in the summaries.
+Flag unhealthy meals, flag days without any physical activity, surface recurring topics or worries.
+Plain text only, no markdown.`;
 }
 
 // ─── Main export ─────────────────────────────────────────────────────────────
@@ -110,7 +119,7 @@ export async function generateWeeklyInsight(
   if (summaries.length < 2) throw new Error(NOT_ENOUGH_DATA);
 
   const stats = await collectWeekStats(dates);
-  const prompt = buildPrompt(summaries, stats, weekStart, weekEnd);
+  const prompt = buildPrompt(summaries, weekStart, weekEnd);
 
   const client = new Anthropic({
     apiKey: settings.anthropicApiKey,

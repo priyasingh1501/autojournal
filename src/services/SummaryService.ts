@@ -67,12 +67,12 @@ export async function generateDailySummary(
     .filter(Boolean)
     .join('\n');
 
-  // System prompt — categorised output
+  // System prompt — categorised summary + five-section insight
   const systemPrompt = `You are an intelligent personal journal assistant.
 You receive a mix of voice transcripts, written notes, and photos from a person's day.
-Your job is to organise them into a clear, categorised daily summary.
+Your job is to produce TWO things, separated by the exact line ===INSIGHTS===.
 
-Output format (strict markdown):
+PART 1 — Categorised daily summary (strict markdown):
 1. Start with a single bold sentence overview of the day — no header, just **overview text**.
 2. Then include only the categories below that have actual content from the entries.
    Skip any category with nothing relevant. Use exactly these headers and emojis:
@@ -89,7 +89,27 @@ Under each header, use short bullet points (- item). Be concise.
 If an entry mentions a price, amount, or purchase → Spends & Expenses.
 If an entry mentions food, eating, drinking, restaurant → Meals & Food.
 If an entry mentions exercise, gym, steps, sport → Health & Fitness.
-Write in second person ("You..."). Warm and personal tone. Total length 150–350 words.`;
+Write in second person ("You..."). Warm and personal tone. Total length 150–350 words.
+
+Then output exactly this line on its own:
+===INSIGHTS===
+
+PART 2 — Daily personal insight (plain text only, no markdown):
+Use EXACTLY these five section headings, each on its own line, followed by 1–2 sentences:
+  Emotional check-in:
+  Meals:
+  Movement:
+  Spending:
+  Recurring thoughts:
+
+Rules:
+- No markdown symbols (no *, no #). Plain text only.
+- Be specific — reference actual things from the entries.
+- For Meals: flag any unhealthy patterns (junk food, skipped meals, late-night eating). Say "Looks balanced" if nothing concerning.
+- For Movement: call out if there was no workout or physical activity today. Mention what was done if there was.
+- For Spending: give a short qualitative note — high/low/unusual. Say "No spending logged" if nothing mentioned.
+- For Recurring thoughts: name actual themes or concerns that appear more than once, or say "None that stood out today."
+- Write in second person ("You...").`;
 
   // Build multimodal content
   const content: Anthropic.ContentBlockParam[] = [];
@@ -141,19 +161,29 @@ Write in second person ("You..."). Warm and personal tone. Total length 150–35
 
   const response = await client.messages.create({
     model: 'claude-opus-4-5',   // opus-4-5 supports vision; swap back to opus-4-6 when it launches with vision
-    max_tokens: 1024,
+    max_tokens: 1400,
     system: systemPrompt,
     messages: [{ role: 'user', content }],
   });
 
-  const summaryText = response.content
+  const fullText = response.content
     .filter(b => b.type === 'text')
     .map(b => (b as any).text)
     .join('');
 
+  const SENTINEL = '===INSIGHTS===';
+  const sentinelIdx = fullText.indexOf(SENTINEL);
+  const summaryText = sentinelIdx !== -1
+    ? fullText.slice(0, sentinelIdx).trim()
+    : fullText.trim();
+  const insightText = sentinelIdx !== -1
+    ? fullText.slice(sentinelIdx + SENTINEL.length).trim()
+    : undefined;
+
   const summary: DailySummary = {
     date,
     summary: summaryText,
+    insightText,
     transcriptCount: transcripts.length,
     createdAt: Date.now(),
   };

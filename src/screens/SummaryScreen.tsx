@@ -13,6 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import Markdown from 'react-native-markdown-display';
+import { renderInsightSections } from '../components/InsightSections';
 import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
 import { DailySummary } from '../types';
@@ -170,8 +171,24 @@ export default function SummaryScreen() {
 
         {/* Body */}
         {isExpanded ? (
-          <View style={styles.markdownWrapper}>
-            <Markdown style={markdownStyles}>{item.summary}</Markdown>
+          <View style={styles.expandedBody}>
+            {/* Five-section insight */}
+            {item.insightText ? (
+              <View style={styles.insightWrapper}>
+                {renderInsightSections(item.insightText)}
+              </View>
+            ) : null}
+
+            {/* Divider before detailed markdown */}
+            {item.insightText ? (
+              <View style={styles.divider} />
+            ) : null}
+
+            {/* Categorised markdown detail */}
+            <View style={styles.markdownWrapper}>
+              <Text style={styles.markdownLabel}>Full breakdown</Text>
+              <Markdown style={markdownStyles}>{item.summary}</Markdown>
+            </View>
           </View>
         ) : (
           <Text style={styles.preview} numberOfLines={2}>{preview}</Text>
@@ -260,12 +277,32 @@ const styles = StyleSheet.create({
     fontSize: 14, color: '#9ca3af', lineHeight: 21,
     paddingHorizontal: 16, paddingBottom: 14,
   },
+  expandedBody: {
+    borderTopWidth: 1,
+    borderTopColor: '#1f2d4e',
+  },
+  insightWrapper: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#1f2d4e',
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
   markdownWrapper: {
     paddingHorizontal: 16,
     paddingBottom: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#1f2d4e',
-    marginTop: 0,
+  },
+  markdownLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#374151',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 10,
   },
 
   emptyState: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },

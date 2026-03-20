@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { WeeklyInsight } from '../types';
 import { generateWeeklyInsight, NOT_ENOUGH_DATA } from '../services/WeeklyInsightService';
+import { renderInsightSections } from './InsightSections';
 
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -113,26 +114,7 @@ export default function WeeklyInsightCard() {
       {/* Loaded */}
       {!loading && insight && (
         <>
-          {/* Stat chips */}
-          <View style={styles.chipsRow}>
-            <View style={styles.chip}>
-              <Text style={styles.chipValue}>{insight.daysActive}</Text>
-              <Text style={styles.chipLabel}>days active</Text>
-            </View>
-            <View style={styles.chip}>
-              <Text style={styles.chipValue}>{insight.totalEntries}</Text>
-              <Text style={styles.chipLabel}>entries</Text>
-            </View>
-            <View style={styles.chip}>
-              <Text style={styles.chipValue}>{insight.daysSummarised}</Text>
-              <Text style={styles.chipLabel}>summarised</Text>
-            </View>
-          </View>
-
-          {/* Prose insight */}
-          <Text style={styles.insightText}>{insight.insightText}</Text>
-
-          {/* Last updated */}
+          {renderInsightSections(insight.insightText)}
           <Text style={styles.lastUpdated}>
             Updated {formatRelativeTime(insight.generatedAt)}
           </Text>
@@ -173,18 +155,6 @@ const styles = StyleSheet.create({
   },
   refreshIcon: { color: '#9ca3af', fontSize: 15, fontWeight: '700' },
 
-  chipsRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  chip: {
-    flex: 1,
-    backgroundColor: '#0f172a',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  chipValue: { fontSize: 20, fontWeight: '700', color: '#818cf8' },
-  chipLabel: { fontSize: 11, color: '#6b7280', marginTop: 2 },
-
-  insightText: { fontSize: 15, color: '#e5e7eb', lineHeight: 25 },
   lastUpdated: {
     fontSize: 11,
     color: '#374151',

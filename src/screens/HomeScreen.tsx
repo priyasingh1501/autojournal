@@ -26,6 +26,7 @@ export default function HomeScreen() {
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
   const [showCompose, setShowCompose] = useState(false);
+  const isTranscribingRef = React.useRef(false);
   const [editingEntry, setEditingEntry] = useState<(TranscriptEntry & { date: string }) | null>(null);
 
   useFocusEffect(
@@ -82,21 +83,26 @@ export default function HomeScreen() {
   };
 
   const handleTranscribeNow = async () => {
-    if (batchProgress) return; // already running
+    if (isTranscribingRef.current) return; // always current, no stale closure
+    isTranscribingRef.current = true;
     setBatchProgress({ total: 0, completed: 0, failed: 0 });
-    await transcribePendingClips(
-      (progress) => setBatchProgress(progress),
-      (entry) => {
-        // Called once with the single merged card after all clips are processed
-        const today = new Date().toISOString().split('T')[0];
-        const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
-        if (entryDate === today) {
-          setTodayTranscripts(prev => [entry, ...prev]);
-        }
-      },
-    );
-    setPendingClips([]);
-    setBatchProgress(null);
+    try {
+      await transcribePendingClips(
+        (progress) => setBatchProgress(progress),
+        (entry) => {
+          // Called once with the single merged card after all clips are processed
+          const today = new Date().toISOString().split('T')[0];
+          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+          if (entryDate === today) {
+            setTodayTranscripts(prev => [entry, ...prev]);
+          }
+        },
+      );
+    } finally {
+      isTranscribingRef.current = false;
+      setPendingClips([]);
+      setBatchProgress(null);
+    }
   };
 
   const handleDiscardPending = () => {

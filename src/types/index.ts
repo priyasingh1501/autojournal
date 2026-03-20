@@ -17,6 +17,7 @@ export interface PendingClip {
 export interface DailySummary {
   date: string; // YYYY-MM-DD
   summary: string;
+  insightText?: string; // five-section plain-text insight (optional for backward compat)
   transcriptCount: number;
   createdAt: number;
 }
