@@ -84,7 +84,14 @@ export default function HomeScreen() {
     setBatchProgress({ total: 0, completed: 0, failed: 0 });
     await transcribePendingClips(
       (progress) => setBatchProgress(progress),
-      (entry) => setTodayTranscripts(prev => [entry, ...prev]),
+      (entry) => {
+        // Called once with the single merged card after all clips are processed
+        const today = new Date().toISOString().split('T')[0];
+        const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+        if (entryDate === today) {
+          setTodayTranscripts(prev => [entry, ...prev]);
+        }
+      },
     );
     setPendingClips([]);
     setBatchProgress(null);
