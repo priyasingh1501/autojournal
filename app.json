@@ -48,6 +48,14 @@
           "cameraPermission": "Allow Auto Journal to use your camera to take photos for journal entries.",
           "microphonePermission": false
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#e94560",
+          "sounds": []
+        }
       ]
     ],
     "extra": {
