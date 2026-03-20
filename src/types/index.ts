@@ -30,4 +30,15 @@ export interface AppSettings {
   batchSize: number; // auto-transcribe when pending clips reach this count, 0 = manual only
 }
 
+export interface WeeklyInsight {
+  weekKey: string;        // e.g. "2026-W12"
+  weekStart: string;      // YYYY-MM-DD Monday
+  weekEnd: string;        // YYYY-MM-DD Sunday
+  insightText: string;    // Claude-generated flowing prose
+  daysActive: number;     // days with at least one entry
+  totalEntries: number;   // sum of all entries across the week
+  daysSummarised: number; // days with a DailySummary
+  generatedAt: number;    // Unix ms
+}
+
 export type RecordingStatus = 'idle' | 'monitoring' | 'recording';

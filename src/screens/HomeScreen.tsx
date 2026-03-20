@@ -17,6 +17,7 @@ import { transcribePendingClips, BatchProgress } from '../services/BatchTranscri
 import { StorageService } from '../services/StorageService';
 import { TranscriptEntry, PendingClip } from '../types';
 import ComposeModal from '../components/ComposeModal';
+import WeeklyInsightCard from '../components/WeeklyInsightCard';
 
 export default function HomeScreen() {
   const [status, setStatus] = useState<RecordingStatus>('idle');
@@ -196,10 +197,15 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Recent Transcripts */}
-      <View style={styles.recentSection}>
+      {/* Weekly insight + today's entries — single scroll area */}
+      <ScrollView
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <WeeklyInsightCard />
+
         <Text style={styles.sectionTitle}>Today</Text>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           {todayTranscripts.slice(0, 8).map((entry) => {
             const today = new Date().toISOString().split('T')[0];
             return (
@@ -248,8 +254,7 @@ export default function HomeScreen() {
               No entries yet.{'\n'}Tap the mic to start listening, or ✏️ to write.
             </Text>
           )}
-        </ScrollView>
-      </View>
+      </ScrollView>
 
       {/* Compose FAB */}
       <TouchableOpacity
@@ -329,9 +334,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   discardButtonText: { color: '#9ca3af', fontSize: 13, fontWeight: '600' },
-  recentSection: { flex: 1, paddingHorizontal: 20 },
+  scrollArea: { flex: 1 },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 110 },
   sectionTitle: { fontSize: 18, fontWeight: '700', color: '#ffffff', marginBottom: 12 },
-  scrollView: { flex: 1 },
   transcriptCard: {
     backgroundColor: '#16213e',
     borderRadius: 12,

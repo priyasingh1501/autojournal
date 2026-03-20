@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { TranscriptEntry, DailySummary, AppSettings, PendingClip } from '../types';
+import { TranscriptEntry, DailySummary, AppSettings, PendingClip, WeeklyInsight } from '../types';
 
 const KEYS = {
   TRANSCRIPTS_PREFIX: 'transcripts_',
   SUMMARIES_PREFIX: 'summaries_',
   SETTINGS: 'app_settings',
   PENDING_CLIPS: 'pending_clips',
+  WEEKLY_INSIGHTS_PREFIX: 'weekly_insight_',
 };
 
 function todayKey(): string {
@@ -129,6 +130,23 @@ export const StorageService = {
   async saveSummary(summary: DailySummary): Promise<void> {
     const key = KEYS.SUMMARIES_PREFIX + summary.date;
     await AsyncStorage.setItem(key, JSON.stringify(summary));
+  },
+
+  async getSummariesForDateRange(dates: string[]): Promise<DailySummary[]> {
+    const results = await Promise.all(dates.map(d => this.getSummaryForDate(d)));
+    return results.filter(Boolean) as DailySummary[];
+  },
+
+  async getWeeklyInsight(weekKey: string): Promise<WeeklyInsight | null> {
+    const json = await AsyncStorage.getItem(KEYS.WEEKLY_INSIGHTS_PREFIX + weekKey);
+    return json ? JSON.parse(json) : null;
+  },
+
+  async saveWeeklyInsight(insight: WeeklyInsight): Promise<void> {
+    await AsyncStorage.setItem(
+      KEYS.WEEKLY_INSIGHTS_PREFIX + insight.weekKey,
+      JSON.stringify(insight),
+    );
   },
 
   async getSummaryDates(): Promise<string[]> {
