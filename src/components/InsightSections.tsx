@@ -1,12 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
-export const SECTION_LABELS: Record<string, { emoji: string; color: string }> = {
-  'Emotional check-in': { emoji: '🧠', color: '#48cae4' },
-  'Meals':              { emoji: '🍽️', color: '#06d6a0' },
-  'Movement':           { emoji: '💪', color: '#f4a261' },
-  'Spending':           { emoji: '💰', color: '#00b4d8' },
-  'Recurring thoughts': { emoji: '💭', color: '#90e0ef' },
+export const SECTION_LABELS: Record<string, { iconName: string; color: string }> = {
+  'Emotional check-in': { iconName: 'activity',     color: '#48cae4' },
+  'Meals':              { iconName: 'coffee',        color: '#06d6a0' },
+  'Movement':           { iconName: 'zap',           color: '#f4a261' },
+  'Spending':           { iconName: 'credit-card',   color: '#00b4d8' },
+  'Recurring thoughts': { iconName: 'repeat',        color: '#90e0ef' },
 };
 
 export function renderInsightSections(text: string): React.ReactNode {
@@ -40,9 +41,10 @@ export function renderInsightSections(text: string): React.ReactNode {
 
       nodes.push(
         <View key={headingKey} style={sectionStyles.section}>
-          <Text style={[sectionStyles.heading, { color: meta.color }]}>
-            {meta.emoji}  {headingKey}
-          </Text>
+          <View style={sectionStyles.headingRow}>
+            <Feather name={meta.iconName as any} size={13} color={meta.color} />
+            <Text style={[sectionStyles.heading, { color: meta.color }]}>  {headingKey}</Text>
+          </View>
           {body.length > 0 && (
             <Text style={sectionStyles.body}>{body}</Text>
           )}
@@ -62,6 +64,7 @@ export function renderInsightSections(text: string): React.ReactNode {
 const sectionStyles = StyleSheet.create({
   wrapper: { marginBottom: 4 },
   section: { marginBottom: 14 },
-  heading: { fontSize: 13, fontWeight: '700', marginBottom: 4, letterSpacing: 0.2 },
-  body: { fontSize: 14, color: 'rgba(147, 210, 232, 0.75)', lineHeight: 22 },
+  headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  heading: { fontSize: 13, fontWeight: '700', letterSpacing: 0.2, fontFamily: 'Avenir' },
+  body: { fontSize: 14, color: 'rgba(147, 210, 232, 0.75)', lineHeight: 22, fontFamily: 'Avenir' },
 });

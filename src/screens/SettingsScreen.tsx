@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Feather } from '@expo/vector-icons';
 import {
   View,
   Text,
@@ -70,7 +71,7 @@ export default function SettingsScreen() {
               style={styles.eyeButton}
               onPress={() => setShowOpenAIKey(!showOpenAIKey)}
             >
-              <Text>{showOpenAIKey ? '🙈' : '👁️'}</Text>
+              <Feather name={showOpenAIKey ? 'eye-off' : 'eye'} size={18} color="rgba(147, 210, 232, 0.65)" />
             </TouchableOpacity>
           </View>
 
@@ -90,7 +91,7 @@ export default function SettingsScreen() {
               style={styles.eyeButton}
               onPress={() => setShowAnthropicKey(!showAnthropicKey)}
             >
-              <Text>{showAnthropicKey ? '🙈' : '👁️'}</Text>
+              <Feather name={showAnthropicKey ? 'eye-off' : 'eye'} size={18} color="rgba(147, 210, 232, 0.65)" />
             </TouchableOpacity>
           </View>
         </View>
@@ -190,11 +191,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(224, 242, 254, 0.95)',
     marginBottom: 6,
+    fontFamily: 'Avenir',
   },
   sectionSubtitle: {
     fontSize: 13,
     color: 'rgba(147, 210, 232, 0.65)',
     marginBottom: 16,
+    fontFamily: 'Avenir',
   },
   label: {
     fontSize: 14,
@@ -202,8 +205,9 @@ const styles = StyleSheet.create({
     color: 'rgba(224, 242, 254, 0.95)',
     marginTop: 14,
     marginBottom: 6,
+    fontFamily: 'Avenir',
   },
-  hint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', marginBottom: 10 },
+  hint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', marginBottom: 10, fontFamily: 'Avenir' },
 
   // ── Input rows ─────────────────────────────────────────────────────────────
   inputRow: {
@@ -221,6 +225,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    fontFamily: 'Avenir',
   },
   eyeButton: { padding: 4 },
 
@@ -244,7 +249,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#48cae4',
     borderColor: '#48cae4',
   },
-  thresholdButtonText: { color: '#48cae4', fontSize: 13, fontWeight: '500' },
+  thresholdButtonText: { color: '#48cae4', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
   thresholdButtonTextSelected: { color: '#010c1a', fontWeight: '700' },
 
   // ── Save button ────────────────────────────────────────────────────────────
@@ -260,9 +265,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  saveButtonText: { color: '#010c1a', fontSize: 17, fontWeight: '700' },
+  saveButtonText: { color: '#010c1a', fontSize: 17, fontWeight: '700', fontFamily: 'Avenir' },
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   footer: { alignItems: 'center', marginTop: 24, marginBottom: 12 },
-  footerText: { color: 'rgba(147, 210, 232, 0.35)', fontSize: 13, textAlign: 'center' },
+  footerText: { color: 'rgba(147, 210, 232, 0.35)', fontSize: 13, textAlign: 'center', fontFamily: 'Avenir' },
 });

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import { Feather } from '@expo/vector-icons';
 import {
   View,
   Text,
@@ -251,10 +252,10 @@ export default function TranscriptsScreen() {
       second: '2-digit',
     });
 
-  const BADGE: Record<JournalItem['kind'], string> = {
-    transcript: '🎙️',
-    manual: '🗒️',
-    clip: '🎵',
+  const ICON_NAME: Record<JournalItem['kind'], string> = {
+    transcript: 'mic',
+    manual: 'edit-3',
+    clip: 'music',
   };
 
   const BORDER: Record<JournalItem['kind'], string> = {
@@ -288,13 +289,13 @@ export default function TranscriptsScreen() {
       >
         {selectMode && (
           <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-            {isSelected && <Text style={styles.checkmark}>✓</Text>}
+            {isSelected && <Feather name="check" size={13} color="#010c1a" />}
           </View>
         )}
         <View style={styles.cardBody}>
           <View style={styles.cardHeader}>
             <View style={styles.cardHeaderLeft}>
-              <Text style={styles.kindBadge}>{BADGE[item.kind]}</Text>
+              <Feather name={ICON_NAME[item.kind] as any} size={12} color="rgba(147, 210, 232, 0.65)" />
               <Text style={styles.cardTime}>{formatTime(item.data.timestamp)}</Text>
               {!isManual && (
                 <Text style={styles.cardDuration}> · {item.data.duration.toFixed(1)}s</Text>
@@ -310,7 +311,7 @@ export default function TranscriptsScreen() {
                     style={styles.editBtn}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={styles.editBtnText}>✎</Text>
+                    <Feather name="edit-2" size={11} color="#48cae4" />
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
@@ -318,7 +319,7 @@ export default function TranscriptsScreen() {
                   style={styles.deleteBtn}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={styles.deleteBtnText}>✕</Text>
+                  <Feather name="x" size={10} color="#e63946" />
                 </TouchableOpacity>
               </View>
             )}
@@ -377,7 +378,7 @@ export default function TranscriptsScreen() {
       {/* Top bar */}
       <View style={styles.topBar}>
         <View style={styles.searchBox}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Feather name="search" size={14} color="rgba(72, 202, 228, 0.4)" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search transcripts…"
@@ -388,7 +389,7 @@ export default function TranscriptsScreen() {
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch('')}>
-              <Text style={styles.clearSearch}>✕</Text>
+              <Feather name="x" size={14} color="rgba(147, 210, 232, 0.35)" />
             </TouchableOpacity>
           )}
         </View>
@@ -479,10 +480,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(72, 202, 228, 0.13)',
   },
-  searchIcon: { fontSize: 14 },
-  searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14 },
-  clearSearch: { color: 'rgba(147, 210, 232, 0.35)', fontSize: 13, paddingHorizontal: 4 },
-  actionBtn: { color: '#48cae4', fontSize: 15, fontWeight: '600' },
+  searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontFamily: 'Avenir' },
+  actionBtn: { color: '#48cae4', fontSize: 15, fontWeight: '600', fontFamily: 'Avenir' },
   disabled: { opacity: 0.35 },
 
   // ── Select bar ────────────────────────────────────────────────────────────
@@ -496,9 +495,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(72, 202, 228, 0.13)',
   },
-  selectBarBtn: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40 },
-  selectCount: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontWeight: '500' },
-  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '700', minWidth: 40, textAlign: 'right' },
+  selectBarBtn: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40, fontFamily: 'Avenir' },
+  selectCount: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
+  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '700', minWidth: 40, textAlign: 'right', fontFamily: 'Avenir' },
 
   // ── Section headers ───────────────────────────────────────────────────────
   sectionHeader: {
@@ -513,8 +512,8 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(72, 202, 228, 0.08)',
   },
   sectionHeaderLeft: { flex: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)' },
-  sectionCount: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', marginTop: 2 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
+  sectionCount: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', marginTop: 2, fontFamily: 'Avenir' },
   deleteDayBtn: {
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -523,7 +522,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(230, 57, 70, 0.35)',
   },
-  deleteDayBtnText: { color: '#e63946', fontSize: 12, fontWeight: '600' },
+  deleteDayBtnText: { color: '#e63946', fontSize: 12, fontWeight: '600', fontFamily: 'Avenir' },
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   listContent: { paddingBottom: 32 },
@@ -563,7 +562,6 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   checkboxSelected: { backgroundColor: '#48cae4', borderColor: '#48cae4' },
-  checkmark: { color: '#010c1a', fontSize: 13, fontWeight: '700' },
   cardBody: { flex: 1 },
   cardHeader: {
     flexDirection: 'row',
@@ -572,9 +570,8 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  kindBadge: { fontSize: 12, marginRight: 5 },
-  cardTime: { fontSize: 12, color: 'rgba(147, 210, 232, 0.65)' },
-  cardDuration: { fontSize: 11, color: 'rgba(147, 210, 232, 0.35)' },
+  cardTime: { fontSize: 12, color: 'rgba(147, 210, 232, 0.65)', fontFamily: 'Avenir' },
+  cardDuration: { fontSize: 11, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   editBtn: {
     width: 22,
@@ -586,7 +583,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  editBtnText: { color: '#48cae4', fontSize: 11, fontWeight: '700' },
   deleteBtn: {
     width: 22,
     height: 22,
@@ -597,9 +593,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  deleteBtnText: { color: '#e63946', fontSize: 10, fontWeight: '700' },
-  clipLabel: { fontSize: 13, color: '#f4a261', fontStyle: 'italic' },
-  cardText: { fontSize: 14, color: 'rgba(147, 210, 232, 0.65)', lineHeight: 20 },
+  clipLabel: { fontSize: 13, color: '#f4a261', fontStyle: 'italic', fontFamily: 'Avenir' },
+  cardText: { fontSize: 14, color: 'rgba(147, 210, 232, 0.65)', lineHeight: 20, fontFamily: 'Avenir' },
   photoThumb: {
     width: '100%',
     height: 160,
@@ -612,5 +607,6 @@ const styles = StyleSheet.create({
     marginTop: 80,
     fontSize: 15,
     lineHeight: 24,
+    fontFamily: 'Avenir',
   },
 });

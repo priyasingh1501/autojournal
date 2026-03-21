@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { AppState, AppStateStatus, Linking, Platform, Text } from 'react-native';
+import { AppState, AppStateStatus, Linking, Platform } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
@@ -124,28 +125,28 @@ export default function App() {
             name="Journal"
             component={HomeScreen}
             options={{
-              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>🎙️</Text>,
+              tabBarIcon: ({ color }) => <Feather name="mic" size={22} color={color} />,
             }}
           />
           <Tab.Screen
             name="Notes"
             component={TranscriptsScreen}
             options={{
-              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>📝</Text>,
+              tabBarIcon: ({ color }) => <Feather name="file-text" size={22} color={color} />,
             }}
           />
           <Tab.Screen
             name="Summary"
             component={SummaryScreen}
             options={{
-              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>✨</Text>,
+              tabBarIcon: ({ color }) => <Feather name="star" size={22} color={color} />,
             }}
           />
           <Tab.Screen
             name="Settings"
             component={SettingsScreen}
             options={{
-              tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⚙️</Text>,
+              tabBarIcon: ({ color }) => <Feather name="settings" size={22} color={color} />,
             }}
           />
         </Tab.Navigator>

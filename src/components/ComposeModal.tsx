@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { Feather } from '@expo/vector-icons';
 import {
   Modal,
   View,
@@ -247,7 +248,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
                   onPress={() => setPhotoUri(null)}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 >
-                  <Text style={styles.removePhotoText}>✕</Text>
+                  <Feather name="x" size={12} color="#fff" />
                 </TouchableOpacity>
               </View>
             )}
@@ -257,7 +258,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
               style={styles.photoButton}
               onPress={() => pickImage('library')}
             >
-              <Text style={styles.photoButtonIcon}>📷</Text>
+              <Feather name="camera" size={16} color="rgba(147, 210, 232, 0.65)" />
               <Text style={styles.photoButtonText}>
                 {photoUri ? 'Change photo' : 'Add photo'}
               </Text>
@@ -298,9 +299,9 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(72, 202, 228, 0.08)',
   },
   headerBtn: { minWidth: 56 },
-  title: { fontSize: 16, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)' },
-  cancelText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 15 },
-  saveText: { color: '#48cae4', fontSize: 15, fontWeight: '700', textAlign: 'right' },
+  title: { fontSize: 16, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
+  cancelText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 15, fontFamily: 'Avenir' },
+  saveText: { color: '#48cae4', fontSize: 15, fontWeight: '700', textAlign: 'right', fontFamily: 'Avenir' },
   saveTextDisabled: { opacity: 0.35 },
   body: { paddingHorizontal: 18, paddingTop: 14 },
   textInput: {
@@ -310,6 +311,7 @@ const styles = StyleSheet.create({
     minHeight: 120,
     marginBottom: 14,
     backgroundColor: 'transparent',
+    fontFamily: 'Avenir',
   },
   photoPreviewContainer: {
     marginBottom: 12,
@@ -333,7 +335,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  removePhotoText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   photoButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -346,6 +347,5 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(72, 202, 228, 0.13)',
     alignSelf: 'flex-start',
   },
-  photoButtonIcon: { fontSize: 16 },
-  photoButtonText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '500' },
+  photoButtonText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
 });

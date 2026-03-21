@@ -1,6 +1,9 @@
 import { StyleSheet } from 'react-native';
 
 export const T = {
+  // ── Font ────────────────────────────────────────────────────────────────────
+  FONT: 'Avenir' as const,
+
   // ── Backgrounds ────────────────────────────────────────────────────────────
   BG_DEEP:      '#010c1a',
   BG_SURFACE:   '#020e20',

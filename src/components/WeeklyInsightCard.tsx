@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Feather } from '@expo/vector-icons';
 import {
   View,
   Text,
@@ -83,7 +84,7 @@ export default function WeeklyInsightCard() {
         >
           {refreshing
             ? <ActivityIndicator size="small" color="#48cae4" />
-            : <Text style={styles.refreshIcon}>↻</Text>}
+            : <Feather name="refresh-cw" size={14} color="rgba(147, 210, 232, 0.65)" />}
         </TouchableOpacity>
       </View>
 
@@ -151,6 +152,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(224, 242, 254, 0.95)',
     flex: 1,
+    fontFamily: 'Avenir',
   },
   refreshBtn: {
     width: 30,
@@ -162,13 +164,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  refreshIcon: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 15, fontWeight: '700' },
-
   lastUpdated: {
     fontSize: 11,
     color: 'rgba(147, 210, 232, 0.35)',
     marginTop: 12,
     textAlign: 'right',
+    fontFamily: 'Avenir',
   },
 
   skeletonLine: {
@@ -184,6 +185,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 8,
     fontStyle: 'italic',
+    fontFamily: 'Avenir',
   },
-  errorText: { fontSize: 14, color: '#e63946', lineHeight: 22 },
+  errorText: { fontSize: 14, color: '#e63946', lineHeight: 22, fontFamily: 'Avenir' },
 });

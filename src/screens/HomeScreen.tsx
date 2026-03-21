@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Feather } from '@expo/vector-icons';
 import {
   View,
   Text,
@@ -206,9 +207,11 @@ export default function HomeScreen() {
               onPress={toggleMonitoring}
               activeOpacity={0.8}
             >
-              <Text style={styles.mainButtonIcon}>
-                {status === 'idle' ? '🎙️' : status === 'recording' ? '🔴' : '👂'}
-              </Text>
+              <Feather
+                name={status === 'recording' ? 'square' : 'mic'}
+                size={36}
+                color={isActive ? '#010c1a' : '#48cae4'}
+              />
             </TouchableOpacity>
           </Animated.View>
         </View>
@@ -234,9 +237,10 @@ export default function HomeScreen() {
             </View>
           ) : (
             <View style={styles.pendingRow}>
-              <Text style={styles.pendingText}>
-                🎵 {pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} saved locally
-              </Text>
+              <View style={{flexDirection:'row', alignItems:'center', gap:4, flex:1}}>
+                <Feather name="music" size={14} color="#f4a261" />
+                <Text style={styles.pendingText}> {pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} saved locally</Text>
+              </View>
               <View style={styles.pendingActions}>
                 <TouchableOpacity style={styles.transcribeButton} onPress={handleTranscribeNow}>
                   <Text style={styles.transcribeButtonText}>Transcribe</Text>
@@ -270,9 +274,11 @@ export default function HomeScreen() {
                 ]}
               >
                 <View style={styles.transcriptCardHeader}>
-                  <Text style={styles.kindBadge}>
-                    {entry.kind === 'manual' ? '🗒️' : '🎙️'}
-                  </Text>
+                  <Feather
+                    name={entry.kind === 'manual' ? 'edit-3' : 'mic'}
+                    size={11}
+                    color="rgba(147, 210, 232, 0.65)"
+                  />
                   <Text style={styles.transcriptTime}>
                     {new Date(entry.timestamp).toLocaleTimeString([], {
                       hour: '2-digit',
@@ -284,7 +290,7 @@ export default function HomeScreen() {
                     onPress={() => setEditingEntry({ ...entry, date: today })}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Text style={styles.editBtnText}>✎</Text>
+                    <Feather name="edit-2" size={11} color="#48cae4" />
                   </TouchableOpacity>
                 </View>
                 {entry.text.length > 0 && (
@@ -304,7 +310,7 @@ export default function HomeScreen() {
           })}
           {todayTranscripts.length === 0 && (
             <Text style={styles.emptyText}>
-              No entries yet.{'\n'}Tap the mic to start listening, or ✏️ to write.
+              No entries yet.{'\n'}Tap the mic to start listening, or the pen to write.
             </Text>
           )}
       </ScrollView>
@@ -315,7 +321,7 @@ export default function HomeScreen() {
         onPress={() => setShowCompose(true)}
         activeOpacity={0.85}
       >
-        <Text style={styles.fabIcon}>✏️</Text>
+        <Feather name="edit-2" size={22} color="#010c1a" />
       </TouchableOpacity>
 
       <ComposeModal
@@ -377,10 +383,9 @@ const styles = StyleSheet.create({
     borderColor: '#48cae4',
     shadowOpacity: 0.35,
   },
-  mainButtonIcon: { fontSize: 40 },
 
-  statusText: { marginTop: 16, fontSize: 18, fontWeight: '600' },
-  transcriptCount: { marginTop: 8, fontSize: 14, color: 'rgba(147, 210, 232, 0.35)' },
+  statusText: { marginTop: 16, fontSize: 18, fontWeight: '600', fontFamily: 'Avenir' },
+  transcriptCount: { marginTop: 8, fontSize: 14, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
 
   // ── Pending banner ────────────────────────────────────────────────────────
   pendingBanner: {
@@ -398,7 +403,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   pendingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
-  pendingText: { color: '#f4a261', fontSize: 14, fontWeight: '500', flex: 1 },
+  pendingText: { color: '#f4a261', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
   pendingActions: { flexDirection: 'row', gap: 8 },
   transcribeButton: {
     backgroundColor: '#f4a261',
@@ -406,7 +411,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 8,
   },
-  transcribeButtonText: { color: '#010c1a', fontSize: 13, fontWeight: '700' },
+  transcribeButtonText: { color: '#010c1a', fontSize: 13, fontWeight: '700', fontFamily: 'Avenir' },
   discardButton: {
     backgroundColor: 'rgba(72, 202, 228, 0.08)',
     paddingHorizontal: 14,
@@ -415,7 +420,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(72, 202, 228, 0.2)',
   },
-  discardButtonText: { color: '#48cae4', fontSize: 13, fontWeight: '600' },
+  discardButtonText: { color: '#48cae4', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
 
   // ── Scroll area ───────────────────────────────────────────────────────────
   scrollArea: { flex: 1 },
@@ -425,6 +430,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'rgba(224, 242, 254, 0.95)',
     marginBottom: 12,
+    fontFamily: 'Avenir',
   },
 
   // ── Entry cards ───────────────────────────────────────────────────────────
@@ -445,8 +451,7 @@ const styles = StyleSheet.create({
   },
   transcriptCardManual: { borderLeftColor: 'rgba(0, 180, 216, 0.4)' },
   transcriptCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  kindBadge: { fontSize: 11 },
-  transcriptTime: { fontSize: 12, color: 'rgba(147, 210, 232, 0.65)', flex: 1 },
+  transcriptTime: { fontSize: 12, color: 'rgba(147, 210, 232, 0.65)', flex: 1, fontFamily: 'Avenir' },
   editBtn: {
     width: 22,
     height: 22,
@@ -457,8 +462,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  editBtnText: { color: '#48cae4', fontSize: 11, fontWeight: '700' },
-  transcriptText: { fontSize: 15, color: 'rgba(147, 210, 232, 0.65)', lineHeight: 22 },
+  transcriptText: { fontSize: 15, color: 'rgba(147, 210, 232, 0.65)', lineHeight: 22, fontFamily: 'Avenir' },
   photoThumb: {
     width: '100%',
     height: 140,
@@ -471,6 +475,7 @@ const styles = StyleSheet.create({
     marginTop: 40,
     fontSize: 15,
     lineHeight: 24,
+    fontFamily: 'Avenir',
   },
 
   // ── FAB ───────────────────────────────────────────────────────────────────
@@ -490,5 +495,4 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 10,
   },
-  fabIcon: { fontSize: 22, color: '#010c1a' },
 });
