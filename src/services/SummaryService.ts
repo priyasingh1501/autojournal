@@ -118,7 +118,7 @@ Rules:
 - Write in second person ("You...").`;
 
   // Build multimodal content
-  const content: Anthropic.ContentBlockParam[] = [];
+  const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
 
   content.push({
     type: 'text',

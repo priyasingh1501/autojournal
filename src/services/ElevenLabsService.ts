@@ -1,0 +1,76 @@
+import * as FileSystem from 'expo-file-system/legacy';
+
+const BASE = 'https://api.elevenlabs.io/v1';
+
+export interface ELVoice {
+  voice_id: string;
+  name: string;
+  category: string; // 'premade' | 'cloned' | 'generated' etc.
+}
+
+// ── Fetch available voices ────────────────────────────────────────────────────
+export async function fetchElevenLabsVoices(apiKey: string): Promise<ELVoice[]> {
+  const res = await fetch(`${BASE}/voices`, {
+    headers: { 'xi-api-key': apiKey },
+  });
+  if (!res.ok) throw new Error(`ElevenLabs voices error: ${res.status}`);
+  const data = await res.json();
+  return (data.voices as any[]).map(v => ({
+    voice_id: v.voice_id,
+    name: v.name,
+    category: v.category ?? 'premade',
+  }));
+}
+
+// ── Synthesize text → local .mp3 URI ─────────────────────────────────────────
+export async function synthesizeSpeech(
+  text: string,
+  voiceId: string,
+  apiKey: string,
+): Promise<string> {
+  const res = await fetch(`${BASE}/text-to-speech/${voiceId}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'audio/mpeg',
+    },
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_turbo_v2',   // low-latency model
+      voice_settings: {
+        stability: 0.45,
+        similarity_boost: 0.80,
+        style: 0.30,
+        use_speaker_boost: true,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => res.status.toString());
+    throw new Error(`ElevenLabs TTS error: ${err}`);
+  }
+
+  // Decode response as base64 and write to a temp file
+  const blob = await res.blob();
+  const reader = new FileReader();
+  const base64 = await new Promise<string>((resolve, reject) => {
+    reader.onload = () => {
+      const result = reader.result as string;
+      // result = "data:audio/mpeg;base64,AAAA..."
+      resolve(result.split(',')[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  const dir = FileSystem.cacheDirectory;
+  if (!dir) throw new Error('Cache directory unavailable');
+  const uri = `${dir}el_tts_${Date.now()}.mp3`;
+  await FileSystem.writeAsStringAsync(uri, base64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  return uri;
+}

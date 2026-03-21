@@ -30,7 +30,9 @@ export interface AppSettings {
   silenceDuration: number; // ms to wait before stopping, default 2000
   summaryTime: string; // HH:MM, default "21:00"
   batchSize: number; // auto-transcribe when pending clips reach this count, 0 = manual only
-  ttsVoiceId?: string; // expo-speech voice identifier for the Reflect screen
+  ttsVoiceId?: string;          // expo-speech voice identifier for Chat mode
+  elevenLabsApiKey?: string;   // ElevenLabs API key for Call mode
+  elevenLabsVoiceId?: string;  // ElevenLabs voice ID for Call mode
 }
 
 export interface WeeklyInsight {

@@ -17,6 +17,7 @@ import { DailySummary, ConversationMessage } from '../types';
 import { transcribeAudio } from '../services/TranscriptionService';
 import { sendMessage, getOpeningMessage } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
+import { synthesizeSpeech } from '../services/ElevenLabsService';
 
 interface Props {
   summary: DailySummary;
@@ -144,21 +145,55 @@ export default function TalkScreen({ summary, onClose }: Props) {
     if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
   };
 
-  // ── speak() → auto-starts listening when done ──────────────────────────
+  // ── speak() → ElevenLabs if configured, else expo-speech ────────────────
   const speak = useCallback(async (text: string) => {
     if (!activeRef.current) return;
     Speech.stop();
     setConvState('speaking');
-    const settings = await StorageService.getSettings();
-    const voiceId  = settings?.ttsVoiceId;
-    Speech.speak(text, {
-      rate: 0.92,
-      pitch: 1.0,
-      ...(voiceId ? { voice: voiceId } : {}),
-      onDone:    () => { if (activeRef.current) startListening(); },
-      onStopped: () => { if (activeRef.current) startListening(); },
-      onError:   () => { if (activeRef.current) startListening(); },
-    });
+
+    const settings  = await StorageService.getSettings();
+    const elKey     = settings?.elevenLabsApiKey?.trim();
+    const elVoiceId = settings?.elevenLabsVoiceId?.trim();
+
+    if (elKey && elVoiceId) {
+      // ── ElevenLabs path ────────────────────────────────────────────
+      try {
+        const uri = await synthesizeSpeech(text, elVoiceId, elKey);
+        if (!activeRef.current) return;
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+        const { sound } = await Audio.Sound.createAsync(
+          { uri },
+          { shouldPlay: true },
+          (status) => {
+            if (!status.isLoaded) return;
+            if (status.didJustFinish) {
+              sound.unloadAsync().catch(() => {});
+              if (activeRef.current) startListening();
+            }
+          },
+        );
+      } catch {
+        // ElevenLabs failed — fall through to expo-speech
+        if (!activeRef.current) return;
+        Speech.speak(text, {
+          rate: 0.92,
+          onDone:    () => { if (activeRef.current) startListening(); },
+          onStopped: () => { if (activeRef.current) startListening(); },
+          onError:   () => { if (activeRef.current) startListening(); },
+        });
+      }
+    } else {
+      // ── expo-speech fallback ───────────────────────────────────────
+      const voiceId = settings?.ttsVoiceId;
+      Speech.speak(text, {
+        rate: 0.92,
+        pitch: 1.0,
+        ...(voiceId ? { voice: voiceId } : {}),
+        onDone:    () => { if (activeRef.current) startListening(); },
+        onStopped: () => { if (activeRef.current) startListening(); },
+        onError:   () => { if (activeRef.current) startListening(); },
+      });
+    }
   }, []);
 
   // ── startListening() — VAD hands-free ─────────────────────────────────

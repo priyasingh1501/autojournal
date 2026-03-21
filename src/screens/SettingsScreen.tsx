@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Speech from 'expo-speech';
 import { StorageService } from '../services/StorageService';
+import { fetchElevenLabsVoices, ELVoice } from '../services/ElevenLabsService';
 import { AppSettings } from '../types';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -31,6 +32,10 @@ export default function SettingsScreen() {
   const [voices, setVoices] = useState<Speech.Voice[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
+  const [elVoices, setElVoices] = useState<ELVoice[]>([]);
+  const [loadingElVoices, setLoadingElVoices] = useState(false);
+  const [elVoiceError, setElVoiceError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -52,6 +57,20 @@ export default function SettingsScreen() {
       setVoices([]);
     } finally {
       setLoadingVoices(false);
+    }
+  };
+
+  const loadElVoices = async (key: string) => {
+    if (!key.trim()) return;
+    setLoadingElVoices(true);
+    setElVoiceError(null);
+    try {
+      const list = await fetchElevenLabsVoices(key.trim());
+      setElVoices(list.sort((a, b) => a.name.localeCompare(b.name)));
+    } catch (e: any) {
+      setElVoiceError(e?.message ?? 'Could not load voices.');
+    } finally {
+      setLoadingElVoices(false);
     }
   };
 
@@ -239,6 +258,64 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {/* ElevenLabs — Call voice */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Call Voice · ElevenLabs</Text>
+          <Text style={styles.sectionSubtitle}>
+            Add your ElevenLabs API key for a lifelike voice during Call mode. Leave blank to use the device voice.
+          </Text>
+
+          <Text style={styles.label}>ElevenLabs API Key</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.input}
+              value={settings.elevenLabsApiKey ?? ''}
+              onChangeText={v => setSettings(prev => ({ ...prev, elevenLabsApiKey: v }))}
+              placeholder="sk_..."
+              placeholderTextColor="rgba(152, 212, 250, 0.40)"
+              secureTextEntry={!showElevenLabsKey}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity style={styles.eyeButton} onPress={() => setShowElevenLabsKey(v => !v)}>
+              <Feather name={showElevenLabsKey ? 'eye-off' : 'eye'} size={16} color="rgba(152, 212, 250, 0.65)" />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.loadVoicesBtn}
+            onPress={() => loadElVoices(settings.elevenLabsApiKey ?? '')}
+            disabled={loadingElVoices || !settings.elevenLabsApiKey?.trim()}
+          >
+            {loadingElVoices
+              ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.80)" />
+              : <Text style={styles.loadVoicesBtnText}>Load voices</Text>
+            }
+          </TouchableOpacity>
+
+          {elVoiceError && <Text style={styles.elError}>{elVoiceError}</Text>}
+
+          {elVoices.map(voice => {
+            const isSelected = settings.elevenLabsVoiceId === voice.voice_id;
+            return (
+              <TouchableOpacity
+                key={voice.voice_id}
+                style={[styles.voiceRow, isSelected && styles.voiceRowSelected]}
+                onPress={() => setSettings(prev => ({ ...prev, elevenLabsVoiceId: voice.voice_id }))}
+                activeOpacity={0.75}
+              >
+                <View style={styles.voiceInfo}>
+                  <Text style={[styles.voiceName, isSelected && styles.voiceNameSelected]}>{voice.name}</Text>
+                  <Text style={styles.voiceMeta}>{voice.category}</Text>
+                </View>
+                {isSelected && (
+                  <Feather name="check" size={14} color="rgba(152, 212, 250, 0.90)" />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
         <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
           <Text style={styles.saveButtonText}>Save Settings</Text>
         </TouchableOpacity>
@@ -376,6 +453,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // ── ElevenLabs ─────────────────────────────────────────────────────────────
+  loadVoicesBtn: {
+    marginTop: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(9, 41, 173, 0.12)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.22)',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    minWidth: 110,
+  },
+  loadVoicesBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontFamily: 'GillSans-Light' },
+  elError: { fontSize: 12, color: '#e63946', marginTop: 8, fontFamily: 'GillSans-Light' },
 
   // ── Save button ────────────────────────────────────────────────────────────
   saveButton: {

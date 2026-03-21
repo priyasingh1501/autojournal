@@ -10,7 +10,6 @@ import React from 'react';
 import {
   FlexWidget,
   TextWidget,
-  ClickableArea,
   OverlapWidget,
   ImageWidget,
   SvgWidget,
@@ -67,27 +66,26 @@ export function MicWidget({ isMonitoring }: MicWidgetProps) {
         }}
       >
         {/* Mic / stop button */}
-        <ClickableArea clickAction="TOGGLE_MONITORING">
-          <FlexWidget
-            style={{
-              width: 60,
-              height: 60,
-              borderRadius: 30,
-              backgroundColor: isMonitoring ? '#e94560' : '#0929AD',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: 1,
-              borderColor: isMonitoring
-                ? 'rgba(233, 69, 96, 0.60)'
-                : 'rgba(152, 212, 250, 0.40)',
-            }}
-          >
-            <SvgWidget
-              svg={isMonitoring ? STOP_SVG : MIC_SVG}
-              style={{ width: 26, height: 26 }}
-            />
-          </FlexWidget>
-        </ClickableArea>
+        <FlexWidget
+          clickAction="TOGGLE_MONITORING"
+          style={{
+            width: 60,
+            height: 60,
+            borderRadius: 30,
+            backgroundColor: isMonitoring ? '#e94560' : '#0929AD',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderWidth: 1,
+            borderColor: isMonitoring
+              ? 'rgba(233, 69, 96, 0.60)'
+              : 'rgba(152, 212, 250, 0.40)',
+          }}
+        >
+          <SvgWidget
+            svg={isMonitoring ? STOP_SVG : MIC_SVG}
+            style={{ width: 26, height: 26 }}
+          />
+        </FlexWidget>
 
         {/* App / status label */}
         <TextWidget
