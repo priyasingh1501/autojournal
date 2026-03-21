@@ -301,17 +301,17 @@ export default function SummaryScreen() {
         <View style={styles.divider} />
         <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
         <Markdown style={markdownStyles}>{item.summary}</Markdown>
-
-        {/* Talk about this day */}
-        <TouchableOpacity
-          style={styles.talkBtn}
-          onPress={() => setTalkingSummary(item)}
-          activeOpacity={0.85}
-        >
-          <Feather name="message-circle" size={15} color="rgba(224, 242, 254, 0.90)" />
-          <Text style={styles.talkBtnText}>Talk about this day</Text>
-        </TouchableOpacity>
       </ScrollView>
+
+      {/* Sticky primary CTA — always visible at card bottom */}
+      <TouchableOpacity
+        style={styles.talkBtn}
+        onPress={() => setTalkingSummary(item)}
+        activeOpacity={0.85}
+      >
+        <Feather name="message-circle" size={16} color="rgba(224, 242, 254, 0.95)" />
+        <Text style={styles.talkBtnText}>Talk about this day</Text>
+      </TouchableOpacity>
     </>
   );
 
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   },
 
   // ── Card inner content ────────────────────────────────────────────────────
-  cardScroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 40 },
+  cardScroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 24 },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -626,24 +626,21 @@ const styles = StyleSheet.create({
   },
   fabDisabled: { opacity: 0.5 },
 
-  // ── Talk button ────────────────────────────────────────────────────────────
+  // ── Talk button — sticky primary CTA at card bottom ──────────────────────
   talkBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    backgroundColor: 'rgba(9, 41, 173, 0.15)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.18)',
     justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    backgroundColor: '#0929AD',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(152, 212, 250, 0.15)',
   },
   talkBtnText: {
-    fontSize: 14,
-    color: 'rgba(224, 242, 254, 0.90)',
+    fontSize: 15,
+    color: 'rgba(224, 242, 254, 0.95)',
     fontFamily: 'GillSans-Light',
-    letterSpacing: 0.2,
+    letterSpacing: 0.3,
   },
 });
