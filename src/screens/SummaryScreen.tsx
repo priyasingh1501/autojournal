@@ -11,7 +11,9 @@ import {
   Alert,
   ScrollView,
   Dimensions,
+  ImageBackground,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
@@ -205,55 +207,105 @@ export default function SummaryScreen() {
 
   // ── card content ─────────────────────────────────────────────────────────
   const renderCardContent = (item: DailySummary, isTop: boolean) => (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      scrollEnabled={isTop}
-      contentContainerStyle={styles.cardScroll}
-    >
-      {/* Date + actions */}
-      <View style={styles.cardHeader}>
-        <View style={styles.cardHeaderLeft}>
-          <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
-          <Text style={styles.cardMeta}>
-            {item.transcriptCount} entr{item.transcriptCount !== 1 ? 'ies' : 'y'}
-            {' · '}generated {formatCreatedAt(item.createdAt)}
-          </Text>
-        </View>
-        {isTop && (
-          <View style={styles.cardActions}>
-            <TouchableOpacity
-              onPress={() => handleDownload(item)}
-              style={styles.actionBtn}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Feather name="download" size={13} color="rgba(152, 212, 250, 0.85)" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleGenerate(item.date)}
-              disabled={!!generatingDate}
-              style={styles.actionBtn}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              {generatingDate === item.date
-                ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
-                : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
-            </TouchableOpacity>
+    <>
+      {/* Jellyfish image header */}
+      {item.imageUri ? (
+        <ImageBackground
+          source={{ uri: item.imageUri }}
+          style={styles.cardImageHeader}
+          imageStyle={styles.cardImageStyle}
+          resizeMode="cover"
+        >
+          {/* Fade-to-card gradient at the bottom */}
+          <LinearGradient
+            colors={['transparent', 'rgba(2,6,14,0.55)', 'rgba(2,6,14,0.92)']}
+            style={StyleSheet.absoluteFill}
+          />
+          {/* Date + actions pinned over the image */}
+          <View style={styles.cardHeaderOnImage}>
+            <View style={styles.cardHeaderLeft}>
+              <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
+              <Text style={styles.cardMeta}>
+                {item.transcriptCount} entr{item.transcriptCount !== 1 ? 'ies' : 'y'}
+                {' · '}generated {formatCreatedAt(item.createdAt)}
+              </Text>
+            </View>
+            {isTop && (
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  onPress={() => handleDownload(item)}
+                  style={styles.actionBtn}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Feather name="download" size={13} color="rgba(152, 212, 250, 0.85)" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => handleGenerate(item.date)}
+                  disabled={!!generatingDate}
+                  style={styles.actionBtn}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  {generatingDate === item.date
+                    ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
+                    : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
-        )}
-      </View>
-
-      {/* Five-section insights */}
-      {item.insightText ? (
-        <View style={styles.insightSection}>
-          {renderInsightSections(item.insightText)}
+        </ImageBackground>
+      ) : (
+        /* Fallback header when no image yet */
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
+            <Text style={styles.cardMeta}>
+              {item.transcriptCount} entr{item.transcriptCount !== 1 ? 'ies' : 'y'}
+              {' · '}generated {formatCreatedAt(item.createdAt)}
+            </Text>
+          </View>
+          {isTop && (
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                onPress={() => handleDownload(item)}
+                style={styles.actionBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="download" size={13} color="rgba(152, 212, 250, 0.85)" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => handleGenerate(item.date)}
+                disabled={!!generatingDate}
+                style={styles.actionBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                {generatingDate === item.date
+                  ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
+                  : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
-      ) : null}
+      )}
 
-      {/* Full breakdown */}
-      <View style={styles.divider} />
-      <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
-      <Markdown style={markdownStyles}>{item.summary}</Markdown>
-    </ScrollView>
+      {/* Scrollable body */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={isTop}
+        contentContainerStyle={styles.cardScroll}
+      >
+        {/* Five-section insights */}
+        {item.insightText ? (
+          <View style={styles.insightSection}>
+            {renderInsightSections(item.insightText)}
+          </View>
+        ) : null}
+
+        {/* Full breakdown */}
+        <View style={styles.divider} />
+        <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
+        <Markdown style={markdownStyles}>{item.summary}</Markdown>
+      </ScrollView>
+    </>
   );
 
   // ── card stack render ─────────────────────────────────────────────────────
@@ -437,13 +489,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  // ── Card image header ─────────────────────────────────────────────────────
+  cardImageHeader: {
+    width: '100%',
+    height: 190,
+    justifyContent: 'flex-end',
+  },
+  cardImageStyle: {
+    opacity: 0.90,
+  },
+  cardHeaderOnImage: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+  },
+
   // ── Card inner content ────────────────────────────────────────────────────
   cardScroll: { padding: 18, paddingBottom: 40 },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 14,
+    padding: 18,
+    paddingBottom: 0,
   },
   cardHeaderLeft: { flex: 1 },
   cardDate: { fontSize: 20, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Baskerville' },
@@ -453,9 +523,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(6, 26, 55, 0.55)',
+    backgroundColor: 'rgba(2, 6, 14, 0.60)',
     borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.15)',
+    borderColor: 'rgba(152, 212, 250, 0.20)',
     alignItems: 'center',
     justifyContent: 'center',
   },

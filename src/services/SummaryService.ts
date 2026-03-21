@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import * as FileSystem from 'expo-file-system';
 import { TranscriptEntry, DailySummary } from '../types';
 import { StorageService } from './StorageService';
+import { generateSummaryImage } from './SummaryImageService';
 
 const MAX_PHOTOS = 8; // Claude handles up to ~20 but keep cost/latency reasonable
 
@@ -45,6 +46,11 @@ export async function generateDailySummary(
     apiKey: settings.anthropicApiKey,
     dangerouslyAllowBrowser: true,
   });
+
+  // Start jellyfish image generation in parallel with Claude — doesn't block summary
+  const imagePromise = settings.openaiApiKey
+    ? generateSummaryImage(date, settings.openaiApiKey)
+    : Promise.resolve(null);
 
   // Sort chronologically
   const sorted = [...transcripts].sort((a, b) => a.timestamp - b.timestamp);
@@ -180,12 +186,16 @@ Rules:
     ? fullText.slice(sentinelIdx + SENTINEL.length).trim()
     : undefined;
 
+  // Collect image result — may already be done since it ran in parallel with Claude
+  const imageUri = await imagePromise.catch(() => null);
+
   const summary: DailySummary = {
     date,
     summary: summaryText,
     insightText,
     transcriptCount: transcripts.length,
     createdAt: Date.now(),
+    imageUri: imageUri ?? undefined,
   };
 
   await StorageService.saveSummary(summary);

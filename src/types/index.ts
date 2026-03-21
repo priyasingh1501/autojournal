@@ -20,6 +20,7 @@ export interface DailySummary {
   insightText?: string; // five-section plain-text insight (optional for backward compat)
   transcriptCount: number;
   createdAt: number;
+  imageUri?: string; // local file path of generated jellyfish card image
 }
 
 export interface AppSettings {
