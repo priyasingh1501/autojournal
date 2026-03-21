@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DailySummary, ConversationMessage } from '../types';
 import { sendMessage, getOpeningMessage } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
@@ -127,15 +127,16 @@ export default function ChatScreen({ summary, onClose }: Props) {
   };
 
   const canSend = draft.trim().length > 0 && convState === 'idle';
+  const insets  = useSafeAreaInsets();
 
   // ── Render ────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
-      >
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
+      <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
           <View>
@@ -201,8 +202,8 @@ export default function ChatScreen({ summary, onClose }: Props) {
           )}
         </ScrollView>
 
-        {/* Text input bar */}
-        <View style={styles.inputBar}>
+        {/* Text input bar — bottom inset applied inline so KAV can override it */}
+        <View style={[styles.inputBar, { paddingBottom: Math.max(12, insets.bottom) }]}>
           <TextInput
             ref={inputRef}
             style={styles.textInput}
@@ -225,13 +226,14 @@ export default function ChatScreen({ summary, onClose }: Props) {
             <Feather name="arrow-up" size={18} color={canSend ? '#fff' : 'rgba(224, 242, 254, 0.30)'} />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#02060E' },
+  root:      { flex: 1, backgroundColor: '#02060E' },
+  container: { flex: 1 },
 
   // ── Header ───────────────────────────────────────────────────────────
   header: {
@@ -308,7 +310,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    // paddingBottom applied inline with safe area inset
     gap: 10,
     borderTopWidth: 1,
     borderTopColor: 'rgba(152, 212, 250, 0.08)',
