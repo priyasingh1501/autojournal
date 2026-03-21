@@ -17,7 +17,8 @@ export interface PendingClip {
 export interface DailySummary {
   date: string; // YYYY-MM-DD
   summary: string;
-  insightText?: string; // five-section plain-text insight (optional for backward compat)
+  insightText?: string;    // five-section plain-text insight (optional for backward compat)
+  reflectionText?: string; // generated after a Call or Chat session ends
   transcriptCount: number;
   createdAt: number;
   imageUri?: string; // local file path of generated jellyfish card image

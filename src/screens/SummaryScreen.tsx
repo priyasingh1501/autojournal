@@ -299,6 +299,15 @@ export default function SummaryScreen() {
           </View>
         ) : null}
 
+        {/* Reflection — generated from Call / Chat session */}
+        {item.reflectionText ? (
+          <>
+            <View style={styles.divider} />
+            <Text style={styles.breakdownLabel}>REFLECTION</Text>
+            <Text style={styles.reflectionText}>{item.reflectionText}</Text>
+          </>
+        ) : null}
+
         {/* Full breakdown */}
         <View style={styles.divider} />
         <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
@@ -450,10 +459,13 @@ export default function SummaryScreen() {
         visible={!!callSummary}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setCallSummary(null)}
+        onRequestClose={() => { setCallSummary(null); loadSummaries(); }}
       >
         {callSummary && (
-          <TalkScreen summary={callSummary} onClose={() => setCallSummary(null)} />
+          <TalkScreen
+            summary={callSummary}
+            onClose={() => { setCallSummary(null); loadSummaries(); }}
+          />
         )}
       </Modal>
 
@@ -462,10 +474,13 @@ export default function SummaryScreen() {
         visible={!!chatSummary}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setChatSummary(null)}
+        onRequestClose={() => { setChatSummary(null); loadSummaries(); }}
       >
         {chatSummary && (
-          <ChatScreen summary={chatSummary} onClose={() => setChatSummary(null)} />
+          <ChatScreen
+            summary={chatSummary}
+            onClose={() => { setChatSummary(null); loadSummaries(); }}
+          />
         )}
       </Modal>
     </SafeAreaView>
@@ -580,6 +595,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     marginBottom: 8,
     fontFamily: 'GillSans-Light',
+  },
+  reflectionText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: 'rgba(224, 242, 254, 0.75)',
+    fontFamily: 'Baskerville',
+    fontStyle: 'italic',
+    marginBottom: 4,
   },
 
   // ── Swipe direction labels ─────────────────────────────────────────────────

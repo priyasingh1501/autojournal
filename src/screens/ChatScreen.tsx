@@ -13,7 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DailySummary, ConversationMessage } from '../types';
-import { sendMessage, getOpeningMessage } from '../services/ConversationService';
+import { sendMessage, getOpeningMessage, generateReflection } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
 
 interface Props {
@@ -34,10 +34,11 @@ function formatDate(date: string): string {
 }
 
 export default function ChatScreen({ summary, onClose }: Props) {
-  const [messages,  setMessages]  = useState<ConversationMessage[]>([]);
-  const [convState, setConvState] = useState<ConvState>('loading');
-  const [draft,     setDraft]     = useState('');
-  const [error,     setError]     = useState<string | null>(null);
+  const [messages,         setMessages]  = useState<ConversationMessage[]>([]);
+  const [convState,        setConvState] = useState<ConvState>('loading');
+  const [draft,            setDraft]     = useState('');
+  const [error,            setError]     = useState<string | null>(null);
+  const [savingReflection, setSaving]    = useState(false);
 
   const activeRef   = useRef(true);
   const messagesRef = useRef<ConversationMessage[]>([]);
@@ -126,6 +127,20 @@ export default function ChatScreen({ summary, onClose }: Props) {
     }
   };
 
+  const handleClose = async () => {
+    const userMessages = messagesRef.current.filter(m => m.role === 'user');
+    if (userMessages.length > 0 && apiKeyRef.current) {
+      setSaving(true);
+      try {
+        const reflection = await generateReflection(
+          summary, messagesRef.current, apiKeyRef.current, 'chat',
+        );
+        await StorageService.saveSummary({ ...summary, reflectionText: reflection });
+      } catch { /* reflection is best-effort */ }
+    }
+    onClose();
+  };
+
   const canSend = draft.trim().length > 0 && convState === 'idle';
   const insets  = useSafeAreaInsets();
 
@@ -143,13 +158,21 @@ export default function ChatScreen({ summary, onClose }: Props) {
             <Text style={styles.headerTitle}>Chat</Text>
             <Text style={styles.headerSub}>{formatDate(summary.date)}</Text>
           </View>
-          <TouchableOpacity
-            onPress={onClose}
-            style={styles.closeBtn}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Feather name="x" size={18} color="rgba(152, 212, 250, 0.70)" />
-          </TouchableOpacity>
+          {savingReflection ? (
+            <View style={styles.savingRow}>
+              <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
+              <Text style={styles.savingText}>Saving…</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeBtn}
+              disabled={savingReflection}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name="x" size={18} color="rgba(152, 212, 250, 0.70)" />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.divider} />
@@ -259,6 +282,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.15)',
     alignItems: 'center', justifyContent: 'center',
   },
+  savingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  savingText: { fontSize: 12, color: 'rgba(152, 212, 250, 0.55)', fontFamily: 'GillSans-Light' },
   divider: {
     height: 1,
     backgroundColor: 'rgba(152, 212, 250, 0.08)',

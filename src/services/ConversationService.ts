@@ -106,6 +106,53 @@ function buildOpeningLine(_summary: DailySummary): string {
   return "I've read through your day. What's sitting with you the most right now?";
 }
 
+/**
+ * Generate a short reflection paragraph from a completed Call or Chat session.
+ * Saved back into DailySummary.reflectionText.
+ */
+export async function generateReflection(
+  summary: DailySummary,
+  messages: ConversationMessage[],
+  apiKey: string,
+  mode: 'call' | 'chat' = 'call',
+): Promise<string> {
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+  const convoText = messages
+    .map(m => `${m.role === 'user' ? 'You' : 'Companion'}: ${m.text}`)
+    .join('\n');
+
+  const contextBlock = [
+    `DAY: ${summary.date}`,
+    `\nDAY SUMMARY:\n${summary.summary}`,
+    summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
+  ].filter(Boolean).join('\n');
+
+  const response = await client.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 220,
+    system: `You are a thoughtful journaling assistant writing a post-session reflection.
+The person just had a ${mode === 'call' ? 'voice call' : 'text chat'} conversation about their day.
+Write 3–5 sentences in second person ("You…") capturing:
+- The emotional or personal themes they actually explored
+- Any shift in perspective or insight that surfaced
+- One grounding observation to carry forward
+Flowing prose only — no bullet points, no headers. Warm, specific, never generic.`,
+    messages: [
+      {
+        role: 'user',
+        content: `Here is the day context:\n\n${contextBlock}\n\nHere is the conversation:\n\n${convoText}\n\nNow write the reflection.`,
+      },
+    ],
+  });
+
+  return response.content
+    .filter(b => b.type === 'text')
+    .map(b => (b as any).text)
+    .join('')
+    .trim();
+}
+
 /** Split a streaming text buffer into complete sentences + leftover */
 function extractSentences(buffer: string): { sentences: string[]; remaining: string } {
   const sentences: string[] = [];

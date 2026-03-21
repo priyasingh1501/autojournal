@@ -7,6 +7,7 @@ import {
   Animated,
   ImageBackground,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,7 +16,7 @@ import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { DailySummary, ConversationMessage } from '../types';
 import { transcribeAudio } from '../services/TranscriptionService';
-import { fetchSentences, getOpeningMessage } from '../services/ConversationService';
+import { fetchSentences, getOpeningMessage, generateReflection } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
 import { synthesizeSpeech } from '../services/ElevenLabsService';
 
@@ -112,10 +113,11 @@ function playSoundAndWait(uri: string): Promise<void> {
 }
 
 export default function TalkScreen({ summary, onClose }: Props) {
-  const [convState, setConvState]     = useState<ConvState>('connecting');
-  const [lastAiText, setLastAiText]   = useState('');
-  const [callSecs, setCallSecs]       = useState(0);
-  const [error, setError]             = useState<string | null>(null);
+  const [convState, setConvState]         = useState<ConvState>('connecting');
+  const [lastAiText, setLastAiText]       = useState('');
+  const [callSecs, setCallSecs]           = useState(0);
+  const [error, setError]                 = useState<string | null>(null);
+  const [savingReflection, setSaving]     = useState(false);
 
   const recordingRef    = useRef<Audio.Recording | null>(null);
   const hasSpeechRef    = useRef(false);
@@ -365,8 +367,22 @@ export default function TalkScreen({ summary, onClose }: Props) {
   }, []);
 
   // ── Button tap ─────────────────────────────────────────────────────────
-  const handleEndCall = () => {
+  const handleEndCall = async () => {
     Speech.stop();
+    clearSilenceTimer();
+    recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+
+    const userMessages = messagesRef.current.filter(m => m.role === 'user');
+    if (userMessages.length > 0 && cachedAnthropicKey.current) {
+      setSaving(true);
+      try {
+        const reflection = await generateReflection(
+          summary, messagesRef.current, cachedAnthropicKey.current, 'call',
+        );
+        await StorageService.saveSummary({ ...summary, reflectionText: reflection });
+      } catch { /* reflection is best-effort */ }
+    }
+
     onClose();
   };
 
@@ -474,10 +490,20 @@ export default function TalkScreen({ summary, onClose }: Props) {
 
         {/* ── End call button ── */}
         <View style={styles.endCallSection}>
-          <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall} activeOpacity={0.85}>
-            <Feather name="phone-off" size={26} color="#fff" />
+          <TouchableOpacity
+            style={[styles.endCallBtn, savingReflection && { opacity: 0.6 }]}
+            onPress={handleEndCall}
+            disabled={savingReflection}
+            activeOpacity={0.85}
+          >
+            {savingReflection
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Feather name="phone-off" size={26} color="#fff" />
+            }
           </TouchableOpacity>
-          <Text style={styles.endCallLabel}>End call</Text>
+          <Text style={styles.endCallLabel}>
+            {savingReflection ? 'Saving reflection…' : 'End call'}
+          </Text>
         </View>
       </SafeAreaView>
     </ImageBackground>
