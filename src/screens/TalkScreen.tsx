@@ -15,7 +15,7 @@ import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { DailySummary, ConversationMessage } from '../types';
 import { transcribeAudio } from '../services/TranscriptionService';
-import { sendMessage, getOpeningMessage } from '../services/ConversationService';
+import { streamMessage, getOpeningMessage } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
 import { synthesizeSpeech } from '../services/ElevenLabsService';
 
@@ -86,6 +86,20 @@ function Ring({ delay, active }: { delay: number; active: boolean }) {
       }}
     />
   );
+}
+
+/** Play a local audio URI and resolve when playback finishes */
+async function playSoundAndWait(uri: string): Promise<void> {
+  const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
+  return new Promise<void>((resolve) => {
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (!status.isLoaded) return;
+      if (status.didJustFinish) {
+        sound.unloadAsync().catch(() => {});
+        resolve();
+      }
+    });
+  });
 }
 
 export default function TalkScreen({ summary, onClose }: Props) {
@@ -265,24 +279,79 @@ export default function TalkScreen({ summary, onClose }: Props) {
       const updated = [...messagesRef.current, userMsg];
       messagesRef.current = updated;
 
-      const history = updated.slice(1);
-      sendMessage(summary, history.slice(0, -1), userText.trim(), cachedAnthropicKey.current || undefined)
-        .then(aiText => {
-          if (!activeRef.current) return;
-          const aiMsg: ConversationMessage = {
-            id: `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            role: 'assistant', text: aiText, timestamp: Date.now(),
-          };
-          messagesRef.current = [...messagesRef.current, aiMsg];
-          setLastAiText(aiText);
-          setError(null);
-          speak(aiText);
-        })
-        .catch(e => {
-          if (!activeRef.current) return;
-          setError(e?.message ?? 'Could not get response.');
-          setConvState('error');
-        });
+      const history      = updated.slice(1);         // strip context-seed msg
+      const elKey        = cachedElKey.current;
+      const elVoiceId    = cachedElVoiceId.current;
+      const useEL        = !!(elKey && elVoiceId);
+      const apiKey       = cachedAnthropicKey.current;
+
+      // ── Streaming pipeline ────────────────────────────────────────────
+      // synthQueue: array of in-flight ElevenLabs fetch promises.
+      // streamTask fires a synthesis fetch per sentence as Claude streams.
+      // playTask pulls from the queue and plays each URI in order —
+      // overlapping with both Claude generation and later EL fetches.
+      const synthQueue: Promise<string>[] = [];
+      let streamDone = false;
+      let fullText   = '';
+
+      const streamTask = (async () => {
+        try {
+          for await (const sentence of streamMessage(summary, history.slice(0, -1), userText.trim(), apiKey)) {
+            if (!activeRef.current) return;
+            fullText += (fullText ? ' ' : '') + sentence;
+            setLastAiText(fullText);
+            if (useEL) {
+              // Fire synthesis immediately — runs in parallel with further Claude streaming
+              synthQueue.push(synthesizeSpeech(sentence, elVoiceId!, elKey!));
+            }
+          }
+        } finally {
+          streamDone = true;
+        }
+      })();
+
+      const playTask = (async () => {
+        if (!useEL) return;
+        let idx = 0;
+        let audioModeSet = false;
+        while (true) {
+          if (idx < synthQueue.length) {
+            if (!audioModeSet) {
+              await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+              setConvState('speaking');
+              audioModeSet = true;
+            }
+            if (!activeRef.current) return;
+            try {
+              const audioUri = await synthQueue[idx++]; // resolves as soon as that sentence is ready
+              if (activeRef.current) await playSoundAndWait(audioUri);
+            } catch { /* skip a sentence that failed synthesis */ }
+          } else if (streamDone) {
+            break;
+          } else {
+            // No sentence ready yet — yield to event loop briefly
+            await new Promise(r => setTimeout(r, 25));
+          }
+        }
+      })();
+
+      await Promise.all([streamTask, playTask]);
+      if (!activeRef.current) return;
+
+      // Save complete AI message
+      const aiMsg: ConversationMessage = {
+        id: `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        role: 'assistant', text: fullText, timestamp: Date.now(),
+      };
+      messagesRef.current = [...messagesRef.current, aiMsg];
+      setError(null);
+
+      if (!useEL) {
+        // expo-speech fallback — speak the full assembled text
+        speak(fullText);
+      } else {
+        if (activeRef.current) startListening();
+      }
     } catch (e: any) {
       if (!activeRef.current) return;
       setError(e?.message ?? 'Recording failed.');

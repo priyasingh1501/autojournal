@@ -51,38 +51,11 @@ export async function sendMessage(
     dangerouslyAllowBrowser: true,
   });
 
-  // Build context block (injected as first user turn so Claude always has it)
-  const contextBlock = [
-    `DAY: ${summary.date}`,
-    `\nDAY SUMMARY:\n${summary.summary}`,
-    summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
-  ].filter(Boolean).join('\n');
-
-  // Build messages array for Claude
-  // First turn seeds the context; subsequent turns are real conversation
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: 'user',
-      content: `Here is the context for today's reflection:\n\n${contextBlock}\n\nI'm ready to talk about my day.`,
-    },
-    {
-      role: 'assistant',
-      content: buildOpeningLine(summary),
-    },
-    // Append real conversation history
-    ...history.map(m => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.text,
-    })),
-    // Current user message
-    { role: 'user' as const, content: userText },
-  ];
-
   const response = await client.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 180,
     system: SYSTEM_PROMPT,
-    messages,
+    messages: buildMessages(summary, history, userText),
   });
 
   const text = response.content
@@ -130,6 +103,75 @@ export async function getOpeningMessage(summary: DailySummary, apiKey?: string):
 }
 
 function buildOpeningLine(_summary: DailySummary): string {
-  // Fallback used only if getOpeningMessage isn't called first
   return "I've read through your day. What's sitting with you the most right now?";
+}
+
+/** Split a streaming text buffer into complete sentences + leftover */
+function extractSentences(buffer: string): { sentences: string[]; remaining: string } {
+  const sentences: string[] = [];
+  // Match sentence-ending punctuation followed by whitespace
+  const re = /[.!?]+['")\]]*\s/g;
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(buffer)) !== null) {
+    const s = buffer.slice(lastIdx, m.index + m[0].length).trim();
+    if (s.length >= 6) sentences.push(s);
+    lastIdx = m.index + m[0].length;
+  }
+  return { sentences, remaining: buffer.slice(lastIdx) };
+}
+
+/** Shared message builder to avoid duplication */
+function buildMessages(summary: DailySummary, history: ConversationMessage[], userText: string): Anthropic.MessageParam[] {
+  const contextBlock = [
+    `DAY: ${summary.date}`,
+    `\nDAY SUMMARY:\n${summary.summary}`,
+    summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
+  ].filter(Boolean).join('\n');
+
+  return [
+    {
+      role: 'user',
+      content: `Here is the context for today's reflection:\n\n${contextBlock}\n\nI'm ready to talk about my day.`,
+    },
+    { role: 'assistant', content: buildOpeningLine(summary) },
+    ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.text })),
+    { role: 'user' as const, content: userText },
+  ];
+}
+
+/**
+ * Stream Claude response, yielding complete sentences one at a time.
+ * Lets callers start TTS synthesis on sentence 1 before sentence 2 is generated.
+ */
+export async function* streamMessage(
+  summary: DailySummary,
+  history: ConversationMessage[],
+  userText: string,
+  apiKey: string,
+): AsyncGenerator<string, void, unknown> {
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+  const stream = await client.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 180,
+    system: SYSTEM_PROMPT,
+    messages: buildMessages(summary, history, userText),
+    stream: true,
+  });
+
+  let buffer = '';
+  for await (const event of stream) {
+    if (
+      event.type === 'content_block_delta' &&
+      (event.delta as any).type === 'text_delta'
+    ) {
+      buffer += (event.delta as any).text;
+      const { sentences, remaining } = extractSentences(buffer);
+      for (const s of sentences) yield s;
+      buffer = remaining;
+    }
+  }
+  // Yield any trailing text that had no trailing punctuation
+  if (buffer.trim().length >= 3) yield buffer.trim();
 }
