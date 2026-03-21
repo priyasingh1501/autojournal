@@ -29,7 +29,7 @@ const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
 
 // ── markdown styles ───────────────────────────────────────────────────────────
 const markdownStyles = {
-  body: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, lineHeight: 22 },
+  body: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, lineHeight: 22 },
   heading2: {
     color: 'rgba(224, 242, 254, 0.95)',
     fontSize: 14,
@@ -39,8 +39,8 @@ const markdownStyles = {
     borderBottomWidth: 0,
   },
   bullet_list: { marginLeft: 0 },
-  bullet_list_item: { color: 'rgba(147, 210, 232, 0.65)', marginBottom: 2 },
-  bullet_list_icon: { color: 'rgba(147, 210, 232, 0.85)', marginTop: 5 },
+  bullet_list_item: { color: 'rgba(152, 212, 250, 0.65)', marginBottom: 2 },
+  bullet_list_icon: { color: 'rgba(152, 212, 250, 0.85)', marginTop: 5 },
   strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' as const },
   paragraph: { marginTop: 0, marginBottom: 4 },
 };
@@ -225,7 +225,7 @@ export default function SummaryScreen() {
               style={styles.actionBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Feather name="download" size={13} color="rgba(147, 210, 232, 0.85)" />
+              <Feather name="download" size={13} color="rgba(152, 212, 250, 0.85)" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleGenerate(item.date)}
@@ -234,8 +234,8 @@ export default function SummaryScreen() {
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               {generatingDate === item.date
-                ? <ActivityIndicator size="small" color="rgba(147, 210, 232, 0.65)" />
-                : <Feather name="refresh-cw" size={13} color="rgba(147, 210, 232, 0.65)" />}
+                ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
+                : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
             </TouchableOpacity>
           </View>
         )}
@@ -294,7 +294,7 @@ export default function SummaryScreen() {
         {summaries.length === 0 ? (
           /* Empty state */
           <View style={[styles.card, styles.placeholderCard]}>
-            <Feather name="star" size={44} color="rgba(147, 210, 232, 0.40)" style={{ marginBottom: 16 }} />
+            <Feather name="star" size={44} color="rgba(152, 212, 250, 0.40)" style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>No summaries yet</Text>
             <Text style={styles.emptySubtitle}>
               Summaries auto-generate at 11:59 PM.{'\n'}Tap below to generate today's now.
@@ -303,7 +303,7 @@ export default function SummaryScreen() {
         ) : currentIndex >= summaries.length ? (
           /* All swiped through */
           <View style={[styles.card, styles.placeholderCard]}>
-            <Feather name="check-circle" size={44} color="rgba(147, 210, 232, 0.40)" style={{ marginBottom: 16 }} />
+            <Feather name="check-circle" size={44} color="rgba(152, 212, 250, 0.40)" style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>All caught up!</Text>
             <Text style={styles.emptySubtitle}>You've reviewed all your summaries.</Text>
             <TouchableOpacity style={styles.restartBtn} onPress={() => setCurrentIndex(0)}>
@@ -387,7 +387,7 @@ export default function SummaryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#010c1a' },
+  container: { flex: 1, backgroundColor: '#02060E' },
 
   // ── Top bar ───────────────────────────────────────────────────────────────
   topBar: {
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   screenTitle: { fontSize: 22, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
-  counter: { fontSize: 14, color: 'rgba(147, 210, 232, 0.60)', fontFamily: 'Avenir' },
+  counter: { fontSize: 14, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'Avenir' },
 
   // ── Card stack container ─────────────────────────────────────────────────
   stackContainer: {
@@ -417,8 +417,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
-    shadowColor: '#48cae4',
+    borderColor: 'rgba(152, 212, 250, 0.13)',
+    shadowColor: '#98D4FA',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
   },
   cardHeaderLeft: { flex: 1 },
   cardDate: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Avenir' },
-  cardMeta: { fontSize: 12, color: 'rgba(147, 210, 232, 0.60)', fontFamily: 'Avenir' },
+  cardMeta: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'Avenir' },
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
     width: 32,
@@ -454,17 +454,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'rgba(6, 26, 55, 0.55)',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.15)',
+    borderColor: 'rgba(152, 212, 250, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   insightSection: { marginBottom: 8 },
-  divider: { height: 1, backgroundColor: 'rgba(0, 35, 102, 0.08)', marginBottom: 12, marginTop: 4 },
+  divider: { height: 1, backgroundColor: 'rgba(9, 41, 173, 0.08)', marginBottom: 12, marginTop: 4 },
   breakdownLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: 'rgba(147, 210, 232, 0.60)',
+    color: 'rgba(152, 212, 250, 0.60)',
     letterSpacing: 0.8,
     marginBottom: 8,
     fontFamily: 'Avenir',
@@ -479,12 +479,12 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 2.5,
   },
-  swipeLabelLeft: { left: 16, borderColor: '#48cae4' },
-  swipeLabelRight: { right: 16, borderColor: '#48cae4' },
+  swipeLabelLeft: { left: 16, borderColor: '#98D4FA' },
+  swipeLabelRight: { right: 16, borderColor: '#98D4FA' },
   swipeLabelText: {
     fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(147, 210, 232, 0.85)',
+    color: 'rgba(152, 212, 250, 0.85)',
     letterSpacing: 1.5,
     fontFamily: 'Avenir',
   },
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Avenir' },
   emptySubtitle: {
     fontSize: 14,
-    color: 'rgba(147, 210, 232, 0.60)',
+    color: 'rgba(152, 212, 250, 0.60)',
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: 28,
@@ -503,12 +503,12 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: 'rgba(0, 35, 102, 0.08)',
+    backgroundColor: 'rgba(9, 41, 173, 0.08)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.20)',
+    borderColor: 'rgba(152, 212, 250, 0.20)',
   },
-  restartBtnText: { color: 'rgba(147, 210, 232, 0.85)', fontSize: 14, fontWeight: '600', fontFamily: 'Avenir' },
+  restartBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 14, fontWeight: '600', fontFamily: 'Avenir' },
 
   // ── Bottom nav ─────────────────────────────────────────────────────────────
   navRow: {
@@ -521,14 +521,14 @@ const styles = StyleSheet.create({
   navBtn: {
     paddingHorizontal: 14,
     paddingVertical: 7,
-    backgroundColor: 'rgba(0, 35, 102, 0.08)',
+    backgroundColor: 'rgba(9, 41, 173, 0.08)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.20)',
+    borderColor: 'rgba(152, 212, 250, 0.20)',
   },
-  navBtnText: { color: 'rgba(147, 210, 232, 0.85)', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
+  navBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
   navPlaceholder: { width: 80 },
-  swipeHint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.60)', fontFamily: 'Avenir' },
+  swipeHint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'Avenir' },
 
   // ── FAB ───────────────────────────────────────────────────────────────────
   fab: {
@@ -540,11 +540,11 @@ const styles = StyleSheet.create({
     borderRadius: 27,
     backgroundColor: 'rgba(3, 18, 40, 0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.25)',
+    borderColor: 'rgba(152, 212, 250, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,
-    shadowColor: '#48cae4',
+    shadowColor: '#98D4FA',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.20,
     shadowRadius: 10,

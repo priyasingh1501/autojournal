@@ -207,7 +207,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
             </TouchableOpacity>
             <Text style={styles.title}>{isEditing ? 'Edit Entry' : 'New Entry'}</Text>
             {saving ? (
-              <ActivityIndicator color="rgba(147, 210, 232, 0.85)" style={styles.headerBtn} />
+              <ActivityIndicator color="rgba(152, 212, 250, 0.85)" style={styles.headerBtn} />
             ) : (
               <TouchableOpacity
                 onPress={handleSave}
@@ -231,7 +231,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
               ref={inputRef}
               style={styles.textInput}
               placeholder="What's on your mind?"
-              placeholderTextColor="rgba(147, 210, 232, 0.40)"
+              placeholderTextColor="rgba(152, 212, 250, 0.40)"
               value={text}
               onChangeText={setText}
               multiline
@@ -258,7 +258,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
               style={styles.photoButton}
               onPress={() => pickImage('library')}
             >
-              <Feather name="camera" size={14} color="rgba(147, 210, 232, 0.65)" />
+              <Feather name="camera" size={14} color="rgba(152, 212, 250, 0.65)" />
               <Text style={styles.photoButtonText}>
                 {photoUri ? 'Change photo' : 'Add photo'}
               </Text>
@@ -280,11 +280,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
   },
   sheet: {
-    backgroundColor: '#020e20',
+    backgroundColor: '#040d1e',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(72, 202, 228, 0.18)',
+    borderTopColor: 'rgba(152, 212, 250, 0.18)',
     maxHeight: '90%',
     minHeight: 320,
   },
@@ -296,12 +296,12 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(72, 202, 228, 0.08)',
+    borderBottomColor: 'rgba(152, 212, 250, 0.08)',
   },
   headerBtn: { minWidth: 56 },
   title: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
-  cancelText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 15, fontFamily: 'Avenir' },
-  saveText: { color: 'rgba(147, 210, 232, 0.85)', fontSize: 15, fontWeight: '600', textAlign: 'right', fontFamily: 'Avenir' },
+  cancelText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 15, fontFamily: 'Avenir' },
+  saveText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '600', textAlign: 'right', fontFamily: 'Avenir' },
   saveTextDisabled: { opacity: 0.35 },
   body: { paddingHorizontal: 18, paddingTop: 14 },
   textInput: {
@@ -341,11 +341,11 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(0, 35, 102, 0.18)',
+    backgroundColor: 'rgba(9, 41, 173, 0.18)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.18)',
+    borderColor: 'rgba(152, 212, 250, 0.18)',
     alignSelf: 'flex-start',
   },
-  photoButtonText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
+  photoButtonText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
 });

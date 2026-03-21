@@ -288,7 +288,7 @@ export default function TranscriptsScreen() {
         <View style={styles.cardBody}>
           <View style={styles.cardHeader}>
             <View style={styles.cardHeaderLeft}>
-              <Feather name={ICON_NAME[item.kind] as any} size={11} color="rgba(147, 210, 232, 0.65)" />
+              <Feather name={ICON_NAME[item.kind] as any} size={11} color="rgba(152, 212, 250, 0.65)" />
               <Text style={styles.cardTime}>{formatTime(item.data.timestamp)}</Text>
               {!isManual && (
                 <Text style={styles.cardDuration}> · {item.data.duration.toFixed(1)}s</Text>
@@ -304,7 +304,7 @@ export default function TranscriptsScreen() {
                     style={styles.editBtn}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Feather name="edit-2" size={10} color="rgba(147, 210, 232, 0.85)" />
+                    <Feather name="edit-2" size={10} color="rgba(152, 212, 250, 0.85)" />
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
@@ -371,18 +371,18 @@ export default function TranscriptsScreen() {
       {/* Top bar */}
       <View style={styles.topBar}>
         <View style={styles.searchBox}>
-          <Feather name="search" size={13} color="rgba(147, 210, 232, 0.55)" />
+          <Feather name="search" size={13} color="rgba(152, 212, 250, 0.55)" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search transcripts…"
-            placeholderTextColor="rgba(147, 210, 232, 0.40)"
+            placeholderTextColor="rgba(152, 212, 250, 0.40)"
             value={search}
             onChangeText={setSearch}
             returnKeyType="search"
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch('')}>
-              <Feather name="x" size={13} color="rgba(147, 210, 232, 0.55)" />
+              <Feather name="x" size={13} color="rgba(152, 212, 250, 0.55)" />
             </TouchableOpacity>
           )}
         </View>
@@ -451,7 +451,7 @@ export default function TranscriptsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#010c1a' },
+  container: { flex: 1, backgroundColor: '#02060E' },
 
   // ── Top bar ───────────────────────────────────────────────────────────────
   topBar: {
@@ -471,10 +471,10 @@ const styles = StyleSheet.create({
     height: 40,
     gap: 6,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
+    borderColor: 'rgba(152, 212, 250, 0.13)',
   },
   searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontFamily: 'Avenir' },
-  actionBtn: { color: 'rgba(147, 210, 232, 0.85)', fontSize: 15, fontWeight: '600', fontFamily: 'Avenir' },
+  actionBtn: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '600', fontFamily: 'Avenir' },
   disabled: { opacity: 0.35 },
 
   // ── Select bar ────────────────────────────────────────────────────────────
@@ -486,9 +486,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: 'rgba(6, 26, 55, 0.55)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(72, 202, 228, 0.10)',
+    borderBottomColor: 'rgba(152, 212, 250, 0.10)',
   },
-  selectBarBtn: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40, fontFamily: 'Avenir' },
+  selectBarBtn: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40, fontFamily: 'Avenir' },
   selectCount: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
   deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '600', minWidth: 40, textAlign: 'right', fontFamily: 'Avenir' },
 
@@ -502,11 +502,11 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 35, 102, 0.08)',
+    borderBottomColor: 'rgba(9, 41, 173, 0.08)',
   },
   sectionHeaderLeft: { flex: 1 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
-  sectionCount: { fontSize: 12, color: 'rgba(147, 210, 232, 0.60)', marginTop: 2, fontFamily: 'Avenir' },
+  sectionCount: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', marginTop: 2, fontFamily: 'Avenir' },
   deleteDayBtn: {
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -528,30 +528,30 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
-    shadowColor: '#48cae4',
+    borderColor: 'rgba(152, 212, 250, 0.13)',
+    shadowColor: '#98D4FA',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
   },
   cardSelected: {
-    backgroundColor: 'rgba(0, 35, 102, 0.08)',
-    borderColor: 'rgba(72, 202, 228, 0.30)',
+    backgroundColor: 'rgba(9, 41, 173, 0.08)',
+    borderColor: 'rgba(152, 212, 250, 0.30)',
   },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: 'rgba(147, 210, 232, 0.35)',
+    borderColor: 'rgba(152, 212, 250, 0.35)',
     marginRight: 10,
     marginTop: 1,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  checkboxSelected: { backgroundColor: 'rgba(72, 202, 228, 0.18)', borderColor: '#48cae4' },
+  checkboxSelected: { backgroundColor: 'rgba(152, 212, 250, 0.18)', borderColor: '#98D4FA' },
   cardBody: { flex: 1 },
   cardHeader: {
     flexDirection: 'row',
@@ -560,16 +560,16 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  cardTime: { fontSize: 12, color: 'rgba(147, 210, 232, 0.65)', fontFamily: 'Avenir' },
-  cardDuration: { fontSize: 11, color: 'rgba(147, 210, 232, 0.60)', fontFamily: 'Avenir' },
+  cardTime: { fontSize: 12, color: 'rgba(152, 212, 250, 0.65)', fontFamily: 'Avenir' },
+  cardDuration: { fontSize: 11, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'Avenir' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   editBtn: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(0, 35, 102, 0.08)',
+    backgroundColor: 'rgba(9, 41, 173, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.18)',
+    borderColor: 'rgba(152, 212, 250, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -584,7 +584,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   clipLabel: { fontSize: 13, color: '#f4a261', fontStyle: 'italic', fontFamily: 'Avenir' },
-  cardText: { fontSize: 14, color: 'rgba(147, 210, 232, 0.65)', lineHeight: 20, fontFamily: 'Avenir' },
+  cardText: { fontSize: 14, color: 'rgba(152, 212, 250, 0.65)', lineHeight: 20, fontFamily: 'Avenir' },
   photoThumb: {
     width: '100%',
     height: 160,
@@ -592,7 +592,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   emptyText: {
-    color: 'rgba(147, 210, 232, 0.60)',
+    color: 'rgba(152, 212, 250, 0.60)',
     textAlign: 'center',
     marginTop: 80,
     fontSize: 15,

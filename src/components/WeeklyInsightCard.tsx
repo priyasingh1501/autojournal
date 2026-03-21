@@ -83,8 +83,8 @@ export default function WeeklyInsightCard() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {refreshing
-            ? <ActivityIndicator size="small" color="rgba(147, 210, 232, 0.85)" />
-            : <Feather name="refresh-cw" size={13} color="rgba(147, 210, 232, 0.65)" />}
+            ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.85)" />
+            : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
         </TouchableOpacity>
       </View>
 
@@ -132,8 +132,8 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
-    shadowColor: '#48cae4',
+    borderColor: 'rgba(152, 212, 250, 0.13)',
+    shadowColor: '#98D4FA',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
@@ -158,13 +158,13 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: 'rgba(6, 26, 55, 0.55)',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.18)',
+    borderColor: 'rgba(152, 212, 250, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   lastUpdated: {
     fontSize: 11,
-    color: 'rgba(147, 210, 232, 0.60)',
+    color: 'rgba(152, 212, 250, 0.60)',
     marginTop: 12,
     textAlign: 'right',
     fontFamily: 'Avenir',
@@ -172,13 +172,13 @@ const styles = StyleSheet.create({
 
   skeletonLine: {
     height: 13,
-    backgroundColor: 'rgba(0, 35, 102, 0.08)',
+    backgroundColor: 'rgba(9, 41, 173, 0.08)',
     borderRadius: 7,
     marginBottom: 9,
   },
   emptyText: {
     fontSize: 14,
-    color: 'rgba(147, 210, 232, 0.60)',
+    color: 'rgba(152, 212, 250, 0.60)',
     lineHeight: 22,
     textAlign: 'center',
     paddingVertical: 8,

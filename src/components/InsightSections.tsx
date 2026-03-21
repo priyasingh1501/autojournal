@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 export const SECTION_LABELS: Record<string, { iconName: string; color: string }> = {
-  'Emotional check-in': { iconName: 'activity',     color: '#48cae4' },
+  'Emotional check-in': { iconName: 'activity',     color: '#98D4FA' },
   'Meals':              { iconName: 'coffee',        color: '#06d6a0' },
   'Movement':           { iconName: 'zap',           color: '#f4a261' },
   'Spending':           { iconName: 'credit-card',   color: '#00b4d8' },
@@ -66,5 +66,5 @@ const sectionStyles = StyleSheet.create({
   section: { marginBottom: 14 },
   headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   heading: { fontSize: 13, fontWeight: '600', letterSpacing: 0.2, fontFamily: 'Avenir' },
-  body: { fontSize: 14, color: 'rgba(147, 210, 232, 0.75)', lineHeight: 22, fontFamily: 'Avenir' },
+  body: { fontSize: 14, color: 'rgba(152, 212, 250, 0.75)', lineHeight: 22, fontFamily: 'Avenir' },
 });
