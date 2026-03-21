@@ -80,18 +80,28 @@ export default function App() {
       if (state === 'active') checkAndAutoGenerate();
     });
 
-    // When user taps the nightly notification → generate today's summary
-    const notifSub = Notifications.addNotificationResponseReceivedListener(response => {
-      const action = response.notification.request.content.data?.action;
+    // When the 11:59 PM notification is DELIVERED (not tapped), generate the summary.
+    // This fires whether the app is in the foreground or background.
+    const notifReceivedSub = Notifications.addNotificationReceivedListener(notification => {
+      const action = notification.request.content.data?.action;
       if (action === 'generate-summary') {
         const today = new Date().toISOString().split('T')[0];
-        generateIfNeeded(today);
+        generateIfNeeded(today); // fire-and-forget; sends a "ready" notification when done
+      }
+    });
+
+    // When the user taps the "summary ready" notification → navigate to Summary tab
+    const notifSub = Notifications.addNotificationResponseReceivedListener(response => {
+      const action = response.notification.request.content.data?.action;
+      if (action === 'view-summary' && isReady.current) {
+        navigationRef.current?.navigate('Summary');
       }
     });
 
     return () => {
       linkSub.remove();
       stateSub.remove();
+      notifReceivedSub.remove();
       notifSub.remove();
     };
   }, []);

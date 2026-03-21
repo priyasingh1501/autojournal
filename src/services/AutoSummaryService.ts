@@ -5,6 +5,7 @@ import { generateDailySummary } from './SummaryService';
 
 const NOTIFICATION_CHANNEL = 'daily-summary';
 const NIGHTLY_NOTIFICATION_ID = 'nightly-summary-trigger';
+const READY_NOTIFICATION_ID = 'summary-ready';
 
 // ─── Permissions ────────────────────────────────────────────────────────────
 
@@ -27,11 +28,12 @@ export async function setupNotificationChannel(): Promise<void> {
   }
 }
 
-// ─── Schedule nightly notification at 23:59 ─────────────────────────────────
+// ─── Schedule nightly silent trigger at 23:59 ───────────────────────────────
+// This fires the generation process. A separate "ready" notification is sent
+// once the summary has actually been created.
 
 export async function scheduleNightlyNotification(): Promise<void> {
   try {
-    // Cancel any existing scheduled trigger first to avoid duplicates
     await Notifications.cancelScheduledNotificationAsync(NIGHTLY_NOTIFICATION_ID);
   } catch {}
 
@@ -41,9 +43,11 @@ export async function scheduleNightlyNotification(): Promise<void> {
   await Notifications.scheduleNotificationAsync({
     identifier: NIGHTLY_NOTIFICATION_ID,
     content: {
-      title: 'Daily Summary',
-      body: "Your day is wrapping up — generating today's journal summary.",
+      title: 'untangle',
+      body: 'Generating your daily summary…',
       data: { action: 'generate-summary' },
+      // Keep silent — the "ready" notification will appear once done
+      sound: false,
       ...(Platform.OS === 'android' && { channelId: NOTIFICATION_CHANNEL }),
     },
     trigger: {
@@ -52,6 +56,26 @@ export async function scheduleNightlyNotification(): Promise<void> {
       minute: 59,
     },
   });
+}
+
+// ─── Send "summary ready" notification ──────────────────────────────────────
+
+async function sendSummaryReadyNotification(date: string): Promise<void> {
+  try {
+    const label = date === new Date().toISOString().split('T')[0] ? "Today's" : date;
+    await Notifications.scheduleNotificationAsync({
+      identifier: READY_NOTIFICATION_ID,
+      content: {
+        title: 'Daily Summary',
+        body: `${label} summary is ready. See how your day went.`,
+        data: { action: 'view-summary' },
+        ...(Platform.OS === 'android' && { channelId: NOTIFICATION_CHANNEL }),
+      },
+      trigger: null, // fire immediately
+    });
+  } catch {
+    // Best-effort — don't let notification failure block the caller
+  }
 }
 
 // ─── Auto-generate logic ─────────────────────────────────────────────────────
@@ -75,6 +99,9 @@ export async function generateIfNeeded(date: string): Promise<boolean> {
     if (transcripts.length === 0) return false;
 
     await generateDailySummary(transcripts, date);
+
+    // Generation succeeded — notify the user that their summary is ready
+    await sendSummaryReadyNotification(date);
     return true;
   } catch {
     return false;
