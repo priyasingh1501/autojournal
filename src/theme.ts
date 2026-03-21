@@ -11,13 +11,14 @@ export const T = {
   // ── Glass surfaces ──────────────────────────────────────────────────────────
   GLASS:        'rgba(3, 18, 40, 0.72)',
   GLASS_LIGHT:  'rgba(6, 26, 55, 0.55)',
-  GLASS_BORDER: 'rgba(0, 35, 102, 0.13)',
+  GLASS_BORDER: 'rgba(72, 202, 228, 0.13)',
   GLASS_SHINE:  'rgba(255, 255, 255, 0.04)',
 
   // ── Accent colours ──────────────────────────────────────────────────────────
-  CYAN:         '#002366',
-  CYAN_DIM:     'rgba(0, 35, 102, 0.18)',
-  CYAN_GLOW:    'rgba(0, 35, 102, 0.28)',
+  CYAN:         '#48cae4',               // visible glass edges & glows
+  NAVY:         '#002366',               // background fills & tints
+  CYAN_DIM:     'rgba(72, 202, 228, 0.18)',
+  CYAN_GLOW:    'rgba(72, 202, 228, 0.28)',
   TEAL:         '#00b4d8',
   DEEP_BLUE:    '#0077b6',
 
@@ -39,9 +40,9 @@ export const T = {
 export const glassCard = {
   backgroundColor: 'rgba(3, 18, 40, 0.72)' as const,
   borderWidth: 1,
-  borderColor: 'rgba(0, 35, 102, 0.13)' as const,
+  borderColor: 'rgba(72, 202, 228, 0.13)' as const,
   borderRadius: 20,
-  shadowColor: '#002366' as const,
+  shadowColor: '#48cae4' as const,
   shadowOffset: { width: 0, height: 8 },
   shadowOpacity: 0.12,
   shadowRadius: 24,
@@ -51,9 +52,9 @@ export const glassCard = {
 export const glassCardLight = {
   backgroundColor: 'rgba(6, 26, 55, 0.55)' as const,
   borderWidth: 1,
-  borderColor: 'rgba(0, 35, 102, 0.13)' as const,
+  borderColor: 'rgba(72, 202, 228, 0.13)' as const,
   borderRadius: 20,
-  shadowColor: '#002366' as const,
+  shadowColor: '#48cae4' as const,
   shadowOffset: { width: 0, height: 4 },
   shadowOpacity: 0.08,
   shadowRadius: 16,
