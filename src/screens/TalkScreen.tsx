@@ -88,17 +88,26 @@ function Ring({ delay, active }: { delay: number; active: boolean }) {
   );
 }
 
-/** Play a local audio URI and resolve when playback finishes */
-async function playSoundAndWait(uri: string): Promise<void> {
-  const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
-  return new Promise<void>((resolve) => {
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (!status.isLoaded) return;
-      if (status.didJustFinish) {
-        sound.unloadAsync().catch(() => {});
-        resolve();
-      }
-    });
+/** Play a local audio URI and resolve when playback finishes.
+ *  Callback is passed directly to createAsync to avoid a race where
+ *  a short clip finishes before setOnPlaybackStatusUpdate is called. */
+function playSoundAndWait(uri: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    Audio.Sound.createAsync(
+      { uri },
+      { shouldPlay: true },
+      (status) => {
+        if (!status.isLoaded) return;
+        if (status.didJustFinish) {
+          // sound ref captured via closure below
+          soundRef?.unloadAsync().catch(() => {});
+          resolve();
+        }
+      },
+    )
+      .then(({ sound }) => { soundRef = sound; })
+      .catch(reject);
+    let soundRef: Audio.Sound | undefined;
   });
 }
 
