@@ -25,6 +25,7 @@ import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
 import { DailySummary } from '../types';
 import TalkScreen from './TalkScreen';
+import ChatScreen from './ChatScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.30;
@@ -78,7 +79,8 @@ export default function SummaryScreen() {
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [generatingDate, setGeneratingDate] = useState<string | null>(null);
-  const [talkingSummary, setTalkingSummary] = useState<DailySummary | null>(null);
+  const [callSummary, setCallSummary]   = useState<DailySummary | null>(null);
+  const [chatSummary, setChatSummary]   = useState<DailySummary | null>(null);
 
   const pan = useRef(new Animated.ValueXY()).current;
   const isSwiping = useRef(false);
@@ -303,15 +305,28 @@ export default function SummaryScreen() {
         <Markdown style={markdownStyles}>{item.summary}</Markdown>
       </ScrollView>
 
-      {/* Sticky primary CTA — always visible at card bottom */}
-      <TouchableOpacity
-        style={styles.talkBtn}
-        onPress={() => setTalkingSummary(item)}
-        activeOpacity={0.85}
-      >
-        <Feather name="message-circle" size={16} color="rgba(224, 242, 254, 0.95)" />
-        <Text style={styles.talkBtnText}>Talk about this day</Text>
-      </TouchableOpacity>
+      {/* Sticky dual CTA — Call + Chat */}
+      <View style={styles.ctaRow}>
+        <TouchableOpacity
+          style={[styles.ctaBtn, styles.ctaBtnCall]}
+          onPress={() => setCallSummary(item)}
+          activeOpacity={0.85}
+        >
+          <Feather name="phone" size={15} color="rgba(224, 242, 254, 0.95)" />
+          <Text style={styles.ctaBtnText}>Call</Text>
+        </TouchableOpacity>
+
+        <View style={styles.ctaDivider} />
+
+        <TouchableOpacity
+          style={[styles.ctaBtn, styles.ctaBtnChat]}
+          onPress={() => setChatSummary(item)}
+          activeOpacity={0.85}
+        >
+          <Feather name="message-circle" size={15} color="rgba(224, 242, 254, 0.95)" />
+          <Text style={styles.ctaBtnText}>Chat</Text>
+        </TouchableOpacity>
+      </View>
     </>
   );
 
@@ -430,18 +445,27 @@ export default function SummaryScreen() {
       )}
 
 
-      {/* Talk about your day modal */}
+      {/* Call modal */}
       <Modal
-        visible={!!talkingSummary}
+        visible={!!callSummary}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setTalkingSummary(null)}
+        onRequestClose={() => setCallSummary(null)}
       >
-        {talkingSummary && (
-          <TalkScreen
-            summary={talkingSummary}
-            onClose={() => setTalkingSummary(null)}
-          />
+        {callSummary && (
+          <TalkScreen summary={callSummary} onClose={() => setCallSummary(null)} />
+        )}
+      </Modal>
+
+      {/* Chat modal */}
+      <Modal
+        visible={!!chatSummary}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setChatSummary(null)}
+      >
+        {chatSummary && (
+          <ChatScreen summary={chatSummary} onClose={() => setChatSummary(null)} />
         )}
       </Modal>
     </SafeAreaView>
@@ -619,21 +643,27 @@ const styles = StyleSheet.create({
   swipeHint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
 
 
-  // ── Talk button — sticky primary CTA at card bottom ──────────────────────
-  talkBtn: {
+  // ── Dual CTA row — sticky at card bottom ─────────────────────────────────
+  ctaRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(152, 212, 250, 0.12)',
+  },
+  ctaBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    backgroundColor: '#0929AD',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(152, 212, 250, 0.15)',
+    gap: 7,
+    paddingVertical: 15,
   },
-  talkBtnText: {
+  ctaBtnCall: { backgroundColor: '#0929AD' },
+  ctaBtnChat: { backgroundColor: 'rgba(9, 41, 173, 0.45)' },
+  ctaDivider: { width: 1, backgroundColor: 'rgba(152, 212, 250, 0.15)' },
+  ctaBtnText: {
     fontSize: 15,
     color: 'rgba(224, 242, 254, 0.95)',
     fontFamily: 'GillSans-Light',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
 });
