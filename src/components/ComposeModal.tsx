@@ -299,9 +299,9 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(152, 212, 250, 0.08)',
   },
   headerBtn: { minWidth: 56 },
-  title: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
+  title: { fontSize: 16, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
   cancelText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 15, fontFamily: 'GillSans-Light' },
-  saveText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '600', textAlign: 'right', fontFamily: 'GillSans-Light' },
+  saveText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '500', textAlign: 'right', fontFamily: 'GillSans-Light' },
   saveTextDisabled: { opacity: 0.35 },
   body: { paddingHorizontal: 18, paddingTop: 14 },
   textInput: {

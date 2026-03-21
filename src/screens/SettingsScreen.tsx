@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '500',
     color: 'rgba(224, 242, 254, 0.95)',
     marginBottom: 6,
     fontFamily: 'Baskerville',
@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
     color: 'rgba(224, 242, 254, 0.95)',
     marginTop: 14,
     marginBottom: 6,
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(152, 212, 250, 0.50)',
   },
   thresholdButtonText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
-  thresholdButtonTextSelected: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' },
+  thresholdButtonTextSelected: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '500' },
 
   // ── Save button ────────────────────────────────────────────────────────────
   saveButton: {
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  saveButtonText: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 17, fontWeight: '600', fontFamily: 'GillSans-Light' },
+  saveButtonText: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 17, fontWeight: '500', fontFamily: 'GillSans-Light' },
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   footer: { alignItems: 'center', marginTop: 24, marginBottom: 12 },

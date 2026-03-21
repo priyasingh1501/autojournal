@@ -33,7 +33,7 @@ const markdownStyles = {
   heading2: {
     color: 'rgba(224, 242, 254, 0.95)',
     fontSize: 15,
-    fontWeight: '600' as const,
+    fontWeight: '500' as const,
     fontFamily: 'Baskerville',
     marginTop: 12,
     marginBottom: 4,
@@ -42,7 +42,7 @@ const markdownStyles = {
   bullet_list: { marginLeft: 0 },
   bullet_list_item: { color: 'rgba(152, 212, 250, 0.65)', marginBottom: 2, fontFamily: 'GillSans-Light' },
   bullet_list_icon: { color: 'rgba(152, 212, 250, 0.85)', marginTop: 5 },
-  strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' as const, fontFamily: 'GillSans-Light' },
+  strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '500' as const, fontFamily: 'GillSans-Light' },
   paragraph: { marginTop: 0, marginBottom: 4 },
 };
 
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
-  screenTitle: { fontSize: 22, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
+  screenTitle: { fontSize: 22, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
   counter: { fontSize: 14, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
 
   // ── Card stack container ─────────────────────────────────────────────────
@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   cardHeaderLeft: { flex: 1 },
-  cardDate: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Baskerville' },
+  cardDate: { fontSize: 20, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Baskerville' },
   cardMeta: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: 'rgba(9, 41, 173, 0.08)', marginBottom: 12, marginTop: 4 },
   breakdownLabel: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '500',
     color: 'rgba(152, 212, 250, 0.60)',
     letterSpacing: 0.8,
     marginBottom: 8,
@@ -484,14 +484,14 @@ const styles = StyleSheet.create({
   swipeLabelRight: { right: 16, borderColor: '#98D4FA' },
   swipeLabelText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '500',
     color: 'rgba(152, 212, 250, 0.85)',
     letterSpacing: 1.5,
     fontFamily: 'GillSans-Light',
   },
 
   // ── Empty / done states ───────────────────────────────────────────────────
-  emptyTitle: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Baskerville' },
+  emptyTitle: { fontSize: 20, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Baskerville' },
   emptySubtitle: {
     fontSize: 14,
     color: 'rgba(152, 212, 250, 0.60)',
@@ -509,7 +509,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.20)',
   },
-  restartBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 14, fontWeight: '600', fontFamily: 'GillSans-Light' },
+  restartBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 14, fontWeight: '500', fontFamily: 'GillSans-Light' },
 
   // ── Bottom nav ─────────────────────────────────────────────────────────────
   navRow: {
@@ -527,7 +527,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.20)',
   },
-  navBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '600', fontFamily: 'GillSans-Light' },
+  navBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
   navPlaceholder: { width: 80 },
   swipeHint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
 

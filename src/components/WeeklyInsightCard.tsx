@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '500',
     color: 'rgba(224, 242, 254, 0.95)',
     flex: 1,
     fontFamily: 'Baskerville',

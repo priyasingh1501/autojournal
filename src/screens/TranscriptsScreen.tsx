@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(152, 212, 250, 0.13)',
   },
   searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontFamily: 'GillSans-Light' },
-  actionBtn: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '600', fontFamily: 'GillSans-Light' },
+  actionBtn: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '500', fontFamily: 'GillSans-Light' },
   disabled: { opacity: 0.35 },
 
   // ── Select bar ────────────────────────────────────────────────────────────
@@ -488,9 +488,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(152, 212, 250, 0.10)',
   },
-  selectBarBtn: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40, fontFamily: 'GillSans-Light' },
+  selectBarBtn: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '500', minWidth: 40, fontFamily: 'GillSans-Light' },
   selectCount: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontWeight: '500', fontFamily: 'GillSans-Light' },
-  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '600', minWidth: 40, textAlign: 'right', fontFamily: 'GillSans-Light' },
+  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '500', minWidth: 40, textAlign: 'right', fontFamily: 'GillSans-Light' },
 
   // ── Section headers ───────────────────────────────────────────────────────
   sectionHeader: {
@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(9, 41, 173, 0.08)',
   },
   sectionHeaderLeft: { flex: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
+  sectionTitle: { fontSize: 16, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
   sectionCount: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', marginTop: 2, fontFamily: 'GillSans-Light' },
   deleteDayBtn: {
     paddingHorizontal: 10,
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(230, 57, 70, 0.35)',
   },
-  deleteDayBtnText: { color: '#e63946', fontSize: 12, fontWeight: '600', fontFamily: 'GillSans-Light' },
+  deleteDayBtnText: { color: '#e63946', fontSize: 12, fontWeight: '500', fontFamily: 'GillSans-Light' },
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   listContent: { paddingBottom: 32 },
