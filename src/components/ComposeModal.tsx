@@ -91,11 +91,11 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
       undefined,
       [
         {
-          text: '📷 Camera',
+          text: 'Camera',
           onPress: () => launchPicker('camera'),
         },
         {
-          text: '🖼️ Photo Library',
+          text: 'Photo Library',
           onPress: () => launchPicker('library'),
         },
         { text: 'Cancel', style: 'cancel' },
@@ -207,7 +207,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
             </TouchableOpacity>
             <Text style={styles.title}>{isEditing ? 'Edit Entry' : 'New Entry'}</Text>
             {saving ? (
-              <ActivityIndicator color="#48cae4" style={styles.headerBtn} />
+              <ActivityIndicator color="#002366" style={styles.headerBtn} />
             ) : (
               <TouchableOpacity
                 onPress={handleSave}
@@ -231,7 +231,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
               ref={inputRef}
               style={styles.textInput}
               placeholder="What's on your mind?"
-              placeholderTextColor="rgba(72, 202, 228, 0.3)"
+              placeholderTextColor="rgba(0, 35, 102, 0.3)"
               value={text}
               onChangeText={setText}
               multiline
@@ -248,7 +248,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
                   onPress={() => setPhotoUri(null)}
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 >
-                  <Feather name="x" size={12} color="#fff" />
+                  <Feather name="x" size={11} color="#fff" />
                 </TouchableOpacity>
               </View>
             )}
@@ -258,7 +258,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
               style={styles.photoButton}
               onPress={() => pickImage('library')}
             >
-              <Feather name="camera" size={16} color="rgba(147, 210, 232, 0.65)" />
+              <Feather name="camera" size={14} color="rgba(147, 210, 232, 0.65)" />
               <Text style={styles.photoButtonText}>
                 {photoUri ? 'Change photo' : 'Add photo'}
               </Text>
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(72, 202, 228, 0.15)',
+    borderTopColor: 'rgba(0, 35, 102, 0.15)',
     maxHeight: '90%',
     minHeight: 320,
   },
@@ -296,12 +296,12 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(72, 202, 228, 0.08)',
+    borderBottomColor: 'rgba(0, 35, 102, 0.08)',
   },
   headerBtn: { minWidth: 56 },
-  title: { fontSize: 16, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
+  title: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
   cancelText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 15, fontFamily: 'Avenir' },
-  saveText: { color: '#48cae4', fontSize: 15, fontWeight: '700', textAlign: 'right', fontFamily: 'Avenir' },
+  saveText: { color: '#002366', fontSize: 15, fontWeight: '600', textAlign: 'right', fontFamily: 'Avenir' },
   saveTextDisabled: { opacity: 0.35 },
   body: { paddingHorizontal: 18, paddingTop: 14 },
   textInput: {
@@ -341,10 +341,10 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(72, 202, 228, 0.18)',
+    backgroundColor: 'rgba(0, 35, 102, 0.18)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
     alignSelf: 'flex-start',
   },
   photoButtonText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },

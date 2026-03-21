@@ -64,7 +64,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
         //    can start or stop (microphone access requires a foreground app).
         //    The HomeScreen reads WIDGET_MONITORING_KEY on every focus event.
         try {
-          await Linking.openURL('autojournal://home');
+          await Linking.openURL('untangle://home');
         } catch {
           // App might already be in foreground; ignore launch errors.
         }

@@ -33,15 +33,15 @@ const markdownStyles = {
   heading2: {
     color: 'rgba(224, 242, 254, 0.95)',
     fontSize: 14,
-    fontWeight: '700' as const,
+    fontWeight: '600' as const,
     marginTop: 12,
     marginBottom: 4,
     borderBottomWidth: 0,
   },
   bullet_list: { marginLeft: 0 },
   bullet_list_item: { color: 'rgba(147, 210, 232, 0.65)', marginBottom: 2 },
-  bullet_list_icon: { color: '#48cae4', marginTop: 5 },
-  strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '700' as const },
+  bullet_list_icon: { color: '#002366', marginTop: 5 },
+  strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' as const },
   paragraph: { marginTop: 0, marginBottom: 4 },
 };
 
@@ -225,7 +225,7 @@ export default function SummaryScreen() {
               style={styles.actionBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Feather name="download" size={14} color="#48cae4" />
+              <Feather name="download" size={13} color="#002366" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleGenerate(item.date)}
@@ -235,7 +235,7 @@ export default function SummaryScreen() {
             >
               {generatingDate === item.date
                 ? <ActivityIndicator size="small" color="rgba(147, 210, 232, 0.65)" />
-                : <Feather name="refresh-cw" size={14} color="rgba(147, 210, 232, 0.65)" />}
+                : <Feather name="refresh-cw" size={13} color="rgba(147, 210, 232, 0.65)" />}
             </TouchableOpacity>
           </View>
         )}
@@ -294,7 +294,7 @@ export default function SummaryScreen() {
         {summaries.length === 0 ? (
           /* Empty state */
           <View style={[styles.card, styles.placeholderCard]}>
-            <Feather name="star" size={56} color="rgba(72, 202, 228, 0.35)" style={{ marginBottom: 16 }} />
+            <Feather name="star" size={44} color="rgba(0, 35, 102, 0.35)" style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>No summaries yet</Text>
             <Text style={styles.emptySubtitle}>
               Summaries auto-generate at 11:59 PM.{'\n'}Tap below to generate today's now.
@@ -303,7 +303,7 @@ export default function SummaryScreen() {
         ) : currentIndex >= summaries.length ? (
           /* All swiped through */
           <View style={[styles.card, styles.placeholderCard]}>
-            <Feather name="check-circle" size={56} color="rgba(72, 202, 228, 0.35)" style={{ marginBottom: 16 }} />
+            <Feather name="check-circle" size={44} color="rgba(0, 35, 102, 0.35)" style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>All caught up!</Text>
             <Text style={styles.emptySubtitle}>You've reviewed all your summaries.</Text>
             <TouchableOpacity style={styles.restartBtn} onPress={() => setCurrentIndex(0)}>
@@ -370,26 +370,17 @@ export default function SummaryScreen() {
         <View style={styles.navPlaceholder} />
       </View>
 
-      {/* Spacer so FAB doesn't cover navRow */}
-      <View style={styles.fabSpacer} />
-
-      {/* FAB — generate today's summary */}
+      {/* Round FAB — generate today's summary */}
       <TouchableOpacity
         style={[styles.fab, isGeneratingToday && styles.fabDisabled]}
         onPress={() => handleGenerate(today)}
         disabled={isGeneratingToday}
         activeOpacity={0.85}
       >
-        {isGeneratingToday ? (
-          <ActivityIndicator color="#010c1a" />
-        ) : (
-          <>
-            <Feather name={todaySummary ? 'refresh-cw' : 'star'} size={18} color="#010c1a" />
-            <Text style={styles.fabLabel}>
-              {todaySummary ? "Regenerate today's" : "Generate today's"}
-            </Text>
-          </>
-        )}
+        {isGeneratingToday
+          ? <ActivityIndicator color="rgba(224, 242, 254, 0.8)" size="small" />
+          : <Feather name={todaySummary ? 'refresh-cw' : 'star'} size={20} color="rgba(224, 242, 254, 0.8)" />
+        }
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -407,7 +398,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
-  screenTitle: { fontSize: 22, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
+  screenTitle: { fontSize: 22, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
   counter: { fontSize: 14, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
 
   // ── Card stack container ─────────────────────────────────────────────────
@@ -426,10 +417,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
-    borderLeftWidth: 3,
-    borderLeftColor: 'rgba(72, 202, 228, 0.35)',
-    shadowColor: '#48cae4',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
+    shadowColor: '#002366',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
@@ -445,7 +434,6 @@ const styles = StyleSheet.create({
   placeholderCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderLeftColor: 'rgba(72, 202, 228, 0.13)',
   },
 
   // ── Card inner content ────────────────────────────────────────────────────
@@ -457,7 +445,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   cardHeaderLeft: { flex: 1 },
-  cardDate: { fontSize: 20, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Avenir' },
+  cardDate: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Avenir' },
   cardMeta: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
@@ -466,16 +454,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'rgba(6, 26, 55, 0.55)',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   insightSection: { marginBottom: 8 },
-  divider: { height: 1, backgroundColor: 'rgba(72, 202, 228, 0.08)', marginBottom: 12, marginTop: 4 },
+  divider: { height: 1, backgroundColor: 'rgba(0, 35, 102, 0.08)', marginBottom: 12, marginTop: 4 },
   breakdownLabel: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
     color: 'rgba(147, 210, 232, 0.35)',
     letterSpacing: 0.8,
     marginBottom: 8,
@@ -491,18 +479,18 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 2.5,
   },
-  swipeLabelLeft: { left: 16, borderColor: '#48cae4' },
-  swipeLabelRight: { right: 16, borderColor: '#48cae4' },
+  swipeLabelLeft: { left: 16, borderColor: '#002366' },
+  swipeLabelRight: { right: 16, borderColor: '#002366' },
   swipeLabelText: {
     fontSize: 13,
-    fontWeight: '900',
-    color: '#48cae4',
+    fontWeight: '600',
+    color: '#002366',
     letterSpacing: 1.5,
     fontFamily: 'Avenir',
   },
 
   // ── Empty / done states ───────────────────────────────────────────────────
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Avenir' },
+  emptyTitle: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Avenir' },
   emptySubtitle: {
     fontSize: 14,
     color: 'rgba(147, 210, 232, 0.35)',
@@ -515,12 +503,12 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    backgroundColor: 'rgba(0, 35, 102, 0.08)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.2)',
+    borderColor: 'rgba(0, 35, 102, 0.2)',
   },
-  restartBtnText: { color: '#48cae4', fontSize: 14, fontWeight: '600', fontFamily: 'Avenir' },
+  restartBtnText: { color: '#002366', fontSize: 14, fontWeight: '600', fontFamily: 'Avenir' },
 
   // ── Bottom nav ─────────────────────────────────────────────────────────────
   navRow: {
@@ -533,35 +521,33 @@ const styles = StyleSheet.create({
   navBtn: {
     paddingHorizontal: 14,
     paddingVertical: 7,
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    backgroundColor: 'rgba(0, 35, 102, 0.08)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.2)',
+    borderColor: 'rgba(0, 35, 102, 0.2)',
   },
-  navBtnText: { color: '#48cae4', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
+  navBtnText: { color: '#002366', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
   navPlaceholder: { width: 80 },
   swipeHint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
 
   // ── FAB ───────────────────────────────────────────────────────────────────
-  fabSpacer: { height: 72 },
   fab: {
     position: 'absolute',
-    bottom: 24,
-    right: 20,
-    left: 20,
-    flexDirection: 'row',
+    bottom: 28,
+    right: 24,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 35, 102, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#48cae4',
-    borderRadius: 16,
-    paddingVertical: 16,
     elevation: 6,
-    shadowColor: '#48cae4',
+    shadowColor: '#002366',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.2,
     shadowRadius: 10,
   },
-  fabDisabled: { opacity: 0.6 },
-  fabLabel: { fontSize: 16, fontWeight: '700', color: '#010c1a', fontFamily: 'Avenir' },
+  fabDisabled: { opacity: 0.5 },
 });

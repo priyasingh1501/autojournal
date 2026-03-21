@@ -41,7 +41,7 @@ export async function scheduleNightlyNotification(): Promise<void> {
   await Notifications.scheduleNotificationAsync({
     identifier: NIGHTLY_NOTIFICATION_ID,
     content: {
-      title: '✨ Daily Summary',
+      title: 'Daily Summary',
       body: "Your day is wrapping up — generating today's journal summary.",
       data: { action: 'generate-summary' },
       ...(Platform.OS === 'android' && { channelId: NOTIFICATION_CHANNEL }),

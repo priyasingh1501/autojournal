@@ -62,7 +62,7 @@ export default function SettingsScreen() {
               value={settings.openaiApiKey}
               onChangeText={(v) => setSettings(prev => ({ ...prev, openaiApiKey: v }))}
               placeholder="sk-..."
-              placeholderTextColor="rgba(72, 202, 228, 0.3)"
+              placeholderTextColor="rgba(0, 35, 102, 0.3)"
               secureTextEntry={!showOpenAIKey}
               autoCapitalize="none"
               autoCorrect={false}
@@ -71,7 +71,7 @@ export default function SettingsScreen() {
               style={styles.eyeButton}
               onPress={() => setShowOpenAIKey(!showOpenAIKey)}
             >
-              <Feather name={showOpenAIKey ? 'eye-off' : 'eye'} size={18} color="rgba(147, 210, 232, 0.65)" />
+              <Feather name={showOpenAIKey ? 'eye-off' : 'eye'} size={16} color="rgba(147, 210, 232, 0.65)" />
             </TouchableOpacity>
           </View>
 
@@ -82,7 +82,7 @@ export default function SettingsScreen() {
               value={settings.anthropicApiKey}
               onChangeText={(v) => setSettings(prev => ({ ...prev, anthropicApiKey: v }))}
               placeholder="sk-ant-..."
-              placeholderTextColor="rgba(72, 202, 228, 0.3)"
+              placeholderTextColor="rgba(0, 35, 102, 0.3)"
               secureTextEntry={!showAnthropicKey}
               autoCapitalize="none"
               autoCorrect={false}
@@ -91,7 +91,7 @@ export default function SettingsScreen() {
               style={styles.eyeButton}
               onPress={() => setShowAnthropicKey(!showAnthropicKey)}
             >
-              <Feather name={showAnthropicKey ? 'eye-off' : 'eye'} size={18} color="rgba(147, 210, 232, 0.65)" />
+              <Feather name={showAnthropicKey ? 'eye-off' : 'eye'} size={16} color="rgba(147, 210, 232, 0.65)" />
             </TouchableOpacity>
           </View>
         </View>
@@ -179,8 +179,8 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
-    shadowColor: '#48cae4',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
+    shadowColor: '#002366',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     color: 'rgba(224, 242, 254, 0.95)',
     marginBottom: 6,
     fontFamily: 'Avenir',
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(1, 8, 18, 0.8)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
     paddingRight: 12,
   },
   input: {
@@ -240,32 +240,34 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    backgroundColor: 'rgba(0, 35, 102, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.2)',
+    borderColor: 'rgba(0, 35, 102, 0.2)',
     alignItems: 'center',
   },
   thresholdButtonSelected: {
-    backgroundColor: '#48cae4',
-    borderColor: '#48cae4',
+    backgroundColor: 'rgba(0, 35, 102, 0.22)',
+    borderColor: 'rgba(0, 35, 102, 0.55)',
   },
-  thresholdButtonText: { color: '#48cae4', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
-  thresholdButtonTextSelected: { color: '#010c1a', fontWeight: '700' },
+  thresholdButtonText: { color: '#002366', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
+  thresholdButtonTextSelected: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' },
 
   // ── Save button ────────────────────────────────────────────────────────────
   saveButton: {
-    backgroundColor: '#48cae4',
+    backgroundColor: 'rgba(0, 35, 102, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 35, 102, 0.45)',
     borderRadius: 28,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
-    shadowColor: '#48cae4',
+    shadowColor: '#002366',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
     elevation: 6,
   },
-  saveButtonText: { color: '#010c1a', fontSize: 17, fontWeight: '700', fontFamily: 'Avenir' },
+  saveButtonText: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 17, fontWeight: '600', fontFamily: 'Avenir' },
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   footer: { alignItems: 'center', marginTop: 24, marginBottom: 12 },

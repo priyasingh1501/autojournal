@@ -83,8 +83,8 @@ export default function WeeklyInsightCard() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {refreshing
-            ? <ActivityIndicator size="small" color="#48cae4" />
-            : <Feather name="refresh-cw" size={14} color="rgba(147, 210, 232, 0.65)" />}
+            ? <ActivityIndicator size="small" color="#002366" />
+            : <Feather name="refresh-cw" size={13} color="rgba(147, 210, 232, 0.65)" />}
         </TouchableOpacity>
       </View>
 
@@ -103,7 +103,7 @@ export default function WeeklyInsightCard() {
       {/* Not enough data */}
       {!loading && notEnoughData && (
         <Text style={styles.emptyText}>
-          Keep journaling — weekly insights appear once you have summaries from at least 2 days this week.
+          Keep journaling — weekly insights appear once you have a summary for at least one day this week.
         </Text>
       )}
 
@@ -132,10 +132,8 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#48cae4',
-    shadowColor: '#48cae4',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
+    shadowColor: '#002366',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
@@ -149,7 +147,7 @@ const styles = StyleSheet.create({
   },
   heading: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
     color: 'rgba(224, 242, 254, 0.95)',
     flex: 1,
     fontFamily: 'Avenir',
@@ -160,7 +158,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     backgroundColor: 'rgba(6, 26, 55, 0.55)',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -174,7 +172,7 @@ const styles = StyleSheet.create({
 
   skeletonLine: {
     height: 13,
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    backgroundColor: 'rgba(0, 35, 102, 0.08)',
     borderRadius: 7,
     marginBottom: 9,
   },

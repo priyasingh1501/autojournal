@@ -9,7 +9,6 @@ import {
   Alert,
   Animated,
   ActivityIndicator,
-  Image,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,26 +17,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { audioRecorderService, RecordingStatus } from '../services/AudioRecorderService';
 import { transcribePendingClips, BatchProgress } from '../services/BatchTranscriptionService';
 import { StorageService } from '../services/StorageService';
-import { TranscriptEntry, PendingClip } from '../types';
+import { PendingClip } from '../types';
 import ComposeModal from '../components/ComposeModal';
 import WeeklyInsightCard from '../components/WeeklyInsightCard';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 
 export default function HomeScreen() {
   const [status, setStatus] = useState<RecordingStatus>('idle');
-  const [todayTranscripts, setTodayTranscripts] = useState<TranscriptEntry[]>([]);
   const [pendingClips, setPendingClips] = useState<PendingClip[]>([]);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
   const [showCompose, setShowCompose] = useState(false);
   const isTranscribingRef = React.useRef(false);
-  const [editingEntry, setEditingEntry] = useState<(TranscriptEntry & { date: string }) | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
-      // When the screen gains focus (including via widget deeplink), check
-      // whether the widget set a monitoring intent while the app was closed.
       syncWidgetMonitoringIntent();
     }, [])
   );
@@ -72,23 +67,15 @@ export default function HomeScreen() {
   }, [status]);
 
   const loadData = async () => {
-    const [entries, clips] = await Promise.all([
-      StorageService.getTodayTranscripts(),
-      StorageService.getPendingClips(),
-    ]);
-    setTodayTranscripts(entries.reverse());
+    const clips = await StorageService.getPendingClips();
     setPendingClips(clips);
   };
 
   // ── Widget ↔ app sync ────────────────────────────────────────────────────
-  // Called every time the Journal tab gains focus (including when the widget
-  // deeplink opens the app).  Reads the shared AsyncStorage flag set by the
-  // widget task handler and starts / stops monitoring to match.
   const syncWidgetMonitoringIntent = async () => {
     if (Platform.OS !== 'android') return;
     try {
       const val = await AsyncStorage.getItem(WIDGET_MONITORING_KEY);
-      // Use audioRecorderService.getStatus() — always live, never a stale closure
       const liveStatus = audioRecorderService.getStatus();
       if (val === 'true' && liveStatus === 'idle') {
         await audioRecorderService.startMonitoring();
@@ -100,8 +87,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Persist the new monitoring state to AsyncStorage so the widget reflects it,
-  // then ask react-native-android-widget to re-render the widget UI.
   const updateWidgetState = async (monitoring: boolean) => {
     if (Platform.OS !== 'android') return;
     try {
@@ -128,19 +113,14 @@ export default function HomeScreen() {
   };
 
   const handleTranscribeNow = async () => {
-    if (isTranscribingRef.current) return; // always current, no stale closure
+    if (isTranscribingRef.current) return;
     isTranscribingRef.current = true;
     setBatchProgress({ total: 0, completed: 0, failed: 0 });
     try {
       await transcribePendingClips(
         (progress) => setBatchProgress(progress),
-        (entry) => {
-          // Called once with the single merged card after all clips are processed
-          const today = new Date().toISOString().split('T')[0];
-          const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
-          if (entryDate === today) {
-            setTodayTranscripts(prev => [entry, ...prev]);
-          }
+        () => {
+          // Entry saved to storage — Notes tab will show it on next focus
         },
       );
     } finally {
@@ -179,16 +159,8 @@ export default function HomeScreen() {
   const getStatusColor = () => {
     switch (status) {
       case 'idle': return 'rgba(147, 210, 232, 0.5)';
-      case 'monitoring': return '#48cae4';
-      case 'recording': return '#48cae4';
-    }
-  };
-
-  const handleManualEntrySaved = (entry: TranscriptEntry) => {
-    const today = new Date().toISOString().split('T')[0];
-    const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
-    if (entryDate === today) {
-      setTodayTranscripts(prev => [entry, ...prev]);
+      case 'monitoring': return 'rgba(224, 242, 254, 0.95)';
+      case 'recording': return 'rgba(224, 242, 254, 0.95)';
     }
   };
 
@@ -199,7 +171,6 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       {/* Main Button */}
       <View style={styles.buttonSection}>
-        {/* Outer glow ring */}
         <View style={[styles.glowRing, isActive && styles.glowRingActive]}>
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <TouchableOpacity
@@ -209,8 +180,8 @@ export default function HomeScreen() {
             >
               <Feather
                 name={status === 'recording' ? 'square' : 'mic'}
-                size={36}
-                color={isActive ? '#010c1a' : '#48cae4'}
+                size={28}
+                color={isActive ? 'rgba(224, 242, 254, 0.95)' : 'rgba(0, 35, 102, 0.7)'}
               />
             </TouchableOpacity>
           </Animated.View>
@@ -220,9 +191,11 @@ export default function HomeScreen() {
           {getStatusText()}
         </Text>
 
-        <Text style={styles.transcriptCount}>
-          {todayTranscripts.length} transcripts · {pendingClips.length} pending
-        </Text>
+        {pendingClips.length > 0 && (
+          <Text style={styles.pendingCount}>
+            {pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} pending
+          </Text>
+        )}
       </View>
 
       {/* Pending clips banner */}
@@ -237,9 +210,11 @@ export default function HomeScreen() {
             </View>
           ) : (
             <View style={styles.pendingRow}>
-              <View style={{flexDirection:'row', alignItems:'center', gap:4, flex:1}}>
-                <Feather name="music" size={14} color="#f4a261" />
-                <Text style={styles.pendingText}> {pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} saved locally</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
+                <Feather name="music" size={12} color="#f4a261" />
+                <Text style={styles.pendingText}>
+                  {' '}{pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} saved locally
+                </Text>
               </View>
               <View style={styles.pendingActions}>
                 <TouchableOpacity style={styles.transcribeButton} onPress={handleTranscribeNow}>
@@ -254,65 +229,13 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Weekly insight + today's entries — single scroll area */}
+      {/* Weekly insight card */}
       <ScrollView
         style={styles.scrollArea}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <WeeklyInsightCard />
-
-        <Text style={styles.sectionTitle}>Today</Text>
-          {todayTranscripts.slice(0, 8).map((entry) => {
-            const today = new Date().toISOString().split('T')[0];
-            return (
-              <View
-                key={entry.id}
-                style={[
-                  styles.transcriptCard,
-                  entry.kind === 'manual' && styles.transcriptCardManual,
-                ]}
-              >
-                <View style={styles.transcriptCardHeader}>
-                  <Feather
-                    name={entry.kind === 'manual' ? 'edit-3' : 'mic'}
-                    size={11}
-                    color="rgba(147, 210, 232, 0.65)"
-                  />
-                  <Text style={styles.transcriptTime}>
-                    {new Date(entry.timestamp).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.editBtn}
-                    onPress={() => setEditingEntry({ ...entry, date: today })}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Feather name="edit-2" size={11} color="#48cae4" />
-                  </TouchableOpacity>
-                </View>
-                {entry.text.length > 0 && (
-                  <Text style={styles.transcriptText} numberOfLines={3}>
-                    {entry.text}
-                  </Text>
-                )}
-                {entry.photoUri && (
-                  <Image
-                    source={{ uri: entry.photoUri }}
-                    style={styles.photoThumb}
-                    resizeMode="cover"
-                  />
-                )}
-              </View>
-            );
-          })}
-          {todayTranscripts.length === 0 && (
-            <Text style={styles.emptyText}>
-              No entries yet.{'\n'}Tap the mic to start listening, or the pen to write.
-            </Text>
-          )}
       </ScrollView>
 
       {/* Compose FAB */}
@@ -321,25 +244,13 @@ export default function HomeScreen() {
         onPress={() => setShowCompose(true)}
         activeOpacity={0.85}
       >
-        <Feather name="edit-2" size={22} color="#010c1a" />
+        <Feather name="edit-2" size={18} color="rgba(224, 242, 254, 0.8)" />
       </TouchableOpacity>
 
       <ComposeModal
         visible={showCompose}
         onClose={() => setShowCompose(false)}
-        onSaved={handleManualEntrySaved}
-      />
-
-      <ComposeModal
-        visible={editingEntry !== null}
-        editEntry={editingEntry ?? undefined}
-        onClose={() => setEditingEntry(null)}
-        onSaved={(updated) => {
-          setEditingEntry(null);
-          setTodayTranscripts(prev =>
-            prev.map(e => (e.id === updated.id ? updated : e))
-          );
-        }}
+        onSaved={() => setShowCompose(false)}
       />
     </SafeAreaView>
   );
@@ -349,18 +260,18 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#010c1a' },
 
   // ── Mic button section ────────────────────────────────────────────────────
-  buttonSection: { alignItems: 'center', paddingVertical: 32 },
+  buttonSection: { alignItems: 'center', paddingVertical: 40 },
 
   glowRing: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    backgroundColor: 'rgba(0, 35, 102, 0.06)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   glowRingActive: {
-    backgroundColor: 'rgba(72, 202, 228, 0.14)',
+    backgroundColor: 'rgba(0, 35, 102, 0.14)',
   },
 
   mainButton: {
@@ -370,113 +281,74 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(3, 18, 40, 0.72)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(72, 202, 228, 0.4)',
-    shadowColor: '#48cae4',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 35, 102, 0.3)',
+    shadowColor: '#002366',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.12,
     shadowRadius: 24,
     elevation: 8,
   },
   mainButtonActive: {
-    backgroundColor: '#48cae4',
-    borderColor: '#48cae4',
+    backgroundColor: 'rgba(0, 35, 102, 0.22)',
+    borderColor: 'rgba(0, 35, 102, 0.55)',
     shadowOpacity: 0.35,
   },
 
-  statusText: { marginTop: 16, fontSize: 18, fontWeight: '600', fontFamily: 'Avenir' },
-  transcriptCount: { marginTop: 8, fontSize: 14, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
+  statusText: {
+    marginTop: 18,
+    fontSize: 17,
+    fontWeight: '500',
+    fontFamily: 'Avenir',
+  },
+  pendingCount: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#f4a261',
+    fontFamily: 'Avenir',
+  },
 
   // ── Pending banner ────────────────────────────────────────────────────────
   pendingBanner: {
     marginHorizontal: 20,
     marginBottom: 12,
-    backgroundColor: 'rgba(244, 162, 97, 0.15)',
+    backgroundColor: 'rgba(244, 162, 97, 0.12)',
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(244, 162, 97, 0.35)',
-    shadowColor: '#48cae4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
+    borderColor: 'rgba(244, 162, 97, 0.3)',
   },
-  pendingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
+  pendingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   pendingText: { color: '#f4a261', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
   pendingActions: { flexDirection: 'row', gap: 8 },
   transcribeButton: {
-    backgroundColor: '#f4a261',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  transcribeButtonText: { color: '#010c1a', fontSize: 13, fontWeight: '700', fontFamily: 'Avenir' },
-  discardButton: {
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    backgroundColor: 'rgba(244, 162, 97, 0.18)',
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.2)',
+    borderColor: 'rgba(244, 162, 97, 0.4)',
   },
-  discardButtonText: { color: '#48cae4', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
+  transcribeButtonText: { color: '#f4a261', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
+  discardButton: {
+    backgroundColor: 'rgba(0, 35, 102, 0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 35, 102, 0.2)',
+  },
+  discardButtonText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
 
   // ── Scroll area ───────────────────────────────────────────────────────────
   scrollArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 110 },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: 'rgba(224, 242, 254, 0.95)',
-    marginBottom: 12,
-    fontFamily: 'Avenir',
-  },
-
-  // ── Entry cards ───────────────────────────────────────────────────────────
-  transcriptCard: {
-    backgroundColor: 'rgba(3, 18, 40, 0.72)',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
-    borderLeftWidth: 3,
-    borderLeftColor: 'rgba(72, 202, 228, 0.5)',
-    shadowColor: '#48cae4',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  transcriptCardManual: { borderLeftColor: 'rgba(0, 180, 216, 0.4)' },
-  transcriptCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  transcriptTime: { fontSize: 12, color: 'rgba(147, 210, 232, 0.65)', flex: 1, fontFamily: 'Avenir' },
-  editBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  transcriptText: { fontSize: 15, color: 'rgba(147, 210, 232, 0.65)', lineHeight: 22, fontFamily: 'Avenir' },
-  photoThumb: {
-    width: '100%',
-    height: 140,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  emptyText: {
-    color: 'rgba(147, 210, 232, 0.35)',
-    textAlign: 'center',
-    marginTop: 40,
-    fontSize: 15,
-    lineHeight: 24,
-    fontFamily: 'Avenir',
-  },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 100 },
 
   // ── FAB ───────────────────────────────────────────────────────────────────
   fab: {
@@ -486,13 +358,15 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#48cae4',
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 35, 102, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,
-    shadowColor: '#48cae4',
+    shadowColor: '#002366',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.2,
     shadowRadius: 10,
   },
 });

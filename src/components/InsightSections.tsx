@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 export const SECTION_LABELS: Record<string, { iconName: string; color: string }> = {
-  'Emotional check-in': { iconName: 'activity',     color: '#48cae4' },
+  'Emotional check-in': { iconName: 'activity',     color: '#002366' },
   'Meals':              { iconName: 'coffee',        color: '#06d6a0' },
   'Movement':           { iconName: 'zap',           color: '#f4a261' },
   'Spending':           { iconName: 'credit-card',   color: '#00b4d8' },
@@ -42,7 +42,7 @@ export function renderInsightSections(text: string): React.ReactNode {
       nodes.push(
         <View key={headingKey} style={sectionStyles.section}>
           <View style={sectionStyles.headingRow}>
-            <Feather name={meta.iconName as any} size={13} color={meta.color} />
+            <Feather name={meta.iconName as any} size={12} color={meta.color} />
             <Text style={[sectionStyles.heading, { color: meta.color }]}>  {headingKey}</Text>
           </View>
           {body.length > 0 && (
@@ -65,6 +65,6 @@ const sectionStyles = StyleSheet.create({
   wrapper: { marginBottom: 4 },
   section: { marginBottom: 14 },
   headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  heading: { fontSize: 13, fontWeight: '700', letterSpacing: 0.2, fontFamily: 'Avenir' },
+  heading: { fontSize: 13, fontWeight: '600', letterSpacing: 0.2, fontFamily: 'Avenir' },
   body: { fontSize: 14, color: 'rgba(147, 210, 232, 0.75)', lineHeight: 22, fontFamily: 'Avenir' },
 });

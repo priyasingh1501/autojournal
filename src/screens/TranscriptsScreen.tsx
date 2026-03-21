@@ -258,12 +258,6 @@ export default function TranscriptsScreen() {
     clip: 'music',
   };
 
-  const BORDER: Record<JournalItem['kind'], string> = {
-    transcript: '#48cae4',
-    manual: '#00b4d8',
-    clip: '#f4a261',
-  };
-
   const renderItem = ({ item }: { item: JournalItem }) => {
     const id = item.data.id;
     const isSelected = selected.has(id);
@@ -275,7 +269,6 @@ export default function TranscriptsScreen() {
       <TouchableOpacity
         style={[
           styles.card,
-          { borderLeftColor: BORDER[item.kind] },
           isSelected && styles.cardSelected,
         ]}
         onPress={() => (selectMode ? toggleSelect(id) : undefined)}
@@ -289,13 +282,13 @@ export default function TranscriptsScreen() {
       >
         {selectMode && (
           <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-            {isSelected && <Feather name="check" size={13} color="#010c1a" />}
+            {isSelected && <Feather name="check" size={11} color="rgba(224, 242, 254, 0.95)" />}
           </View>
         )}
         <View style={styles.cardBody}>
           <View style={styles.cardHeader}>
             <View style={styles.cardHeaderLeft}>
-              <Feather name={ICON_NAME[item.kind] as any} size={12} color="rgba(147, 210, 232, 0.65)" />
+              <Feather name={ICON_NAME[item.kind] as any} size={11} color="rgba(147, 210, 232, 0.65)" />
               <Text style={styles.cardTime}>{formatTime(item.data.timestamp)}</Text>
               {!isManual && (
                 <Text style={styles.cardDuration}> · {item.data.duration.toFixed(1)}s</Text>
@@ -311,7 +304,7 @@ export default function TranscriptsScreen() {
                     style={styles.editBtn}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Feather name="edit-2" size={11} color="#48cae4" />
+                    <Feather name="edit-2" size={10} color="#002366" />
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity
@@ -319,7 +312,7 @@ export default function TranscriptsScreen() {
                   style={styles.deleteBtn}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Feather name="x" size={10} color="#e63946" />
+                  <Feather name="x" size={9} color="#e63946" />
                 </TouchableOpacity>
               </View>
             )}
@@ -378,18 +371,18 @@ export default function TranscriptsScreen() {
       {/* Top bar */}
       <View style={styles.topBar}>
         <View style={styles.searchBox}>
-          <Feather name="search" size={14} color="rgba(72, 202, 228, 0.4)" />
+          <Feather name="search" size={13} color="rgba(0, 35, 102, 0.4)" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search transcripts…"
-            placeholderTextColor="rgba(72, 202, 228, 0.4)"
+            placeholderTextColor="rgba(0, 35, 102, 0.4)"
             value={search}
             onChangeText={setSearch}
             returnKeyType="search"
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch('')}>
-              <Feather name="x" size={14} color="rgba(147, 210, 232, 0.35)" />
+              <Feather name="x" size={13} color="rgba(147, 210, 232, 0.35)" />
             </TouchableOpacity>
           )}
         </View>
@@ -478,10 +471,10 @@ const styles = StyleSheet.create({
     height: 40,
     gap: 6,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
   },
   searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontFamily: 'Avenir' },
-  actionBtn: { color: '#48cae4', fontSize: 15, fontWeight: '600', fontFamily: 'Avenir' },
+  actionBtn: { color: '#002366', fontSize: 15, fontWeight: '600', fontFamily: 'Avenir' },
   disabled: { opacity: 0.35 },
 
   // ── Select bar ────────────────────────────────────────────────────────────
@@ -493,11 +486,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: 'rgba(6, 26, 55, 0.55)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(72, 202, 228, 0.13)',
+    borderBottomColor: 'rgba(0, 35, 102, 0.13)',
   },
   selectBarBtn: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40, fontFamily: 'Avenir' },
   selectCount: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
-  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '700', minWidth: 40, textAlign: 'right', fontFamily: 'Avenir' },
+  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '600', minWidth: 40, textAlign: 'right', fontFamily: 'Avenir' },
 
   // ── Section headers ───────────────────────────────────────────────────────
   sectionHeader: {
@@ -509,10 +502,10 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(72, 202, 228, 0.08)',
+    borderBottomColor: 'rgba(0, 35, 102, 0.08)',
   },
   sectionHeaderLeft: { flex: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
   sectionCount: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', marginTop: 2, fontFamily: 'Avenir' },
   deleteDayBtn: {
     paddingHorizontal: 10,
@@ -535,19 +528,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 12,
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.13)',
-    borderLeftWidth: 3,
-    borderLeftColor: '#48cae4',
-    shadowColor: '#48cae4',
+    borderColor: 'rgba(0, 35, 102, 0.13)',
+    shadowColor: '#002366',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
   },
   cardSelected: {
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
-    borderColor: 'rgba(72, 202, 228, 0.3)',
-    borderLeftWidth: 3,
+    backgroundColor: 'rgba(0, 35, 102, 0.08)',
+    borderColor: 'rgba(0, 35, 102, 0.3)',
   },
   checkbox: {
     width: 22,
@@ -561,7 +551,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  checkboxSelected: { backgroundColor: '#48cae4', borderColor: '#48cae4' },
+  checkboxSelected: { backgroundColor: 'rgba(0, 35, 102, 0.35)', borderColor: '#002366' },
   cardBody: { flex: 1 },
   cardHeader: {
     flexDirection: 'row',
@@ -577,9 +567,9 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    backgroundColor: 'rgba(0, 35, 102, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(72, 202, 228, 0.2)',
+    borderColor: 'rgba(0, 35, 102, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },

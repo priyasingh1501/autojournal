@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "Auto Journal",
-    "slug": "auto-journal",
+    "name": "untangle",
+    "slug": "untangle",
     "version": "1.2.0",
-    "scheme": "autojournal",
+    "scheme": "untangle",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,9 +15,9 @@
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Auto Journal needs microphone access to record your voice and create your daily journal.",
-        "NSCameraUsageDescription": "Auto Journal uses the camera so you can add photos to your journal entries.",
-        "NSPhotoLibraryUsageDescription": "Auto Journal accesses your photo library so you can attach images to journal entries.",
+        "NSMicrophoneUsageDescription": "untangle needs microphone access to record your voice and create your daily journal.",
+        "NSCameraUsageDescription": "untangle uses the camera so you can add photos to your journal entries.",
+        "NSPhotoLibraryUsageDescription": "untangle accesses your photo library so you can attach images to journal entries.",
         "UIBackgroundModes": [
           "audio",
           "fetch",
@@ -45,8 +45,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Auto Journal to access your photos to attach them to journal entries.",
-          "cameraPermission": "Allow Auto Journal to use your camera to take photos for journal entries.",
+          "photosPermission": "Allow untangle to access your photos to attach them to journal entries.",
+          "cameraPermission": "Allow untangle to use your camera to take photos for journal entries.",
           "microphonePermission": false
         }
       ],
@@ -64,7 +64,7 @@
           "widgets": [
             {
               "name": "MicWidget",
-              "label": "Auto Journal",
+              "label": "untangle",
               "minWidth": "110dp",
               "minHeight": "110dp",
               "description": "Tap to start or stop voice monitoring",

@@ -50,7 +50,7 @@ export function MicWidget({ isMonitoring }: MicWidgetProps) {
 
       {/* Status label — always rendered, text/colour changes by state */}
       <TextWidget
-        text={isMonitoring ? 'Listening…' : 'Auto Journal'}
+        text={isMonitoring ? 'Listening…' : 'untangle'}
         style={{
           color: isMonitoring ? '#e94560' : '#6b7280',
           fontSize: 11,

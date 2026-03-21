@@ -75,15 +75,15 @@ Your job is to produce TWO things, separated by the exact line ===INSIGHTS===.
 PART 1 — Categorised daily summary (strict markdown):
 1. Start with a single bold sentence overview of the day — no header, just **overview text**.
 2. Then include only the categories below that have actual content from the entries.
-   Skip any category with nothing relevant. Use exactly these headers and emojis:
+   Skip any category with nothing relevant. Use exactly these headers:
 
-## 💭 Thoughts & Reflections
-## 💡 Ideas & Plans
-## 🍽️ Meals & Food
-## 💰 Spends & Expenses
-## 💪 Health & Fitness
-## 📋 Tasks & Decisions
-## 🌟 Highlights
+## Thoughts & Reflections
+## Ideas & Plans
+## Meals & Food
+## Spends & Expenses
+## Health & Fitness
+## Tasks & Decisions
+## Highlights
 
 Under each header, use short bullet points (- item). Be concise.
 If an entry mentions a price, amount, or purchase → Spends & Expenses.

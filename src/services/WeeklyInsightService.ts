@@ -114,9 +114,9 @@ export async function generateWeeklyInsight(
     if (cached) return cached;
   }
 
-  // Need at least 2 days of summaries to find meaningful patterns
+  // Need at least 1 day of summaries
   const summaries = await StorageService.getSummariesForDateRange(dates);
-  if (summaries.length < 2) throw new Error(NOT_ENOUGH_DATA);
+  if (summaries.length < 1) throw new Error(NOT_ENOUGH_DATA);
 
   const stats = await collectWeekStats(dates);
   const prompt = buildPrompt(summaries, weekStart, weekEnd);

@@ -48,14 +48,14 @@ export default function App() {
   const isReady = useRef(false);
 
   // ------------------------------------------------------------------
-  // Widget deeplink: autojournal://home
+  // Widget deeplink: untangle://home
   // When the Android widget's mic button is tapped it calls
-  // Linking.openURL('autojournal://home').  We navigate to the Journal tab
+  // Linking.openURL('untangle://home').  We navigate to the Journal tab
   // so HomeScreen's useFocusEffect reads the WIDGET_MONITORING_KEY and
   // starts / stops monitoring accordingly.
   // ------------------------------------------------------------------
   const handleDeepLink = (url: string) => {
-    if (url.includes('autojournal://home') && isReady.current) {
+    if (url.includes('untangle://home') && isReady.current) {
       navigationRef.current?.navigate('Journal');
     }
   };
@@ -108,13 +108,13 @@ export default function App() {
             tabBarStyle: {
               backgroundColor: 'rgba(1, 8, 18, 0.97)',
               borderTopWidth: 1,
-              borderTopColor: 'rgba(72, 202, 228, 0.1)',
+              borderTopColor: 'rgba(0, 35, 102, 0.1)',
               height: 64,
               paddingBottom: 10,
               paddingTop: 6,
               elevation: 0,
             },
-            tabBarActiveTintColor: '#48cae4',
+            tabBarActiveTintColor: '#002366',
             tabBarInactiveTintColor: 'rgba(147, 210, 232, 0.35)',
             headerStyle: { backgroundColor: '#010c1a', elevation: 0, shadowOpacity: 0 },
             headerTintColor: 'rgba(224, 242, 254, 0.95)',
@@ -125,28 +125,28 @@ export default function App() {
             name="Journal"
             component={HomeScreen}
             options={{
-              tabBarIcon: ({ color }) => <Feather name="mic" size={22} color={color} />,
+              tabBarIcon: ({ color }) => <Feather name="mic" size={18} color={color} />,
             }}
           />
           <Tab.Screen
             name="Notes"
             component={TranscriptsScreen}
             options={{
-              tabBarIcon: ({ color }) => <Feather name="file-text" size={22} color={color} />,
+              tabBarIcon: ({ color }) => <Feather name="file-text" size={18} color={color} />,
             }}
           />
           <Tab.Screen
             name="Summary"
             component={SummaryScreen}
             options={{
-              tabBarIcon: ({ color }) => <Feather name="star" size={22} color={color} />,
+              tabBarIcon: ({ color }) => <Feather name="star" size={18} color={color} />,
             }}
           />
           <Tab.Screen
             name="Settings"
             component={SettingsScreen}
             options={{
-              tabBarIcon: ({ color }) => <Feather name="settings" size={22} color={color} />,
+              tabBarIcon: ({ color }) => <Feather name="settings" size={18} color={color} />,
             }}
           />
         </Tab.Navigator>
