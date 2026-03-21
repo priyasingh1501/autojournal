@@ -392,7 +392,7 @@ export default function SummaryScreen() {
               style={styles.navBtn}
               onPress={() => { if (!isSwiping.current) setCurrentIndex(prev => prev - 1); }}
             >
-              <Text style={styles.navBtnText}>← Newer</Text>
+              <Text style={styles.navBtnText}>Newer →</Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.navPlaceholder} />
