@@ -29,7 +29,7 @@ type ConvState = 'connecting' | 'speaking' | 'listening' | 'thinking' | 'error';
 const { width: SW } = Dimensions.get('window');
 const AVATAR_SIZE   = 110;
 const VAD_THRESHOLD = -38;
-const SILENCE_MS    = 1800;
+const SILENCE_MS    = 1200;
 const MIN_SPEECH_MS = 400;
 
 function formatDate(date: string): string {
@@ -102,6 +102,12 @@ export default function TalkScreen({ summary, onClose }: Props) {
   const messagesRef     = useRef<ConversationMessage[]>([]);
   const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Cached settings — loaded once at boot to avoid per-turn storage reads
+  const cachedAnthropicKey  = useRef<string>('');
+  const cachedElKey         = useRef<string>('');
+  const cachedElVoiceId     = useRef<string>('');
+  const cachedTtsVoiceId    = useRef<string | undefined>(undefined);
+
   // Avatar pulse for thinking
   const thinkPulse = useRef(new Animated.Value(1)).current;
   const thinkLoop  = useRef<Animated.CompositeAnimation | null>(null);
@@ -151,9 +157,9 @@ export default function TalkScreen({ summary, onClose }: Props) {
     Speech.stop();
     setConvState('speaking');
 
-    const settings  = await StorageService.getSettings();
-    const elKey     = settings?.elevenLabsApiKey?.trim();
-    const elVoiceId = settings?.elevenLabsVoiceId?.trim();
+    // Use cached settings — no storage round-trip per turn
+    const elKey     = cachedElKey.current;
+    const elVoiceId = cachedElVoiceId.current;
 
     if (elKey && elVoiceId) {
       // ── ElevenLabs path ────────────────────────────────────────────
@@ -184,7 +190,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
       }
     } else {
       // ── expo-speech fallback ───────────────────────────────────────
-      const voiceId = settings?.ttsVoiceId;
+      const voiceId = cachedTtsVoiceId.current;
       Speech.speak(text, {
         rate: 0.92,
         pitch: 1.0,
@@ -260,7 +266,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
       messagesRef.current = updated;
 
       const history = updated.slice(1);
-      sendMessage(summary, history.slice(0, -1), userText.trim())
+      sendMessage(summary, history.slice(0, -1), userText.trim(), cachedAnthropicKey.current || undefined)
         .then(aiText => {
           if (!activeRef.current) return;
           const aiMsg: ConversationMessage = {
@@ -288,7 +294,14 @@ export default function TalkScreen({ summary, onClose }: Props) {
   useEffect(() => {
     (async () => {
       try {
-        const opening = await getOpeningMessage(summary);
+        // Load settings once — cache for the lifetime of this call
+        const settings = await StorageService.getSettings();
+        cachedAnthropicKey.current = settings?.anthropicApiKey?.trim() ?? '';
+        cachedElKey.current        = settings?.elevenLabsApiKey?.trim() ?? '';
+        cachedElVoiceId.current    = settings?.elevenLabsVoiceId?.trim() ?? '';
+        cachedTtsVoiceId.current   = settings?.ttsVoiceId;
+
+        const opening = await getOpeningMessage(summary, cachedAnthropicKey.current || undefined);
         if (!activeRef.current) return;
         const msg: ConversationMessage = {
           id: `ai-${Date.now()}`, role: 'assistant', text: opening, timestamp: Date.now(),

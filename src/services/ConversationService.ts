@@ -41,14 +41,13 @@ export async function sendMessage(
   summary: DailySummary,
   history: ConversationMessage[],
   userText: string,
+  apiKey?: string,
 ): Promise<string> {
-  const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) {
-    throw new Error('Anthropic API key not configured. Go to Settings.');
-  }
+  const key = apiKey ?? (await StorageService.getSettings())?.anthropicApiKey;
+  if (!key) throw new Error('Anthropic API key not configured. Go to Settings.');
 
   const client = new Anthropic({
-    apiKey: settings.anthropicApiKey,
+    apiKey: key,
     dangerouslyAllowBrowser: true,
   });
 
@@ -80,8 +79,8 @@ export async function sendMessage(
   ];
 
   const response = await client.messages.create({
-    model: 'claude-opus-4-5',
-    max_tokens: 300,
+    model: 'claude-haiku-4-5',
+    max_tokens: 180,
     system: SYSTEM_PROMPT,
     messages,
   });
@@ -96,14 +95,12 @@ export async function sendMessage(
 }
 
 /** Generate a warm, context-aware opening line when the conversation starts */
-export async function getOpeningMessage(summary: DailySummary): Promise<string> {
-  const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) {
-    throw new Error('Anthropic API key not configured. Go to Settings.');
-  }
+export async function getOpeningMessage(summary: DailySummary, apiKey?: string): Promise<string> {
+  const key = apiKey ?? (await StorageService.getSettings())?.anthropicApiKey;
+  if (!key) throw new Error('Anthropic API key not configured. Go to Settings.');
 
   const client = new Anthropic({
-    apiKey: settings.anthropicApiKey,
+    apiKey: key,
     dangerouslyAllowBrowser: true,
   });
 
@@ -114,8 +111,8 @@ export async function getOpeningMessage(summary: DailySummary): Promise<string> 
   ].filter(Boolean).join('\n');
 
   const response = await client.messages.create({
-    model: 'claude-opus-4-5',
-    max_tokens: 150,
+    model: 'claude-haiku-4-5',
+    max_tokens: 100,
     system: SYSTEM_PROMPT,
     messages: [
       {
