@@ -207,7 +207,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
             </TouchableOpacity>
             <Text style={styles.title}>{isEditing ? 'Edit Entry' : 'New Entry'}</Text>
             {saving ? (
-              <ActivityIndicator color="#002366" style={styles.headerBtn} />
+              <ActivityIndicator color="rgba(147, 210, 232, 0.85)" style={styles.headerBtn} />
             ) : (
               <TouchableOpacity
                 onPress={handleSave}
@@ -231,7 +231,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
               ref={inputRef}
               style={styles.textInput}
               placeholder="What's on your mind?"
-              placeholderTextColor="rgba(0, 35, 102, 0.3)"
+              placeholderTextColor="rgba(147, 210, 232, 0.40)"
               value={text}
               onChangeText={setText}
               multiline
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
   headerBtn: { minWidth: 56 },
   title: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
   cancelText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 15, fontFamily: 'Avenir' },
-  saveText: { color: '#002366', fontSize: 15, fontWeight: '600', textAlign: 'right', fontFamily: 'Avenir' },
+  saveText: { color: 'rgba(147, 210, 232, 0.85)', fontSize: 15, fontWeight: '600', textAlign: 'right', fontFamily: 'Avenir' },
   saveTextDisabled: { opacity: 0.35 },
   body: { paddingHorizontal: 18, paddingTop: 14 },
   textInput: {

@@ -62,7 +62,7 @@ export default function SettingsScreen() {
               value={settings.openaiApiKey}
               onChangeText={(v) => setSettings(prev => ({ ...prev, openaiApiKey: v }))}
               placeholder="sk-..."
-              placeholderTextColor="rgba(0, 35, 102, 0.3)"
+              placeholderTextColor="rgba(147, 210, 232, 0.40)"
               secureTextEntry={!showOpenAIKey}
               autoCapitalize="none"
               autoCorrect={false}
@@ -82,7 +82,7 @@ export default function SettingsScreen() {
               value={settings.anthropicApiKey}
               onChangeText={(v) => setSettings(prev => ({ ...prev, anthropicApiKey: v }))}
               placeholder="sk-ant-..."
-              placeholderTextColor="rgba(0, 35, 102, 0.3)"
+              placeholderTextColor="rgba(147, 210, 232, 0.40)"
               secureTextEntry={!showAnthropicKey}
               autoCapitalize="none"
               autoCorrect={false}
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontFamily: 'Avenir',
   },
-  hint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', marginBottom: 10, fontFamily: 'Avenir' },
+  hint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.60)', marginBottom: 10, fontFamily: 'Avenir' },
 
   // ── Input rows ─────────────────────────────────────────────────────────────
   inputRow: {
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 35, 102, 0.22)',
     borderColor: 'rgba(0, 35, 102, 0.55)',
   },
-  thresholdButtonText: { color: '#002366', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
+  thresholdButtonText: { color: 'rgba(147, 210, 232, 0.85)', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
   thresholdButtonTextSelected: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' },
 
   // ── Save button ────────────────────────────────────────────────────────────
@@ -271,5 +271,5 @@ const styles = StyleSheet.create({
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   footer: { alignItems: 'center', marginTop: 24, marginBottom: 12 },
-  footerText: { color: 'rgba(147, 210, 232, 0.35)', fontSize: 13, textAlign: 'center', fontFamily: 'Avenir' },
+  footerText: { color: 'rgba(147, 210, 232, 0.60)', fontSize: 13, textAlign: 'center', fontFamily: 'Avenir' },
 });

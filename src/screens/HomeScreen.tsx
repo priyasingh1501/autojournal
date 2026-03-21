@@ -181,7 +181,7 @@ export default function HomeScreen() {
               <Feather
                 name={status === 'recording' ? 'square' : 'mic'}
                 size={28}
-                color={isActive ? 'rgba(224, 242, 254, 0.95)' : 'rgba(0, 35, 102, 0.7)'}
+                color={isActive ? 'rgba(224, 242, 254, 0.95)' : 'rgba(147, 210, 232, 0.65)'}
               />
             </TouchableOpacity>
           </Animated.View>

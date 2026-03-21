@@ -32,7 +32,7 @@ export const T = {
   // ── Text ────────────────────────────────────────────────────────────────────
   TEXT_PRIMARY:   'rgba(224, 242, 254, 0.95)',
   TEXT_SECONDARY: 'rgba(147, 210, 232, 0.65)',
-  TEXT_MUTED:     'rgba(147, 210, 232, 0.35)',
+  TEXT_MUTED:     'rgba(147, 210, 232, 0.60)',
   TEXT_DISABLED:  'rgba(100, 160, 185, 0.25)',
 };
 

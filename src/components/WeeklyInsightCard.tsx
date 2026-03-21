@@ -83,7 +83,7 @@ export default function WeeklyInsightCard() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {refreshing
-            ? <ActivityIndicator size="small" color="#002366" />
+            ? <ActivityIndicator size="small" color="rgba(147, 210, 232, 0.85)" />
             : <Feather name="refresh-cw" size={13} color="rgba(147, 210, 232, 0.65)" />}
         </TouchableOpacity>
       </View>
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
   },
   lastUpdated: {
     fontSize: 11,
-    color: 'rgba(147, 210, 232, 0.35)',
+    color: 'rgba(147, 210, 232, 0.60)',
     marginTop: 12,
     textAlign: 'right',
     fontFamily: 'Avenir',
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    color: 'rgba(147, 210, 232, 0.35)',
+    color: 'rgba(147, 210, 232, 0.60)',
     lineHeight: 22,
     textAlign: 'center',
     paddingVertical: 8,

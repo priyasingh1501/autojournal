@@ -40,7 +40,7 @@ const markdownStyles = {
   },
   bullet_list: { marginLeft: 0 },
   bullet_list_item: { color: 'rgba(147, 210, 232, 0.65)', marginBottom: 2 },
-  bullet_list_icon: { color: '#002366', marginTop: 5 },
+  bullet_list_icon: { color: 'rgba(147, 210, 232, 0.85)', marginTop: 5 },
   strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' as const },
   paragraph: { marginTop: 0, marginBottom: 4 },
 };
@@ -225,7 +225,7 @@ export default function SummaryScreen() {
               style={styles.actionBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Feather name="download" size={13} color="#002366" />
+              <Feather name="download" size={13} color="rgba(147, 210, 232, 0.85)" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => handleGenerate(item.date)}
@@ -294,7 +294,7 @@ export default function SummaryScreen() {
         {summaries.length === 0 ? (
           /* Empty state */
           <View style={[styles.card, styles.placeholderCard]}>
-            <Feather name="star" size={44} color="rgba(0, 35, 102, 0.35)" style={{ marginBottom: 16 }} />
+            <Feather name="star" size={44} color="rgba(147, 210, 232, 0.40)" style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>No summaries yet</Text>
             <Text style={styles.emptySubtitle}>
               Summaries auto-generate at 11:59 PM.{'\n'}Tap below to generate today's now.
@@ -303,7 +303,7 @@ export default function SummaryScreen() {
         ) : currentIndex >= summaries.length ? (
           /* All swiped through */
           <View style={[styles.card, styles.placeholderCard]}>
-            <Feather name="check-circle" size={44} color="rgba(0, 35, 102, 0.35)" style={{ marginBottom: 16 }} />
+            <Feather name="check-circle" size={44} color="rgba(147, 210, 232, 0.40)" style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>All caught up!</Text>
             <Text style={styles.emptySubtitle}>You've reviewed all your summaries.</Text>
             <TouchableOpacity style={styles.restartBtn} onPress={() => setCurrentIndex(0)}>
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   screenTitle: { fontSize: 22, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
-  counter: { fontSize: 14, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
+  counter: { fontSize: 14, color: 'rgba(147, 210, 232, 0.60)', fontFamily: 'Avenir' },
 
   // ── Card stack container ─────────────────────────────────────────────────
   stackContainer: {
@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
   },
   cardHeaderLeft: { flex: 1 },
   cardDate: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Avenir' },
-  cardMeta: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
+  cardMeta: { fontSize: 12, color: 'rgba(147, 210, 232, 0.60)', fontFamily: 'Avenir' },
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
     width: 32,
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
   breakdownLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: 'rgba(147, 210, 232, 0.35)',
+    color: 'rgba(147, 210, 232, 0.60)',
     letterSpacing: 0.8,
     marginBottom: 8,
     fontFamily: 'Avenir',
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
   swipeLabelText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#002366',
+    color: 'rgba(147, 210, 232, 0.85)',
     letterSpacing: 1.5,
     fontFamily: 'Avenir',
   },
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Avenir' },
   emptySubtitle: {
     fontSize: 14,
-    color: 'rgba(147, 210, 232, 0.35)',
+    color: 'rgba(147, 210, 232, 0.60)',
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: 28,
@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 35, 102, 0.2)',
   },
-  restartBtnText: { color: '#002366', fontSize: 14, fontWeight: '600', fontFamily: 'Avenir' },
+  restartBtnText: { color: 'rgba(147, 210, 232, 0.85)', fontSize: 14, fontWeight: '600', fontFamily: 'Avenir' },
 
   // ── Bottom nav ─────────────────────────────────────────────────────────────
   navRow: {
@@ -526,9 +526,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 35, 102, 0.2)',
   },
-  navBtnText: { color: '#002366', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
+  navBtnText: { color: 'rgba(147, 210, 232, 0.85)', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
   navPlaceholder: { width: 80 },
-  swipeHint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', fontFamily: 'Avenir' },
+  swipeHint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.60)', fontFamily: 'Avenir' },
 
   // ── FAB ───────────────────────────────────────────────────────────────────
   fab: {
