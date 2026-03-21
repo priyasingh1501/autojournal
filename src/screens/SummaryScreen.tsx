@@ -326,7 +326,7 @@ export default function SummaryScreen() {
   });
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Top bar */}
       <View style={styles.topBar}>
         <Text style={styles.screenTitle}>Summaries</Text>
@@ -482,7 +482,7 @@ const styles = StyleSheet.create({
   },
 
   // ── Card inner content ────────────────────────────────────────────────────
-  cardScroll: { padding: 18, paddingBottom: 40 },
+  cardScroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 40 },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
