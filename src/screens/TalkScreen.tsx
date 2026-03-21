@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Animated,
-  Pressable,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +22,12 @@ interface Props {
   onClose: () => void;
 }
 
+type ConvState = 'loading' | 'speaking' | 'listening' | 'thinking' | 'paused' | 'error';
+
+const VAD_THRESHOLD = -38;      // dB — louder than this = speech
+const SILENCE_MS    = 1800;     // ms of silence before auto-send
+const MIN_SPEECH_MS = 400;      // ignore clips shorter than this
+
 function formatDate(date: string): string {
   const todayStr = new Date().toISOString().split('T')[0];
   const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
@@ -34,48 +39,204 @@ function formatDate(date: string): string {
 }
 
 export default function TalkScreen({ summary, onClose }: Props) {
-  const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isThinking, setIsThinking] = useState(false);
-  const [isLoadingOpening, setIsLoadingOpening] = useState(true);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages]     = useState<ConversationMessage[]>([]);
+  const [convState, setConvState]   = useState<ConvState>('loading');
+  const [error, setError]           = useState<string | null>(null);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
+  // Refs — stable across renders, safe to use inside Audio callbacks
+  const recordingRef      = useRef<Audio.Recording | null>(null);
+  const hasSpeechRef      = useRef(false);
+  const speechStartRef    = useRef(0);
+  const silenceTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRef         = useRef(true);   // false once screen is closing
+  const messagesRef       = useRef<ConversationMessage[]>([]);
 
-  // ── Speak AI text ────────────────────────────────────────────────────────
-  const speak = async (text: string) => {
+  const scrollRef  = useRef<ScrollView>(null);
+  const pulseAnim  = useRef(new Animated.Value(1)).current;
+  const pulseLoop  = useRef<Animated.CompositeAnimation | null>(null);
+
+  // Keep messagesRef in sync so callbacks can read latest messages
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+  // ── Cleanup on unmount ──────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      activeRef.current = false;
+      Speech.stop();
+      clearSilenceTimer();
+      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+    };
+  }, []);
+
+  // ── Scroll to bottom ────────────────────────────────────────────────────
+  useEffect(() => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+  }, [messages, convState]);
+
+  // ── Pulse animation while listening ────────────────────────────────────
+  useEffect(() => {
+    if (convState === 'listening') {
+      pulseLoop.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.20, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.00, duration: 700, useNativeDriver: true }),
+        ]),
+      );
+      pulseLoop.current.start();
+    } else {
+      pulseLoop.current?.stop();
+      pulseAnim.setValue(1);
+    }
+  }, [convState]);
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  const clearSilenceTimer = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  };
+
+  // ── speak() → auto-starts listening when done ───────────────────────────
+  const speak = useCallback(async (text: string) => {
+    if (!activeRef.current) return;
     Speech.stop();
-    setIsSpeaking(true);
+    setConvState('speaking');
     const settings = await StorageService.getSettings();
     const voiceId = settings?.ttsVoiceId;
     Speech.speak(text, {
       rate: 0.92,
       pitch: 1.0,
       ...(voiceId ? { voice: voiceId } : {}),
-      onDone: () => setIsSpeaking(false),
-      onStopped: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false),
+      onDone:    () => { if (activeRef.current) startListening(); },
+      onStopped: () => { if (activeRef.current) startListening(); },
+      onError:   () => { if (activeRef.current) startListening(); },
     });
-  };
-
-  // Stop speech when the screen closes
-  useEffect(() => {
-    return () => { Speech.stop(); };
   }, []);
 
-  // ── Load opening message ────────────────────────────────────────────────
+  // ── startListening() — VAD-based hands-free capture ─────────────────────
+  const startListening = useCallback(async () => {
+    if (!activeRef.current) return;
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Microphone permission denied.');
+        setConvState('error');
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+
+      hasSpeechRef.current  = false;
+      speechStartRef.current = 0;
+      clearSilenceTimer();
+
+      const { recording } = await Audio.Recording.createAsync(
+        { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
+        (status) => {
+          if (!status.isRecording || !activeRef.current) return;
+          const db = status.metering ?? -160;
+          const isTalking = db > VAD_THRESHOLD;
+
+          if (isTalking) {
+            if (!hasSpeechRef.current) {
+              hasSpeechRef.current = true;
+              speechStartRef.current = Date.now();
+            }
+            clearSilenceTimer();
+          } else if (hasSpeechRef.current && !silenceTimerRef.current) {
+            // Speech detected earlier — start silence countdown
+            silenceTimerRef.current = setTimeout(() => {
+              stopAndSend();
+            }, SILENCE_MS);
+          }
+        },
+        100,
+      );
+
+      recordingRef.current = recording;
+      if (activeRef.current) setConvState('listening');
+    } catch (e: any) {
+      setError(e?.message ?? 'Could not start listening.');
+      setConvState('error');
+    }
+  }, []);
+
+  // ── stopAndSend() — stop mic, transcribe, get AI reply ──────────────────
+  const stopAndSend = useCallback(async () => {
+    clearSilenceTimer();
+    const rec = recordingRef.current;
+    if (!rec) return;
+    recordingRef.current = null;
+
+    try {
+      await rec.stopAndUnloadAsync();
+      const uri = rec.getURI();
+      const speechDuration = hasSpeechRef.current
+        ? Date.now() - speechStartRef.current
+        : 0;
+
+      // Too short or no speech detected → restart listening quietly
+      if (!uri || !hasSpeechRef.current || speechDuration < MIN_SPEECH_MS) {
+        if (activeRef.current) startListening();
+        return;
+      }
+
+      if (!activeRef.current) return;
+      setConvState('thinking');
+
+      const userText = await transcribeAudio(uri);
+      if (!userText.trim()) {
+        if (activeRef.current) startListening();
+        return;
+      }
+
+      const userMsg: ConversationMessage = {
+        id: `user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        role: 'user',
+        text: userText.trim(),
+        timestamp: Date.now(),
+      };
+
+      setMessages(prev => {
+        const updated = [...prev, userMsg];
+        messagesRef.current = updated;
+
+        // history: skip the seeded opening assistant message
+        const history = updated.slice(1);
+        sendMessage(summary, history.slice(0, -1), userText.trim())
+          .then(aiText => {
+            if (!activeRef.current) return;
+            const aiMsg: ConversationMessage = {
+              id: `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              role: 'assistant',
+              text: aiText,
+              timestamp: Date.now(),
+            };
+            setMessages(prev2 => [...prev2, aiMsg]);
+            setError(null);
+            speak(aiText);
+          })
+          .catch(e => {
+            if (!activeRef.current) return;
+            setError(e?.message ?? 'Could not get response.');
+            setConvState('error');
+          });
+
+        return updated;
+      });
+    } catch (e: any) {
+      if (!activeRef.current) return;
+      setError(e?.message ?? 'Recording failed.');
+      setConvState('error');
+    }
+  }, [speak, startListening, summary]);
+
+  // ── Boot: load opening message then speak it ─────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-        });
         const opening = await getOpeningMessage(summary);
+        if (!activeRef.current) return;
         const msg: ConversationMessage = {
           id: `ai-${Date.now()}`,
           role: 'assistant',
@@ -86,114 +247,50 @@ export default function TalkScreen({ summary, onClose }: Props) {
         speak(opening);
       } catch (e: any) {
         setError(e?.message ?? 'Could not start conversation.');
-      } finally {
-        setIsLoadingOpening(false);
+        setConvState('error');
       }
     })();
   }, []);
 
-  // ── Scroll to bottom when messages change ───────────────────────────────
-  useEffect(() => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-  }, [messages, isThinking]);
-
-  // ── Pulse animation while recording ────────────────────────────────────
-  useEffect(() => {
-    if (isRecording) {
-      pulseLoop.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.22, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1.0, duration: 600, useNativeDriver: true }),
-        ]),
-      );
-      pulseLoop.current.start();
-    } else {
-      pulseLoop.current?.stop();
-      pulseAnim.setValue(1);
-    }
-  }, [isRecording]);
-
-  // ── Recording ───────────────────────────────────────────────────────────
-  const startRecording = async () => {
-    if (isThinking || isLoadingOpening) return;
-    // Stop any ongoing speech so the user can speak
-    Speech.stop();
-    setIsSpeaking(false);
-    try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        setError('Microphone permission denied.');
-        return;
-      }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
-      recordingRef.current = recording;
-      setIsRecording(true);
-    } catch (e: any) {
-      setError('Could not start recording.');
+  // ── Tap button handler ───────────────────────────────────────────────────
+  const handleButtonPress = () => {
+    if (convState === 'speaking') {
+      // Interrupt AI, start listening immediately
+      Speech.stop();
+      startListening();
+    } else if (convState === 'listening') {
+      // Force-stop and send what was captured (or cancel if no speech yet)
+      stopAndSend();
+    } else if (convState === 'error') {
+      setError(null);
+      startListening();
+    } else if (convState === 'paused') {
+      startListening();
     }
   };
 
-  const stopRecording = async () => {
-    if (!recordingRef.current) return;
-    setIsRecording(false);
-    const rec = recordingRef.current;
-    recordingRef.current = null;
+  // ── Derived UI labels ────────────────────────────────────────────────────
+  const hint = {
+    loading:   'Reading your day…',
+    speaking:  'Tap to interrupt',
+    listening: 'Listening… tap to send early',
+    thinking:  'Thinking…',
+    paused:    'Tap to resume',
+    error:     'Tap to retry',
+  }[convState];
 
-    try {
-      await rec.stopAndUnloadAsync();
-      const uri = rec.getURI();
-      if (!uri) return;
+  const btnIcon = {
+    loading:   'loader' as const,
+    speaking:  'volume-2' as const,
+    listening: 'mic' as const,
+    thinking:  'loader' as const,
+    paused:    'play' as const,
+    error:     'refresh-cw' as const,
+  }[convState];
 
-      setIsThinking(true);
+  const btnDisabled = convState === 'loading' || convState === 'thinking';
 
-      // Transcribe
-      const userText = await transcribeAudio(uri);
-      if (!userText.trim()) {
-        setIsThinking(false);
-        return;
-      }
-
-      // Add user message
-      const userMsg: ConversationMessage = {
-        id: `user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        role: 'user',
-        text: userText.trim(),
-        timestamp: Date.now(),
-      };
-      setMessages(prev => {
-        const updated = [...prev, userMsg];
-        // Send to AI with history (exclude the opening assistant message from history
-        // since it's already in the context seed in ConversationService)
-        const history = updated.slice(1); // skip opening assistant message
-        sendMessage(summary, history.slice(0, -1), userText.trim())
-          .then(aiText => {
-            const aiMsg: ConversationMessage = {
-              id: `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-              role: 'assistant',
-              text: aiText,
-              timestamp: Date.now(),
-            };
-            setMessages(prev2 => [...prev2, aiMsg]);
-            setIsThinking(false);
-            setError(null);
-            speak(aiText);
-          })
-          .catch(e => {
-            setError(e?.message ?? 'Could not get response.');
-            setIsThinking(false);
-          });
-        return updated;
-      });
-    } catch (e: any) {
-      setError(e?.message ?? 'Recording failed.');
-      setIsThinking(false);
-    }
-  };
-
-  // ── Render ──────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header */}
@@ -203,7 +300,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
           <Text style={styles.headerSub}>{formatDate(summary.date)}</Text>
         </View>
         <TouchableOpacity
-          onPress={onClose}
+          onPress={() => { Speech.stop(); onClose(); }}
           style={styles.closeBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -211,7 +308,6 @@ export default function TalkScreen({ summary, onClose }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Divider */}
       <View style={styles.divider} />
 
       {/* Chat thread */}
@@ -221,86 +317,65 @@ export default function TalkScreen({ summary, onClose }: Props) {
         contentContainerStyle={styles.threadContent}
         showsVerticalScrollIndicator={false}
       >
-        {isLoadingOpening ? (
-          <View style={styles.openingLoader}>
-            <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
-            <Text style={styles.openingLoaderText}>Reading your day…</Text>
+        {messages.map(msg => (
+          <View
+            key={msg.id}
+            style={[styles.bubble, msg.role === 'user' ? styles.bubbleUser : styles.bubbleAI]}
+          >
+            <Text style={[
+              styles.bubbleText,
+              msg.role === 'user' ? styles.bubbleTextUser : styles.bubbleTextAI,
+            ]}>
+              {msg.text}
+            </Text>
           </View>
-        ) : (
-          messages.map(msg => (
-            <View
-              key={msg.id}
-              style={[
-                styles.bubble,
-                msg.role === 'user' ? styles.bubbleUser : styles.bubbleAI,
-              ]}
-            >
-              <Text style={[
-                styles.bubbleText,
-                msg.role === 'user' ? styles.bubbleTextUser : styles.bubbleTextAI,
-              ]}>
-                {msg.text}
-              </Text>
-            </View>
-          ))
-        )}
+        ))}
 
-        {/* Thinking indicator */}
-        {isThinking && (
+        {convState === 'thinking' && (
           <View style={[styles.bubble, styles.bubbleAI, styles.thinkingBubble]}>
             <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
           </View>
         )}
 
-        {/* Error */}
-        {error && (
-          <Text style={styles.errorText}>{error}</Text>
-        )}
+        {error && <Text style={styles.errorText}>{error}</Text>}
       </ScrollView>
 
-      {/* Mic button */}
+      {/* Control row */}
       <View style={styles.inputRow}>
-        <Text style={styles.hint}>
-          {isRecording
-            ? 'Release to send'
-            : isThinking
-            ? 'Thinking…'
-            : isSpeaking
-            ? 'Hold to interrupt'
-            : 'Hold to speak'}
-        </Text>
-        <Pressable
-          onPressIn={startRecording}
-          onPressOut={stopRecording}
-          disabled={isThinking || isLoadingOpening}
-        >
+        <Text style={styles.hint}>{hint}</Text>
+
+        <TouchableOpacity onPress={handleButtonPress} disabled={btnDisabled} activeOpacity={0.8}>
           <Animated.View style={[
             styles.micBtn,
-            isRecording && styles.micBtnActive,
-            isSpeaking && styles.micBtnSpeaking,
-            (isThinking || isLoadingOpening) && styles.micBtnDisabled,
+            convState === 'listening'  && styles.micBtnListening,
+            convState === 'speaking'   && styles.micBtnSpeaking,
+            convState === 'error'      && styles.micBtnError,
+            btnDisabled                && styles.micBtnDisabled,
             { transform: [{ scale: pulseAnim }] },
           ]}>
-            {isThinking
+            {convState === 'loading' || convState === 'thinking'
               ? <ActivityIndicator color="rgba(224, 242, 254, 0.8)" size="small" />
-              : <Feather
-                  name={isRecording ? 'square' : isSpeaking ? 'volume-2' : 'mic'}
-                  size={22}
-                  color="rgba(224, 242, 254, 0.90)"
-                />
+              : <Feather name={btnIcon} size={22} color="rgba(224, 242, 254, 0.90)" />
             }
           </Animated.View>
-        </Pressable>
+        </TouchableOpacity>
+
+        {/* Listening waveform dots */}
+        {convState === 'listening' && (
+          <View style={styles.waveRow}>
+            {[0, 1, 2, 3, 4].map(i => (
+              <View key={i} style={[styles.waveDot, { opacity: 0.3 + i * 0.14 }]} />
+            ))}
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#02060E',
-  },
+  container: { flex: 1, backgroundColor: '#02060E' },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -331,40 +406,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(152, 212, 250, 0.08)',
-    marginHorizontal: 20,
-  },
+  divider: { height: 1, backgroundColor: 'rgba(152, 212, 250, 0.08)', marginHorizontal: 20 },
 
   // Thread
   thread: { flex: 1 },
-  threadContent: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 12,
-    gap: 12,
-  },
-  openingLoader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-  },
-  openingLoaderText: {
-    fontSize: 13,
-    color: 'rgba(152, 212, 250, 0.55)',
-    fontFamily: 'GillSans-Light',
-    fontStyle: 'italic',
-  },
+  threadContent: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12, gap: 12 },
 
   // Bubbles
-  bubble: {
-    maxWidth: '82%',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-  },
+  bubble: { maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
   bubbleUser: {
     alignSelf: 'flex-end',
     backgroundColor: '#0929AD',
@@ -377,21 +426,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(152, 212, 250, 0.12)',
     borderBottomLeftRadius: 4,
   },
-  thinkingBubble: {
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-  },
-  bubbleText: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: 'GillSans-Light',
-  },
-  bubbleTextUser: {
-    color: 'rgba(224, 242, 254, 0.95)',
-  },
-  bubbleTextAI: {
-    color: 'rgba(224, 242, 254, 0.85)',
-  },
+  thinkingBubble: { paddingVertical: 12, paddingHorizontal: 18 },
+  bubbleText: { fontSize: 15, lineHeight: 22, fontFamily: 'GillSans-Light' },
+  bubbleTextUser: { color: 'rgba(224, 242, 254, 0.95)' },
+  bubbleTextAI:   { color: 'rgba(224, 242, 254, 0.85)' },
   errorText: {
     fontSize: 13,
     color: '#e63946',
@@ -400,12 +438,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
 
-  // Input row
-  inputRow: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    gap: 10,
-  },
+  // Control row
+  inputRow: { alignItems: 'center', paddingVertical: 20, gap: 10 },
   hint: {
     fontSize: 12,
     color: 'rgba(152, 212, 250, 0.45)',
@@ -422,15 +456,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  micBtnActive: {
+  micBtnListening: {
     backgroundColor: '#e94560',
-    borderColor: 'rgba(233, 69, 96, 0.50)',
+    borderColor: 'rgba(233, 69, 96, 0.55)',
   },
   micBtnSpeaking: {
     backgroundColor: 'rgba(9, 41, 173, 0.55)',
     borderColor: 'rgba(152, 212, 250, 0.55)',
   },
-  micBtnDisabled: {
-    opacity: 0.45,
+  micBtnError: {
+    backgroundColor: 'rgba(230, 57, 70, 0.20)',
+    borderColor: 'rgba(230, 57, 70, 0.50)',
+  },
+  micBtnDisabled: { opacity: 0.40 },
+
+  // Waveform dots shown while listening
+  waveRow: { flexDirection: 'row', gap: 5, alignItems: 'center' },
+  waveDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#98D4FA',
   },
 });
