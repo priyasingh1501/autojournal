@@ -346,7 +346,8 @@ const styles = StyleSheet.create({
   // ── Pending banner ────────────────────────────────────────────────────────
   pendingBanner: {
     marginHorizontal: 20,
-    marginBottom: 12,
+    marginTop: 16,
+    marginBottom: 0,
     backgroundColor: 'rgba(244, 162, 97, 0.12)',
     borderRadius: 16,
     padding: 14,
@@ -383,7 +384,7 @@ const styles = StyleSheet.create({
 
   // ── Scroll area ───────────────────────────────────────────────────────────
   scrollArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 100 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 },
 
   // ── FAB ───────────────────────────────────────────────────────────────────
   fab: {
