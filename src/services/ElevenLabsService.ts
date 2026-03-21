@@ -28,7 +28,8 @@ export async function synthesizeSpeech(
   voiceId: string,
   apiKey: string,
 ): Promise<string> {
-  const res = await fetch(`${BASE}/text-to-speech/${voiceId}`, {
+  // mp3_22050_32 → ~4× smaller file than default 44100/128, still clear for voice
+  const res = await fetch(`${BASE}/text-to-speech/${voiceId}?output_format=mp3_22050_32`, {
     method: 'POST',
     headers: {
       'xi-api-key': apiKey,
@@ -37,12 +38,12 @@ export async function synthesizeSpeech(
     },
     body: JSON.stringify({
       text,
-      model_id: 'eleven_turbo_v2',   // low-latency model
+      model_id: 'eleven_flash_v2_5',  // fastest EL model (~3× faster than turbo_v2)
       voice_settings: {
         stability: 0.45,
-        similarity_boost: 0.80,
-        style: 0.30,
-        use_speaker_boost: true,
+        similarity_boost: 0.75,
+        style: 0,                      // style processing adds latency; 0 = skip it
+        use_speaker_boost: false,      // extra DSP pass; not needed for conversation
       },
     }),
   });
