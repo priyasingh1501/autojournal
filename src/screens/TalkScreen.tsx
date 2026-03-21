@@ -12,6 +12,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 import { DailySummary, ConversationMessage } from '../types';
 import { transcribeAudio } from '../services/TranscriptionService';
 import { sendMessage, getOpeningMessage } from '../services/ConversationService';
@@ -36,12 +37,31 @@ export default function TalkScreen({ summary, onClose }: Props) {
   const [isRecording, setIsRecording] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [isLoadingOpening, setIsLoadingOpening] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
+
+  // ── Speak AI text ────────────────────────────────────────────────────────
+  const speak = (text: string) => {
+    Speech.stop();
+    setIsSpeaking(true);
+    Speech.speak(text, {
+      rate: 0.92,
+      pitch: 1.0,
+      onDone: () => setIsSpeaking(false),
+      onStopped: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false),
+    });
+  };
+
+  // Stop speech when the screen closes
+  useEffect(() => {
+    return () => { Speech.stop(); };
+  }, []);
 
   // ── Load opening message ────────────────────────────────────────────────
   useEffect(() => {
@@ -59,6 +79,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
           timestamp: Date.now(),
         };
         setMessages([msg]);
+        speak(opening);
       } catch (e: any) {
         setError(e?.message ?? 'Could not start conversation.');
       } finally {
@@ -91,12 +112,16 @@ export default function TalkScreen({ summary, onClose }: Props) {
   // ── Recording ───────────────────────────────────────────────────────────
   const startRecording = async () => {
     if (isThinking || isLoadingOpening) return;
+    // Stop any ongoing speech so the user can speak
+    Speech.stop();
+    setIsSpeaking(false);
     try {
       const { status } = await Audio.requestPermissionsAsync();
       if (status !== 'granted') {
         setError('Microphone permission denied.');
         return;
       }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
       );
@@ -150,6 +175,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
             setMessages(prev2 => [...prev2, aiMsg]);
             setIsThinking(false);
             setError(null);
+            speak(aiText);
           })
           .catch(e => {
             setError(e?.message ?? 'Could not get response.');
@@ -231,7 +257,13 @@ export default function TalkScreen({ summary, onClose }: Props) {
       {/* Mic button */}
       <View style={styles.inputRow}>
         <Text style={styles.hint}>
-          {isRecording ? 'Release to send' : isThinking ? 'Thinking…' : 'Hold to speak'}
+          {isRecording
+            ? 'Release to send'
+            : isThinking
+            ? 'Thinking…'
+            : isSpeaking
+            ? 'Hold to interrupt'
+            : 'Hold to speak'}
         </Text>
         <Pressable
           onPressIn={startRecording}
@@ -241,13 +273,14 @@ export default function TalkScreen({ summary, onClose }: Props) {
           <Animated.View style={[
             styles.micBtn,
             isRecording && styles.micBtnActive,
+            isSpeaking && styles.micBtnSpeaking,
             (isThinking || isLoadingOpening) && styles.micBtnDisabled,
             { transform: [{ scale: pulseAnim }] },
           ]}>
             {isThinking
               ? <ActivityIndicator color="rgba(224, 242, 254, 0.8)" size="small" />
               : <Feather
-                  name={isRecording ? 'square' : 'mic'}
+                  name={isRecording ? 'square' : isSpeaking ? 'volume-2' : 'mic'}
                   size={22}
                   color="rgba(224, 242, 254, 0.90)"
                 />
@@ -388,6 +421,10 @@ const styles = StyleSheet.create({
   micBtnActive: {
     backgroundColor: '#e94560',
     borderColor: 'rgba(233, 69, 96, 0.50)',
+  },
+  micBtnSpeaking: {
+    backgroundColor: 'rgba(9, 41, 173, 0.55)',
+    borderColor: 'rgba(152, 212, 250, 0.55)',
   },
   micBtnDisabled: {
     opacity: 0.45,
