@@ -8,8 +8,10 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Speech from 'expo-speech';
 import { StorageService } from '../services/StorageService';
 import { AppSettings } from '../types';
 
@@ -26,10 +28,44 @@ export default function SettingsScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+  const [voices, setVoices] = useState<Speech.Voice[]>([]);
+  const [loadingVoices, setLoadingVoices] = useState(true);
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
+    loadVoices();
   }, []);
+
+  const loadVoices = async () => {
+    try {
+      const all = await Speech.getAvailableVoicesAsync();
+      // English voices only, sorted: Enhanced first, then by name
+      const english = all
+        .filter(v => v.language.startsWith('en'))
+        .sort((a, b) => {
+          if (a.quality === b.quality) return a.name.localeCompare(b.name);
+          return a.quality === 'Enhanced' ? -1 : 1;
+        });
+      setVoices(english);
+    } catch {
+      setVoices([]);
+    } finally {
+      setLoadingVoices(false);
+    }
+  };
+
+  const previewVoice = (voice: Speech.Voice) => {
+    Speech.stop();
+    setPreviewingId(voice.identifier);
+    Speech.speak('This is how I sound during your reflection.', {
+      voice: voice.identifier,
+      rate: 0.92,
+      onDone: () => setPreviewingId(null),
+      onStopped: () => setPreviewingId(null),
+      onError: () => setPreviewingId(null),
+    });
+  };
 
   const loadSettings = async () => {
     const s = await StorageService.getSettings();
@@ -154,6 +190,55 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Reflect Voice */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reflect Voice</Text>
+          <Text style={styles.sectionSubtitle}>
+            Choose the voice used when the AI speaks during "Talk about this day".
+          </Text>
+
+          {loadingVoices ? (
+            <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" style={{ marginTop: 8 }} />
+          ) : voices.length === 0 ? (
+            <Text style={styles.hint}>No English voices found on this device.</Text>
+          ) : (
+            voices.map(voice => {
+              const isSelected = (settings.ttsVoiceId ?? '') === voice.identifier;
+              const isPreviewing = previewingId === voice.identifier;
+              return (
+                <TouchableOpacity
+                  key={voice.identifier}
+                  style={[styles.voiceRow, isSelected && styles.voiceRowSelected]}
+                  onPress={() => setSettings(prev => ({ ...prev, ttsVoiceId: voice.identifier }))}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.voiceInfo}>
+                    <Text style={[styles.voiceName, isSelected && styles.voiceNameSelected]}>
+                      {voice.name}
+                    </Text>
+                    <Text style={styles.voiceMeta}>
+                      {voice.language}{voice.quality === 'Enhanced' ? ' · Enhanced' : ''}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => previewVoice(voice)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={styles.previewBtn}
+                  >
+                    {isPreviewing
+                      ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.80)" />
+                      : <Feather name="play" size={13} color="rgba(152, 212, 250, 0.65)" />
+                    }
+                  </TouchableOpacity>
+                  {isSelected && (
+                    <Feather name="check" size={14} color="rgba(152, 212, 250, 0.90)" style={{ marginLeft: 8 }} />
+                  )}
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+
         <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
           <Text style={styles.saveButtonText}>Save Settings</Text>
         </TouchableOpacity>
@@ -251,6 +336,46 @@ const styles = StyleSheet.create({
   },
   thresholdButtonText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
   thresholdButtonTextSelected: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '500' },
+
+  // ── Voice picker ───────────────────────────────────────────────────────────
+  voiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginTop: 6,
+    backgroundColor: 'rgba(9, 41, 173, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.10)',
+  },
+  voiceRowSelected: {
+    backgroundColor: 'rgba(9, 41, 173, 0.20)',
+    borderColor: 'rgba(152, 212, 250, 0.40)',
+  },
+  voiceInfo: { flex: 1 },
+  voiceName: {
+    fontSize: 14,
+    color: 'rgba(224, 242, 254, 0.75)',
+    fontFamily: 'GillSans-Light',
+  },
+  voiceNameSelected: {
+    color: 'rgba(224, 242, 254, 0.95)',
+  },
+  voiceMeta: {
+    fontSize: 11,
+    color: 'rgba(152, 212, 250, 0.50)',
+    fontFamily: 'GillSans-Light',
+    marginTop: 2,
+  },
+  previewBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(152, 212, 250, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   // ── Save button ────────────────────────────────────────────────────────────
   saveButton: {

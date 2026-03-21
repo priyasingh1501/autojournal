@@ -16,6 +16,7 @@ import * as Speech from 'expo-speech';
 import { DailySummary, ConversationMessage } from '../types';
 import { transcribeAudio } from '../services/TranscriptionService';
 import { sendMessage, getOpeningMessage } from '../services/ConversationService';
+import { StorageService } from '../services/StorageService';
 
 interface Props {
   summary: DailySummary;
@@ -46,12 +47,15 @@ export default function TalkScreen({ summary, onClose }: Props) {
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
 
   // ── Speak AI text ────────────────────────────────────────────────────────
-  const speak = (text: string) => {
+  const speak = async (text: string) => {
     Speech.stop();
     setIsSpeaking(true);
+    const settings = await StorageService.getSettings();
+    const voiceId = settings?.ttsVoiceId;
     Speech.speak(text, {
       rate: 0.92,
       pitch: 1.0,
+      ...(voiceId ? { voice: voiceId } : {}),
       onDone: () => setIsSpeaking(false),
       onStopped: () => setIsSpeaking(false),
       onError: () => setIsSpeaking(false),

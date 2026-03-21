@@ -30,6 +30,7 @@ export interface AppSettings {
   silenceDuration: number; // ms to wait before stopping, default 2000
   summaryTime: string; // HH:MM, default "21:00"
   batchSize: number; // auto-transcribe when pending clips reach this count, 0 = manual only
+  ttsVoiceId?: string; // expo-speech voice identifier for the Reflect screen
 }
 
 export interface WeeklyInsight {
