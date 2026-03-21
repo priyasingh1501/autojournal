@@ -21,8 +21,7 @@ export function MicWidget({ isMonitoring }: MicWidgetProps) {
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#1a1a2e',
-        borderRadius: 20,
+        backgroundColor: '#02060E',
       }}
     >
       {/* Mic button – tapping toggles monitoring and opens the app */}
@@ -40,10 +39,10 @@ export function MicWidget({ isMonitoring }: MicWidgetProps) {
             borderColor: isMonitoring ? '#e94560' : '#818cf8',
           }}
         >
-          {/* Plain unicode so RemoteView renders reliably across Android versions */}
+          {/* Simple ASCII symbols — emoji are unreliable in RemoteViews */}
           <TextWidget
-            text={isMonitoring ? '\u23F9' : '\uD83C\uDFA4'}
-            style={{ fontSize: 26, color: '#ffffff' }}
+            text={isMonitoring ? '■' : '●'}
+            style={{ fontSize: 28, color: '#ffffff' }}
           />
         </FlexWidget>
       </ClickableArea>
