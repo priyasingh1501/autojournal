@@ -4,12 +4,13 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
   Animated,
+  ImageBackground,
+  Dimensions,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { DailySummary, ConversationMessage } from '../types';
@@ -22,88 +23,134 @@ interface Props {
   onClose: () => void;
 }
 
-type ConvState = 'loading' | 'speaking' | 'listening' | 'thinking' | 'paused' | 'error';
+type ConvState = 'connecting' | 'speaking' | 'listening' | 'thinking' | 'error';
 
-const VAD_THRESHOLD = -38;      // dB — louder than this = speech
-const SILENCE_MS    = 1800;     // ms of silence before auto-send
-const MIN_SPEECH_MS = 400;      // ignore clips shorter than this
+const { width: SW } = Dimensions.get('window');
+const AVATAR_SIZE   = 110;
+const VAD_THRESHOLD = -38;
+const SILENCE_MS    = 1800;
+const MIN_SPEECH_MS = 400;
 
 function formatDate(date: string): string {
   const todayStr = new Date().toISOString().split('T')[0];
   const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
   if (date === todayStr) return 'Today';
   if (date === yesterdayStr) return 'Yesterday';
-  return new Date(date + 'T12:00:00').toLocaleDateString([], {
-    weekday: 'long', month: 'long', day: 'numeric',
-  });
+  return new Date(date + 'T12:00:00').toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function formatTimer(secs: number): string {
+  const m = Math.floor(secs / 60).toString().padStart(2, '0');
+  const s = (secs % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+// ── Expanding ring component ─────────────────────────────────────────────────
+function Ring({ delay, active }: { delay: number; active: boolean }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const loop = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    if (active) {
+      loop.current = Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, { toValue: 1, duration: 1800, useNativeDriver: true }),
+          Animated.timing(anim, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ]),
+      );
+      loop.current.start();
+    } else {
+      loop.current?.stop();
+      anim.setValue(0);
+    }
+    return () => { loop.current?.stop(); };
+  }, [active]);
+
+  const scale   = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
+  const opacity = anim.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0.5, 0.25, 0] });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        width: AVATAR_SIZE,
+        height: AVATAR_SIZE,
+        borderRadius: AVATAR_SIZE / 2,
+        borderWidth: 1.5,
+        borderColor: '#98D4FA',
+        transform: [{ scale }],
+        opacity,
+      }}
+    />
+  );
 }
 
 export default function TalkScreen({ summary, onClose }: Props) {
-  const [messages, setMessages]     = useState<ConversationMessage[]>([]);
-  const [convState, setConvState]   = useState<ConvState>('loading');
-  const [error, setError]           = useState<string | null>(null);
+  const [convState, setConvState]     = useState<ConvState>('connecting');
+  const [lastAiText, setLastAiText]   = useState('');
+  const [callSecs, setCallSecs]       = useState(0);
+  const [error, setError]             = useState<string | null>(null);
 
-  // Refs — stable across renders, safe to use inside Audio callbacks
-  const recordingRef      = useRef<Audio.Recording | null>(null);
-  const hasSpeechRef      = useRef(false);
-  const speechStartRef    = useRef(0);
-  const silenceTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeRef         = useRef(true);   // false once screen is closing
-  const messagesRef       = useRef<ConversationMessage[]>([]);
+  const recordingRef    = useRef<Audio.Recording | null>(null);
+  const hasSpeechRef    = useRef(false);
+  const speechStartRef  = useRef(0);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeRef       = useRef(true);
+  const messagesRef     = useRef<ConversationMessage[]>([]);
+  const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const scrollRef  = useRef<ScrollView>(null);
-  const pulseAnim  = useRef(new Animated.Value(1)).current;
-  const pulseLoop  = useRef<Animated.CompositeAnimation | null>(null);
+  // Avatar pulse for thinking
+  const thinkPulse = useRef(new Animated.Value(1)).current;
+  const thinkLoop  = useRef<Animated.CompositeAnimation | null>(null);
 
-  // Keep messagesRef in sync so callbacks can read latest messages
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  // ── Call timer ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      setCallSecs(s => s + 1);
+    }, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, []);
 
-  // ── Cleanup on unmount ──────────────────────────────────────────────────
+  // ── Thinking pulse ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (convState === 'thinking') {
+      thinkLoop.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(thinkPulse, { toValue: 1.10, duration: 700, useNativeDriver: true }),
+          Animated.timing(thinkPulse, { toValue: 1.00, duration: 700, useNativeDriver: true }),
+        ]),
+      );
+      thinkLoop.current.start();
+    } else {
+      thinkLoop.current?.stop();
+      thinkPulse.setValue(1);
+    }
+  }, [convState]);
+
+  // ── Cleanup ────────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       activeRef.current = false;
       Speech.stop();
       clearSilenceTimer();
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
 
-  // ── Scroll to bottom ────────────────────────────────────────────────────
-  useEffect(() => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
-  }, [messages, convState]);
-
-  // ── Pulse animation while listening ────────────────────────────────────
-  useEffect(() => {
-    if (convState === 'listening') {
-      pulseLoop.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.20, duration: 700, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1.00, duration: 700, useNativeDriver: true }),
-        ]),
-      );
-      pulseLoop.current.start();
-    } else {
-      pulseLoop.current?.stop();
-      pulseAnim.setValue(1);
-    }
-  }, [convState]);
-
-  // ── Helpers ─────────────────────────────────────────────────────────────
   const clearSilenceTimer = () => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
   };
 
-  // ── speak() → auto-starts listening when done ───────────────────────────
+  // ── speak() → auto-starts listening when done ──────────────────────────
   const speak = useCallback(async (text: string) => {
     if (!activeRef.current) return;
     Speech.stop();
     setConvState('speaking');
     const settings = await StorageService.getSettings();
-    const voiceId = settings?.ttsVoiceId;
+    const voiceId  = settings?.ttsVoiceId;
     Speech.speak(text, {
       rate: 0.92,
       pitch: 1.0,
@@ -114,16 +161,12 @@ export default function TalkScreen({ summary, onClose }: Props) {
     });
   }, []);
 
-  // ── startListening() — VAD-based hands-free capture ─────────────────────
+  // ── startListening() — VAD hands-free ─────────────────────────────────
   const startListening = useCallback(async () => {
     if (!activeRef.current) return;
     try {
       const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        setError('Microphone permission denied.');
-        setConvState('error');
-        return;
-      }
+      if (status !== 'granted') { setConvState('error'); setError('Microphone permission denied.'); return; }
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
 
       hasSpeechRef.current  = false;
@@ -134,25 +177,16 @@ export default function TalkScreen({ summary, onClose }: Props) {
         { ...Audio.RecordingOptionsPresets.HIGH_QUALITY, isMeteringEnabled: true },
         (status) => {
           if (!status.isRecording || !activeRef.current) return;
-          const db = status.metering ?? -160;
-          const isTalking = db > VAD_THRESHOLD;
-
+          const isTalking = (status.metering ?? -160) > VAD_THRESHOLD;
           if (isTalking) {
-            if (!hasSpeechRef.current) {
-              hasSpeechRef.current = true;
-              speechStartRef.current = Date.now();
-            }
+            if (!hasSpeechRef.current) { hasSpeechRef.current = true; speechStartRef.current = Date.now(); }
             clearSilenceTimer();
           } else if (hasSpeechRef.current && !silenceTimerRef.current) {
-            // Speech detected earlier — start silence countdown
-            silenceTimerRef.current = setTimeout(() => {
-              stopAndSend();
-            }, SILENCE_MS);
+            silenceTimerRef.current = setTimeout(() => stopAndSend(), SILENCE_MS);
           }
         },
         100,
       );
-
       recordingRef.current = recording;
       if (activeRef.current) setConvState('listening');
     } catch (e: any) {
@@ -161,7 +195,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
     }
   }, []);
 
-  // ── stopAndSend() — stop mic, transcribe, get AI reply ──────────────────
+  // ── stopAndSend() ──────────────────────────────────────────────────────
   const stopAndSend = useCallback(async () => {
     clearSilenceTimer();
     const rec = recordingRef.current;
@@ -171,59 +205,43 @@ export default function TalkScreen({ summary, onClose }: Props) {
     try {
       await rec.stopAndUnloadAsync();
       const uri = rec.getURI();
-      const speechDuration = hasSpeechRef.current
-        ? Date.now() - speechStartRef.current
-        : 0;
+      const speechDuration = hasSpeechRef.current ? Date.now() - speechStartRef.current : 0;
 
-      // Too short or no speech detected → restart listening quietly
       if (!uri || !hasSpeechRef.current || speechDuration < MIN_SPEECH_MS) {
         if (activeRef.current) startListening();
         return;
       }
-
       if (!activeRef.current) return;
-      setConvState('thinking');
 
+      setConvState('thinking');
       const userText = await transcribeAudio(uri);
-      if (!userText.trim()) {
-        if (activeRef.current) startListening();
-        return;
-      }
+      if (!userText.trim()) { if (activeRef.current) startListening(); return; }
 
       const userMsg: ConversationMessage = {
         id: `user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        role: 'user',
-        text: userText.trim(),
-        timestamp: Date.now(),
+        role: 'user', text: userText.trim(), timestamp: Date.now(),
       };
+      const updated = [...messagesRef.current, userMsg];
+      messagesRef.current = updated;
 
-      setMessages(prev => {
-        const updated = [...prev, userMsg];
-        messagesRef.current = updated;
-
-        // history: skip the seeded opening assistant message
-        const history = updated.slice(1);
-        sendMessage(summary, history.slice(0, -1), userText.trim())
-          .then(aiText => {
-            if (!activeRef.current) return;
-            const aiMsg: ConversationMessage = {
-              id: `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-              role: 'assistant',
-              text: aiText,
-              timestamp: Date.now(),
-            };
-            setMessages(prev2 => [...prev2, aiMsg]);
-            setError(null);
-            speak(aiText);
-          })
-          .catch(e => {
-            if (!activeRef.current) return;
-            setError(e?.message ?? 'Could not get response.');
-            setConvState('error');
-          });
-
-        return updated;
-      });
+      const history = updated.slice(1);
+      sendMessage(summary, history.slice(0, -1), userText.trim())
+        .then(aiText => {
+          if (!activeRef.current) return;
+          const aiMsg: ConversationMessage = {
+            id: `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            role: 'assistant', text: aiText, timestamp: Date.now(),
+          };
+          messagesRef.current = [...messagesRef.current, aiMsg];
+          setLastAiText(aiText);
+          setError(null);
+          speak(aiText);
+        })
+        .catch(e => {
+          if (!activeRef.current) return;
+          setError(e?.message ?? 'Could not get response.');
+          setConvState('error');
+        });
     } catch (e: any) {
       if (!activeRef.current) return;
       setError(e?.message ?? 'Recording failed.');
@@ -231,251 +249,252 @@ export default function TalkScreen({ summary, onClose }: Props) {
     }
   }, [speak, startListening, summary]);
 
-  // ── Boot: load opening message then speak it ─────────────────────────────
+  // ── Boot ───────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
         const opening = await getOpeningMessage(summary);
         if (!activeRef.current) return;
         const msg: ConversationMessage = {
-          id: `ai-${Date.now()}`,
-          role: 'assistant',
-          text: opening,
-          timestamp: Date.now(),
+          id: `ai-${Date.now()}`, role: 'assistant', text: opening, timestamp: Date.now(),
         };
-        setMessages([msg]);
+        messagesRef.current = [msg];
+        setLastAiText(opening);
         speak(opening);
       } catch (e: any) {
-        setError(e?.message ?? 'Could not start conversation.');
+        setError(e?.message ?? 'Could not connect.');
         setConvState('error');
       }
     })();
   }, []);
 
-  // ── Tap button handler ───────────────────────────────────────────────────
-  const handleButtonPress = () => {
-    if (convState === 'speaking') {
-      // Interrupt AI, start listening immediately
-      Speech.stop();
-      startListening();
-    } else if (convState === 'listening') {
-      // Force-stop and send what was captured (or cancel if no speech yet)
-      stopAndSend();
-    } else if (convState === 'error') {
-      setError(null);
-      startListening();
-    } else if (convState === 'paused') {
-      startListening();
-    }
+  // ── Button tap ─────────────────────────────────────────────────────────
+  const handleEndCall = () => {
+    Speech.stop();
+    onClose();
   };
 
-  // ── Derived UI labels ────────────────────────────────────────────────────
-  const hint = {
-    loading:   'Reading your day…',
-    speaking:  'Tap to interrupt',
-    listening: 'Listening… tap to send early',
-    thinking:  'Thinking…',
-    paused:    'Tap to resume',
-    error:     'Tap to retry',
+  const handleAvatarTap = () => {
+    if (convState === 'speaking') { Speech.stop(); startListening(); }
+    else if (convState === 'listening') stopAndSend();
+    else if (convState === 'error') { setError(null); startListening(); }
+  };
+
+  // ── Derived labels ─────────────────────────────────────────────────────
+  const stateLabel = {
+    connecting: 'Connecting…',
+    speaking:   'Speaking',
+    listening:  'Listening',
+    thinking:   'Thinking…',
+    error:      'Tap to retry',
   }[convState];
 
-  const btnIcon = {
-    loading:   'loader' as const,
-    speaking:  'volume-2' as const,
-    listening: 'mic' as const,
-    thinking:  'loader' as const,
-    paused:    'play' as const,
-    error:     'refresh-cw' as const,
-  }[convState];
+  const ringsActive = convState === 'speaking' || convState === 'listening';
 
-  const btnDisabled = convState === 'loading' || convState === 'thinking';
-
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Reflect</Text>
-          <Text style={styles.headerSub}>{formatDate(summary.date)}</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => { Speech.stop(); onClose(); }}
-          style={styles.closeBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Feather name="x" size={18} color="rgba(152, 212, 250, 0.70)" />
-        </TouchableOpacity>
-      </View>
+    <ImageBackground
+      source={require('../../assets/jellyfish.jpg')}
+      style={styles.bg}
+      resizeMode="cover"
+    >
+      <LinearGradient
+        colors={['rgba(2,6,14,0.55)', 'rgba(2,6,14,0.82)', '#02060E']}
+        style={StyleSheet.absoluteFill}
+      />
 
-      <View style={styles.divider} />
-
-      {/* Chat thread */}
-      <ScrollView
-        ref={scrollRef}
-        style={styles.thread}
-        contentContainerStyle={styles.threadContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {messages.map(msg => (
-          <View
-            key={msg.id}
-            style={[styles.bubble, msg.role === 'user' ? styles.bubbleUser : styles.bubbleAI]}
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        {/* ── Top bar ── */}
+        <View style={styles.topBar}>
+          <Text style={styles.timer}>{formatTimer(callSecs)}</Text>
+          <TouchableOpacity
+            onPress={handleEndCall}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={[
-              styles.bubbleText,
-              msg.role === 'user' ? styles.bubbleTextUser : styles.bubbleTextAI,
-            ]}>
-              {msg.text}
+            <Feather name="chevron-down" size={22} color="rgba(152, 212, 250, 0.60)" />
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Caller info ── */}
+        <View style={styles.callerSection}>
+          <Text style={styles.callerName}>untangle</Text>
+          <Text style={styles.callerSub}>{formatDate(summary.date)}</Text>
+        </View>
+
+        {/* ── Avatar with rings ── */}
+        <View style={styles.avatarSection}>
+          <TouchableOpacity onPress={handleAvatarTap} activeOpacity={0.85} style={styles.avatarWrap}>
+            {/* Expanding rings */}
+            <Ring delay={0}    active={ringsActive} />
+            <Ring delay={600}  active={ringsActive} />
+            <Ring delay={1200} active={ringsActive} />
+
+            {/* Avatar circle */}
+            <Animated.View style={[styles.avatar, { transform: [{ scale: thinkPulse }] }]}>
+              <LinearGradient
+                colors={['rgba(9,41,173,0.75)', 'rgba(2,6,14,0.90)']}
+                style={styles.avatarGradient}
+              >
+                <Feather
+                  name={
+                    convState === 'listening' ? 'mic' :
+                    convState === 'thinking'  ? 'loader' :
+                    convState === 'error'     ? 'wifi-off' :
+                    'volume-2'
+                  }
+                  size={36}
+                  color={
+                    convState === 'listening' ? '#e94560' :
+                    convState === 'error'     ? '#e63946' :
+                    'rgba(224, 242, 254, 0.90)'
+                  }
+                />
+              </LinearGradient>
+            </Animated.View>
+          </TouchableOpacity>
+
+          {/* State label */}
+          <View style={styles.statePill}>
+            <View style={[
+              styles.stateDot,
+              convState === 'listening' && styles.stateDotListening,
+              convState === 'speaking'  && styles.stateDotSpeaking,
+              convState === 'error'     && styles.stateDotError,
+            ]} />
+            <Text style={styles.stateLabel}>{stateLabel}</Text>
+          </View>
+        </View>
+
+        {/* ── Last AI line ── */}
+        <View style={styles.captionSection}>
+          {error ? (
+            <Text style={styles.errorText}>{error}</Text>
+          ) : lastAiText ? (
+            <Text style={styles.caption} numberOfLines={4}>
+              "{lastAiText}"
             </Text>
-          </View>
-        ))}
+          ) : null}
+        </View>
 
-        {convState === 'thinking' && (
-          <View style={[styles.bubble, styles.bubbleAI, styles.thinkingBubble]}>
-            <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
-          </View>
-        )}
-
-        {error && <Text style={styles.errorText}>{error}</Text>}
-      </ScrollView>
-
-      {/* Control row */}
-      <View style={styles.inputRow}>
-        <Text style={styles.hint}>{hint}</Text>
-
-        <TouchableOpacity onPress={handleButtonPress} disabled={btnDisabled} activeOpacity={0.8}>
-          <Animated.View style={[
-            styles.micBtn,
-            convState === 'listening'  && styles.micBtnListening,
-            convState === 'speaking'   && styles.micBtnSpeaking,
-            convState === 'error'      && styles.micBtnError,
-            btnDisabled                && styles.micBtnDisabled,
-            { transform: [{ scale: pulseAnim }] },
-          ]}>
-            {convState === 'loading' || convState === 'thinking'
-              ? <ActivityIndicator color="rgba(224, 242, 254, 0.8)" size="small" />
-              : <Feather name={btnIcon} size={22} color="rgba(224, 242, 254, 0.90)" />
-            }
-          </Animated.View>
-        </TouchableOpacity>
-
-        {/* Listening waveform dots */}
-        {convState === 'listening' && (
-          <View style={styles.waveRow}>
-            {[0, 1, 2, 3, 4].map(i => (
-              <View key={i} style={[styles.waveDot, { opacity: 0.3 + i * 0.14 }]} />
-            ))}
-          </View>
-        )}
-      </View>
-    </SafeAreaView>
+        {/* ── End call button ── */}
+        <View style={styles.endCallSection}>
+          <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall} activeOpacity={0.85}>
+            <Feather name="phone-off" size={26} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.endCallLabel}>End call</Text>
+        </View>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#02060E' },
+  bg:   { flex: 1, backgroundColor: '#02060E' },
+  safe: { flex: 1 },
 
-  header: {
+  // Top bar
+  topBar: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    alignItems: 'center',
+    paddingHorizontal: 24,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 4,
   },
-  headerTitle: {
-    fontSize: 20,
+  timer: { fontSize: 15, color: 'rgba(224, 242, 254, 0.55)', fontFamily: 'GillSans-Light', letterSpacing: 1 },
+
+  // Caller info
+  callerSection: { alignItems: 'center', marginTop: 32 },
+  callerName: {
+    fontSize: 32,
     fontWeight: '500',
     color: 'rgba(224, 242, 254, 0.95)',
     fontFamily: 'Baskerville',
+    letterSpacing: 0.5,
   },
-  headerSub: {
-    fontSize: 12,
+  callerSub: {
+    fontSize: 14,
     color: 'rgba(152, 212, 250, 0.60)',
     fontFamily: 'GillSans-Light',
-    marginTop: 2,
+    marginTop: 6,
   },
-  closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(152, 212, 250, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.15)',
+
+  // Avatar
+  avatarSection: { alignItems: 'center', marginTop: 52 },
+  avatarWrap: { width: AVATAR_SIZE, height: AVATAR_SIZE, alignItems: 'center', justifyContent: 'center' },
+  avatar: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: 'rgba(152, 212, 250, 0.30)',
+  },
+  avatarGradient: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // State pill
+  statePill: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-  },
-  divider: { height: 1, backgroundColor: 'rgba(152, 212, 250, 0.08)', marginHorizontal: 20 },
-
-  // Thread
-  thread: { flex: 1 },
-  threadContent: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 12, gap: 12 },
-
-  // Bubbles
-  bubble: { maxWidth: '82%', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
-  bubbleUser: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#0929AD',
-    borderBottomRightRadius: 4,
-  },
-  bubbleAI: {
-    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     backgroundColor: 'rgba(152, 212, 250, 0.07)',
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.12)',
-    borderBottomLeftRadius: 4,
   },
-  thinkingBubble: { paddingVertical: 12, paddingHorizontal: 18 },
-  bubbleText: { fontSize: 15, lineHeight: 22, fontFamily: 'GillSans-Light' },
-  bubbleTextUser: { color: 'rgba(224, 242, 254, 0.95)' },
-  bubbleTextAI:   { color: 'rgba(224, 242, 254, 0.85)' },
+  stateDot: {
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: 'rgba(152, 212, 250, 0.50)',
+  },
+  stateDotListening: { backgroundColor: '#e94560' },
+  stateDotSpeaking:  { backgroundColor: '#98D4FA' },
+  stateDotError:     { backgroundColor: '#e63946' },
+  stateLabel: { fontSize: 13, color: 'rgba(224, 242, 254, 0.70)', fontFamily: 'GillSans-Light' },
+
+  // Caption
+  captionSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 36,
+  },
+  caption: {
+    fontSize: 16,
+    color: 'rgba(224, 242, 254, 0.50)',
+    fontFamily: 'Baskerville',
+    textAlign: 'center',
+    lineHeight: 26,
+    fontStyle: 'italic',
+  },
   errorText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#e63946',
     textAlign: 'center',
     fontFamily: 'GillSans-Light',
-    paddingVertical: 8,
   },
 
-  // Control row
-  inputRow: { alignItems: 'center', paddingVertical: 20, gap: 10 },
-  hint: {
-    fontSize: 12,
-    color: 'rgba(152, 212, 250, 0.45)',
-    fontFamily: 'GillSans-Light',
-    letterSpacing: 0.3,
-  },
-  micBtn: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#0929AD',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.35)',
+  // End call
+  endCallSection: { alignItems: 'center', paddingBottom: 40 },
+  endCallBtn: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#e94560',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#e94560',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    elevation: 8,
   },
-  micBtnListening: {
-    backgroundColor: '#e94560',
-    borderColor: 'rgba(233, 69, 96, 0.55)',
-  },
-  micBtnSpeaking: {
-    backgroundColor: 'rgba(9, 41, 173, 0.55)',
-    borderColor: 'rgba(152, 212, 250, 0.55)',
-  },
-  micBtnError: {
-    backgroundColor: 'rgba(230, 57, 70, 0.20)',
-    borderColor: 'rgba(230, 57, 70, 0.50)',
-  },
-  micBtnDisabled: { opacity: 0.40 },
-
-  // Waveform dots shown while listening
-  waveRow: { flexDirection: 'row', gap: 5, alignItems: 'center' },
-  waveDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#98D4FA',
+  endCallLabel: {
+    marginTop: 10,
+    fontSize: 13,
+    color: 'rgba(224, 242, 254, 0.45)',
+    fontFamily: 'GillSans-Light',
   },
 });
