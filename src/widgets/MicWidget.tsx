@@ -35,11 +35,12 @@ export function MicWidget({ isMonitoring }: MicWidgetProps) {
             backgroundColor: isMonitoring ? '#e94560' : '#16213e',
             alignItems: 'center',
             justifyContent: 'center',
-            borderWidth: isMonitoring ? 0 : 2,
-            borderColor: '#818cf8',
+            // borderWidth:0 is unreliable in RemoteViews — use transparent colour when active
+            borderWidth: 2,
+            borderColor: isMonitoring ? '#e94560' : '#818cf8',
           }}
         >
-          {/* Use unicode chars instead of emoji for reliable RemoteView rendering */}
+          {/* Plain unicode so RemoteView renders reliably across Android versions */}
           <TextWidget
             text={isMonitoring ? '\u23F9' : '\uD83C\uDFA4'}
             style={{ fontSize: 26, color: '#ffffff' }}
@@ -47,7 +48,7 @@ export function MicWidget({ isMonitoring }: MicWidgetProps) {
         </FlexWidget>
       </ClickableArea>
 
-      {/* Status label */}
+      {/* Status label — always rendered, text/colour changes by state */}
       <TextWidget
         text={isMonitoring ? 'Listening…' : 'Auto Journal'}
         style={{
@@ -57,12 +58,11 @@ export function MicWidget({ isMonitoring }: MicWidgetProps) {
           marginTop: 6,
         }}
       />
-      {isMonitoring && (
-        <TextWidget
-          text="Tap to stop"
-          style={{ color: '#9ca3af', fontSize: 9 }}
-        />
-      )}
+      {/* Sub-label — always rendered to avoid RemoteView conditional-child issues */}
+      <TextWidget
+        text={isMonitoring ? 'Tap to stop' : ''}
+        style={{ color: '#9ca3af', fontSize: 9 }}
+      />
     </FlexWidget>
   );
 }

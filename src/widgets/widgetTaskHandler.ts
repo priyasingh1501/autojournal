@@ -10,6 +10,9 @@
  *   starts/stops monitoring accordingly.  The widget updates this key and
  *   re-renders itself; it then brings the app to the foreground via Linking
  *   so the actual microphone session begins immediately.
+ *
+ * NOTE: This file intentionally uses React.createElement instead of JSX so
+ * it can stay a plain .ts file (Babel rejects JSX in .ts extensions).
  */
 import React from 'react';
 import { Linking } from 'react-native';
@@ -28,6 +31,10 @@ async function setIsMonitoring(value: boolean): Promise<void> {
   await AsyncStorage.setItem(WIDGET_MONITORING_KEY, value ? 'true' : 'false');
 }
 
+function micWidgetEl(isMonitoring: boolean) {
+  return React.createElement(MicWidget, { isMonitoring });
+}
+
 export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
   const { widgetAction, clickAction } = props;
 
@@ -37,7 +44,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
     case 'WIDGET_UPDATE':
     case 'WIDGET_RESIZED': {
       const isMonitoring = await getIsMonitoring();
-      props.renderWidget(<MicWidget isMonitoring={isMonitoring} />);
+      props.renderWidget(micWidgetEl(isMonitoring));
       break;
     }
 
@@ -51,7 +58,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
         await setIsMonitoring(nowMonitoring);
 
         // 2. Re-render the widget immediately so it feels responsive
-        props.renderWidget(<MicWidget isMonitoring={nowMonitoring} />);
+        props.renderWidget(micWidgetEl(nowMonitoring));
 
         // 3. Open / bring the app to the foreground so the actual mic session
         //    can start or stop (microphone access requires a foreground app).

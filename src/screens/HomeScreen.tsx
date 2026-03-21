@@ -87,9 +87,11 @@ export default function HomeScreen() {
     if (Platform.OS !== 'android') return;
     try {
       const val = await AsyncStorage.getItem(WIDGET_MONITORING_KEY);
-      if (val === 'true' && status === 'idle') {
+      // Use audioRecorderService.getStatus() — always live, never a stale closure
+      const liveStatus = audioRecorderService.getStatus();
+      if (val === 'true' && liveStatus === 'idle') {
         await audioRecorderService.startMonitoring();
-      } else if (val === 'false' && status !== 'idle') {
+      } else if (val === 'false' && liveStatus !== 'idle') {
         await audioRecorderService.stopMonitoring();
       }
     } catch {
