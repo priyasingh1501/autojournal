@@ -40,10 +40,10 @@ export function renderInsightSections(text: string): React.ReactNode {
         : bodyLines.join(' ');
 
       nodes.push(
-        <View key={headingKey} style={sectionStyles.section}>
+        <View key={headingKey} style={sectionStyles.card}>
           <View style={sectionStyles.headingRow}>
             <Feather name={meta.iconName as any} size={12} color={meta.color} />
-            <Text style={[sectionStyles.heading, { color: meta.color }]}>  {headingKey}</Text>
+            <Text style={[sectionStyles.heading, { color: meta.color }]}>{'  '}{headingKey}</Text>
           </View>
           {body.length > 0 && (
             <Text style={sectionStyles.body}>{body}</Text>
@@ -62,9 +62,15 @@ export function renderInsightSections(text: string): React.ReactNode {
 }
 
 const sectionStyles = StyleSheet.create({
-  wrapper: { marginBottom: 4 },
-  section: { marginBottom: 14 },
-  headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  wrapper: { gap: 10 },
+  card: {
+    backgroundColor: 'rgba(152, 212, 250, 0.06)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.10)',
+    padding: 14,
+  },
+  headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   heading: { fontSize: 13, fontWeight: '500', letterSpacing: 0.2, fontFamily: 'Baskerville' },
   body: { fontSize: 14, color: 'rgba(224, 242, 254, 0.75)', lineHeight: 22, fontFamily: 'GillSans-Light' },
 });

@@ -436,6 +436,7 @@ const styles = StyleSheet.create({
   // ── Card stack container ─────────────────────────────────────────────────
   stackContainer: {
     flex: 1,
+    backgroundColor: '#02060E',
   },
 
   // ── Cards ─────────────────────────────────────────────────────────────────
@@ -447,13 +448,9 @@ const styles = StyleSheet.create({
     right: 16,
     borderRadius: 20,
     overflow: 'hidden',
+    backgroundColor: '#02060E',
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.13)',
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 8,
   },
   cardBehind: {
     // animated scale + translateY applied inline
@@ -508,7 +505,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  cardScrollView: { flex: 1 },
+  cardScrollView: { flex: 1, backgroundColor: '#02060E' },
   insightSection: { marginBottom: 8 },
   divider: { height: 1, backgroundColor: 'rgba(9, 41, 173, 0.08)', marginBottom: 12, marginTop: 4 },
   breakdownLabel: {
