@@ -141,37 +141,32 @@ function buildMessages(summary: DailySummary, history: ConversationMessage[], us
 }
 
 /**
- * Stream Claude response, yielding complete sentences one at a time.
- * Lets callers start TTS synthesis on sentence 1 before sentence 2 is generated.
+ * Fetch the full Claude response, then split into sentences.
+ * React Native's fetch doesn't support SSE/streaming bodies, so we get
+ * the complete text first and then break it up for parallel TTS synthesis.
  */
-export async function* streamMessage(
+export async function fetchSentences(
   summary: DailySummary,
   history: ConversationMessage[],
   userText: string,
   apiKey: string,
-): AsyncGenerator<string, void, unknown> {
+): Promise<string[]> {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
-  const stream = await client.messages.create({
+  const response = await client.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 180,
     system: SYSTEM_PROMPT,
     messages: buildMessages(summary, history, userText),
-    stream: true,
   });
 
-  let buffer = '';
-  for await (const event of stream) {
-    if (
-      event.type === 'content_block_delta' &&
-      (event.delta as any).type === 'text_delta'
-    ) {
-      buffer += (event.delta as any).text;
-      const { sentences, remaining } = extractSentences(buffer);
-      for (const s of sentences) yield s;
-      buffer = remaining;
-    }
-  }
-  // Yield any trailing text that had no trailing punctuation
-  if (buffer.trim().length >= 3) yield buffer.trim();
+  const full = response.content
+    .filter(b => b.type === 'text')
+    .map(b => (b as any).text)
+    .join('')
+    .trim();
+
+  const { sentences, remaining } = extractSentences(full + ' '); // trailing space triggers final split
+  if (remaining.trim().length >= 3) sentences.push(remaining.trim());
+  return sentences.length > 0 ? sentences : [full];
 }
