@@ -85,6 +85,7 @@ PART 1 — Categorised daily summary (strict markdown):
 
 ## Thoughts & Reflections
 ## Ideas & Plans
+## Learnings
 ## Meals & Food
 ## Spends & Expenses
 ## Health & Fitness
@@ -95,18 +96,20 @@ Under each header, use short bullet points (- item). Be concise.
 If an entry mentions a price, amount, or purchase → Spends & Expenses.
 If an entry mentions food, eating, drinking, restaurant → Meals & Food.
 If an entry mentions exercise, gym, steps, sport → Health & Fitness.
-Write in second person ("You..."). Warm and personal tone. Total length 150–350 words.
+If an entry mentions reading a book, something learned at work, a new skill, a new observation or realisation → Learnings.
+Write in second person ("You..."). Warm and personal tone. Total length 150–400 words.
 
 Then output exactly this line on its own:
 ===INSIGHTS===
 
 PART 2 — Daily personal insight (plain text only, no markdown):
-Use EXACTLY these five section headings, each on its own line, followed by 1–2 sentences:
+Use EXACTLY these six section headings, each on its own line, followed by 1–2 sentences:
   Emotional check-in:
   Meals:
   Movement:
   Spending:
   Recurring thoughts:
+  Learnings:
 
 Rules:
 - No markdown symbols (no *, no #). Plain text only.
@@ -115,6 +118,7 @@ Rules:
 - For Movement: call out if there was no workout or physical activity today. Mention what was done if there was.
 - For Spending: give a short qualitative note — high/low/unusual. Say "No spending logged" if nothing mentioned.
 - For Recurring thoughts: name actual themes or concerns that appear more than once, or say "None that stood out today."
+- For Learnings: note anything the person read, studied, learned at work, a new skill practised, or a meaningful new observation. Say "Nothing specific logged today" if nothing stands out.
 - Write in second person ("You...").`;
 
   // Build multimodal content
@@ -167,7 +171,7 @@ Rules:
 
   const response = await client.messages.create({
     model: 'claude-opus-4-5',   // opus-4-5 supports vision; swap back to opus-4-6 when it launches with vision
-    max_tokens: 1400,
+    max_tokens: 1600,
     system: systemPrompt,
     messages: [{ role: 'user', content }],
   });

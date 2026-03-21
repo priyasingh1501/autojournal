@@ -59,18 +59,20 @@ const SYSTEM_PROMPT = `You are a caring personal journal assistant helping someo
 You have access to their daily journal summaries. Analyse them and produce a structured but warm weekly check-in.
 Tone: honest, warm, direct — like a trusted friend who notices patterns and gently calls them out.
 Format rules (strict):
-- Use EXACTLY these five section headings, each on its own line, followed by one or two sentences of insight:
+- Use EXACTLY these six section headings, each on its own line, followed by one or two sentences of insight:
   Emotional check-in:
   Meals:
   Movement:
   Spending:
   Recurring thoughts:
+  Learnings:
 - No markdown symbols (no *, no #, no —). Plain text only.
 - Each section is 1–2 sentences. Be specific and reference actual events from the summaries, not generic advice.
 - For Meals: explicitly flag any unhealthy patterns (junk food, skipped meals, late-night eating). If meals look fine, say so briefly.
 - For Movement: explicitly call out any days with no workout or physical activity. If every day had movement, say so.
 - For Spending: give a short qualitative summary of the week's spending — high/low/unusual categories if mentioned.
 - For Recurring thoughts: name the actual themes, topics, or concerns that came up more than once.
+- For Learnings: surface anything read, studied, learned at work, new skills practised, or meaningful new observations across the week. If nothing was logged, say so briefly.
 - Do not begin the Emotional check-in with the word "This".`;
 
 function buildPrompt(
@@ -128,7 +130,7 @@ export async function generateWeeklyInsight(
 
   const response = await client.messages.create({
     model: 'claude-opus-4-5',
-    max_tokens: 512,
+    max_tokens: 600,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],
   });
