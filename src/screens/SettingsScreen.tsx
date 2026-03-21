@@ -282,6 +282,32 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Manual voice ID entry */}
+          <Text style={styles.label}>Voice ID</Text>
+          <Text style={styles.hint}>
+            Paste an ElevenLabs voice ID directly, or pick one from the list below.
+          </Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.input}
+              value={settings.elevenLabsVoiceId ?? ''}
+              onChangeText={v => setSettings(prev => ({ ...prev, elevenLabsVoiceId: v }))}
+              placeholder="e.g. EXAVITQu4vr4xnSDxMaL"
+              placeholderTextColor="rgba(152, 212, 250, 0.40)"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {!!settings.elevenLabsVoiceId && (
+              <TouchableOpacity
+                style={styles.eyeButton}
+                onPress={() => setSettings(prev => ({ ...prev, elevenLabsVoiceId: '' }))}
+              >
+                <Feather name="x" size={15} color="rgba(152, 212, 250, 0.50)" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Load from API */}
           <TouchableOpacity
             style={styles.loadVoicesBtn}
             onPress={() => loadElVoices(settings.elevenLabsApiKey ?? '')}
@@ -289,31 +315,36 @@ export default function SettingsScreen() {
           >
             {loadingElVoices
               ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.80)" />
-              : <Text style={styles.loadVoicesBtnText}>Load voices</Text>
+              : <Text style={styles.loadVoicesBtnText}>Load voices from API</Text>
             }
           </TouchableOpacity>
 
           {elVoiceError && <Text style={styles.elError}>{elVoiceError}</Text>}
 
-          {elVoices.map(voice => {
-            const isSelected = settings.elevenLabsVoiceId === voice.voice_id;
-            return (
-              <TouchableOpacity
-                key={voice.voice_id}
-                style={[styles.voiceRow, isSelected && styles.voiceRowSelected]}
-                onPress={() => setSettings(prev => ({ ...prev, elevenLabsVoiceId: voice.voice_id }))}
-                activeOpacity={0.75}
-              >
-                <View style={styles.voiceInfo}>
-                  <Text style={[styles.voiceName, isSelected && styles.voiceNameSelected]}>{voice.name}</Text>
-                  <Text style={styles.voiceMeta}>{voice.category}</Text>
-                </View>
-                {isSelected && (
-                  <Feather name="check" size={14} color="rgba(152, 212, 250, 0.90)" />
-                )}
-              </TouchableOpacity>
-            );
-          })}
+          {elVoices.length > 0 && (
+            <>
+              <Text style={[styles.hint, { marginTop: 10 }]}>Tap a voice to use its ID ↓</Text>
+              {elVoices.map(voice => {
+                const isSelected = settings.elevenLabsVoiceId === voice.voice_id;
+                return (
+                  <TouchableOpacity
+                    key={voice.voice_id}
+                    style={[styles.voiceRow, isSelected && styles.voiceRowSelected]}
+                    onPress={() => setSettings(prev => ({ ...prev, elevenLabsVoiceId: voice.voice_id }))}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.voiceInfo}>
+                      <Text style={[styles.voiceName, isSelected && styles.voiceNameSelected]}>{voice.name}</Text>
+                      <Text style={styles.voiceMeta}>{voice.category} · {voice.voice_id}</Text>
+                    </View>
+                    {isSelected && (
+                      <Feather name="check" size={14} color="rgba(152, 212, 250, 0.90)" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
         </View>
 
         <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
