@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { AppState, AppStateStatus, Linking, Platform } from 'react-native';
+import React, { useEffect, useRef, Component } from 'react';
+import { AppState, AppStateStatus, Linking, Platform, View, Text, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -42,6 +42,39 @@ const Tab = createBottomTabNavigator();
 // We expose a navigation ref so the Linking handler (which lives outside the
 // component tree) can navigate to the Journal tab when the widget opens the app.
 export const navigationRef = React.createRef<NavigationContainerRef<any>>();
+
+// ── Error boundary — catches silent render crashes that would otherwise show blank ──
+class ErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={errStyles.container}>
+          <Text style={errStyles.title}>Something went wrong</Text>
+          <Text style={errStyles.msg}>{this.state.error.message}</Text>
+          <Text style={errStyles.stack}>{this.state.error.stack?.slice(0, 800)}</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#02060E', padding: 24, paddingTop: 80 },
+  title: { color: '#e63946', fontSize: 18, fontWeight: '700', marginBottom: 12 },
+  msg: { color: '#f4a261', fontSize: 14, marginBottom: 12, lineHeight: 20 },
+  stack: { color: 'rgba(152, 212, 250, 0.55)', fontSize: 11, lineHeight: 16 },
+});
 
 export default function App() {
   // Track whether the app has finished mounting so we can route deeplinks correctly
@@ -107,60 +140,65 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <NavigationContainer
-        ref={navigationRef}
-        onReady={() => { isReady.current = true; }}
-      >
-        <StatusBar style="light" />
-        <Tab.Navigator
-          screenOptions={{
-            tabBarStyle: {
-              backgroundColor: 'rgba(2, 6, 14, 0.97)',
-              borderTopWidth: 1,
-              borderTopColor: 'rgba(152, 212, 250, 0.10)',
-              height: 64,
-              paddingBottom: 10,
-              paddingTop: 6,
-              elevation: 0,
-            },
-            tabBarActiveTintColor: 'rgba(224, 242, 254, 0.95)',
-            tabBarInactiveTintColor: 'rgba(152, 212, 250, 0.55)',
-            headerStyle: { backgroundColor: '#02060E', elevation: 0, shadowOpacity: 0 },
-            headerTintColor: 'rgba(224, 242, 254, 0.95)',
-            headerShadowVisible: false,
-          }}
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <NavigationContainer
+          ref={navigationRef}
+          onReady={() => { isReady.current = true; }}
         >
-          <Tab.Screen
-            name="Journal"
-            component={HomeScreen}
-            options={{
-              tabBarIcon: ({ color }) => <Feather name="mic" size={18} color={color} />,
+          <StatusBar style="light" />
+          <Tab.Navigator
+            screenOptions={{
+              tabBarStyle: {
+                backgroundColor: 'rgba(2, 6, 14, 0.97)',
+                borderTopWidth: 1,
+                borderTopColor: 'rgba(152, 212, 250, 0.10)',
+                height: 64,
+                paddingBottom: 10,
+                paddingTop: 6,
+                elevation: 0,
+              },
+              tabBarActiveTintColor: 'rgba(224, 242, 254, 0.95)',
+              tabBarInactiveTintColor: 'rgba(152, 212, 250, 0.55)',
+              headerStyle: { backgroundColor: '#02060E', elevation: 0, shadowOpacity: 0 },
+              headerTintColor: 'rgba(224, 242, 254, 0.95)',
+              headerShadowVisible: false,
             }}
-          />
-          <Tab.Screen
-            name="Notes"
-            component={TranscriptsScreen}
-            options={{
-              tabBarIcon: ({ color }) => <Feather name="file-text" size={18} color={color} />,
-            }}
-          />
-          <Tab.Screen
-            name="Summary"
-            component={SummaryScreen}
-            options={{
-              tabBarIcon: ({ color }) => <Feather name="star" size={18} color={color} />,
-            }}
-          />
-          <Tab.Screen
-            name="Settings"
-            component={SettingsScreen}
-            options={{
-              tabBarIcon: ({ color }) => <Feather name="settings" size={18} color={color} />,
-            }}
-          />
-        </Tab.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+          >
+            <Tab.Screen
+              name="Journal"
+              component={HomeScreen}
+              options={{
+                title: 'Untangle',
+                headerTitleStyle: { fontFamily: 'Baskerville', fontSize: 22, fontWeight: '500' },
+                tabBarIcon: ({ color }) => <Feather name="mic" size={18} color={color} />,
+              }}
+            />
+            <Tab.Screen
+              name="Notes"
+              component={TranscriptsScreen}
+              options={{
+                tabBarIcon: ({ color }) => <Feather name="file-text" size={18} color={color} />,
+              }}
+            />
+            <Tab.Screen
+              name="Summary"
+              component={SummaryScreen}
+              options={{
+                headerShown: false,
+                tabBarIcon: ({ color }) => <Feather name="star" size={18} color={color} />,
+              }}
+            />
+            <Tab.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{
+                tabBarIcon: ({ color }) => <Feather name="settings" size={18} color={color} />,
+              }}
+            />
+          </Tab.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

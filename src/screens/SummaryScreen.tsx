@@ -24,10 +24,9 @@ import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
 import { DailySummary } from '../types';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.30;
 const VELOCITY_THRESHOLD = 0.5;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
 
 // ── markdown styles ───────────────────────────────────────────────────────────
 const markdownStyles = {
@@ -79,8 +78,6 @@ export default function SummaryScreen() {
   const [generatingDate, setGeneratingDate] = useState<string | null>(null);
 
   const pan = useRef(new Animated.ValueXY()).current;
-  const nextScale = useRef(new Animated.Value(0.95)).current;
-  const nextTranslateY = useRef(new Animated.Value(14)).current;
   const isSwiping = useRef(false);
 
   useFocusEffect(
@@ -98,6 +95,12 @@ export default function SummaryScreen() {
   // ── swipe mechanics ──────────────────────────────────────────────────────
   const swipeOff = (direction: 1 | -1) => {
     if (isSwiping.current) return;
+    // direction 1 = swiped right → go to older (increment)
+    // direction -1 = swiped left → go to newer (decrement); snap back if already at newest
+    if (direction === -1 && currentIndex === 0) {
+      snapBack();
+      return;
+    }
     isSwiping.current = true;
     Animated.timing(pan, {
       toValue: { x: direction * SCREEN_WIDTH * 1.5, y: 0 },
@@ -105,34 +108,24 @@ export default function SummaryScreen() {
       useNativeDriver: true,
     }).start(() => {
       pan.setValue({ x: 0, y: 0 });
-      nextScale.setValue(0.95);
-      nextTranslateY.setValue(14);
-      setCurrentIndex(prev => prev + 1);
+      setCurrentIndex(prev => direction === 1 ? prev + 1 : prev - 1);
       isSwiping.current = false;
     });
   };
 
   const snapBack = () => {
-    Animated.parallel([
-      Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: true, friction: 7 }),
-      Animated.spring(nextScale, { toValue: 0.95, useNativeDriver: true }),
-      Animated.spring(nextTranslateY, { toValue: 14, useNativeDriver: true }),
-    ]).start();
+    Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: true, friction: 7 }).start();
   };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      // Only claim the gesture when it's clearly horizontal
       onMoveShouldSetPanResponder: (_, gs) =>
         !isSwiping.current &&
         Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5 &&
         Math.abs(gs.dx) > 12,
       onPanResponderMove: (_, gs) => {
         pan.setValue({ x: gs.dx, y: gs.dy * 0.08 });
-        const progress = Math.min(Math.abs(gs.dx) / SWIPE_THRESHOLD, 1);
-        nextScale.setValue(0.95 + progress * 0.05);
-        nextTranslateY.setValue(14 - progress * 14);
       },
       onPanResponderRelease: (_, gs) => {
         const shouldSwipe =
@@ -289,6 +282,7 @@ export default function SummaryScreen() {
 
       {/* Scrollable body */}
       <ScrollView
+        style={styles.cardScrollView}
         showsVerticalScrollIndicator={false}
         scrollEnabled={isTop}
         contentContainerStyle={styles.cardScroll}
@@ -310,7 +304,6 @@ export default function SummaryScreen() {
 
   // ── card stack render ─────────────────────────────────────────────────────
   const current = summaries[currentIndex];
-  const next = summaries[currentIndex + 1];
   const todaySummary = summaries.find(s => s.date === today);
   const isGeneratingToday = generatingDate === today;
 
@@ -342,7 +335,7 @@ export default function SummaryScreen() {
         )}
       </View>
 
-      {/* Card stack */}
+      {/* Card stack — fills all space between top bar and tab bar */}
       <View style={styles.stackContainer}>
         {summaries.length === 0 ? (
           /* Empty state */
@@ -365,22 +358,7 @@ export default function SummaryScreen() {
           </View>
         ) : (
           <>
-            {/* Card behind (next in deck) — visible as a peek */}
-            {next && (
-              <Animated.View style={[
-                styles.card, styles.cardBehind,
-                { transform: [{ scale: nextScale }, { translateY: nextTranslateY }] },
-              ]}>
-                {renderCardContent(next, false)}
-              </Animated.View>
-            )}
-
-            {/* Third card — static peek for depth */}
-            {summaries[currentIndex + 2] && (
-              <View style={[styles.card, styles.cardBehind2]} />
-            )}
-
-            {/* Top card — draggable */}
+            {/* Top card — draggable, fills the full stack area */}
             <Animated.View
               style={[styles.card, {
                 transform: [
@@ -401,27 +379,28 @@ export default function SummaryScreen() {
                 <Text style={styles.swipeLabelText}>OLDER</Text>
               </Animated.View>
             </Animated.View>
+
           </>
         )}
       </View>
 
-      {/* Bottom navigation row */}
-      <View style={styles.navRow}>
-        {currentIndex > 0 && currentIndex < summaries.length ? (
-          <TouchableOpacity
-            style={styles.navBtn}
-            onPress={() => { if (!isSwiping.current) setCurrentIndex(prev => prev - 1); }}
-          >
-            <Text style={styles.navBtnText}>← Newer</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.navPlaceholder} />
-        )}
-        {summaries.length > 0 && currentIndex < summaries.length && (
+      {/* Bottom nav row — sits outside the card, above the tab bar */}
+      {summaries.length > 0 && currentIndex < summaries.length && (
+        <View style={styles.navRow}>
+          {currentIndex > 0 ? (
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => { if (!isSwiping.current) setCurrentIndex(prev => prev - 1); }}
+            >
+              <Text style={styles.navBtnText}>← Newer</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.navPlaceholder} />
+          )}
           <Text style={styles.swipeHint}>swipe to go back in time</Text>
-        )}
-        <View style={styles.navPlaceholder} />
-      </View>
+          <View style={styles.navPlaceholder} />
+        </View>
+      )}
 
       {/* Round FAB — generate today's summary */}
       <TouchableOpacity
@@ -456,17 +435,16 @@ const styles = StyleSheet.create({
 
   // ── Card stack container ─────────────────────────────────────────────────
   stackContainer: {
-    height: CARD_HEIGHT + 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    flex: 1,
   },
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   card: {
     position: 'absolute',
-    width: SCREEN_WIDTH - 32,
-    height: CARD_HEIGHT,
-    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    top: 0,
+    bottom: 0,
+    left: 16,
+    right: 16,
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
@@ -530,6 +508,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  cardScrollView: { flex: 1 },
   insightSection: { marginBottom: 8 },
   divider: { height: 1, backgroundColor: 'rgba(9, 41, 173, 0.08)', marginBottom: 12, marginTop: 4 },
   breakdownLabel: {
@@ -606,18 +585,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 28,
     right: 24,
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#0929AD',
     borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.25)',
+    borderColor: 'rgba(152, 212, 250, 0.40)',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,
     shadowColor: '#98D4FA',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.20,
+    shadowOpacity: 0.30,
     shadowRadius: 10,
   },
   fabDisabled: { opacity: 0.5 },

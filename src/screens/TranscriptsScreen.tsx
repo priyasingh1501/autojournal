@@ -18,6 +18,29 @@ import { StorageService } from '../services/StorageService';
 import { TranscriptEntry, PendingClip } from '../types';
 import ComposeModal from '../components/ComposeModal';
 
+// ── Highlights every occurrence of `query` inside `text` ─────────────────────
+function HighlightText({ text, query, style }: { text: string; query: string; style: any }) {
+  if (!query.trim()) return <Text style={style}>{text}</Text>;
+  const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+  return (
+    <Text style={style}>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <Text key={i} style={highlightStyle}>{part}</Text>
+        ) : (
+          <Text key={i}>{part}</Text>
+        )
+      )}
+    </Text>
+  );
+}
+
+const highlightStyle = {
+  backgroundColor: 'rgba(152, 212, 250, 0.25)',
+  color: 'rgba(224, 242, 254, 0.95)',
+  borderRadius: 3,
+};
+
 // 'transcript' = voice (auto-recorded), 'manual' = typed/photo, 'clip' = pending audio
 type JournalItem =
   | { kind: 'transcript'; data: TranscriptEntry; date: string }
@@ -323,7 +346,7 @@ export default function TranscriptsScreen() {
           )}
 
           {entry && entry.text.length > 0 && (
-            <Text style={styles.cardText}>{entry.text}</Text>
+            <HighlightText text={entry.text} query={search} style={styles.cardText} />
           )}
 
           {entry?.photoUri && (
@@ -522,7 +545,6 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: 'rgba(3, 18, 40, 0.72)',
     marginHorizontal: 16,
     marginTop: 8,
     borderRadius: 16,

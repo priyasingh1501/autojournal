@@ -170,82 +170,83 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Main Button — Jellyfish card */}
-      <View style={styles.monitorCard}>
-        <ImageBackground
-          source={require('../../assets/jellyfish.jpg')}
-          style={styles.monitorCardBg}
-          imageStyle={styles.monitorCardImage}
-          resizeMode="cover"
-        >
-          <View style={styles.monitorOverlay} />
-          <View style={styles.buttonSection}>
-            <View style={[styles.glowRing, isActive && styles.glowRingActive]}>
-              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                <TouchableOpacity
-                  style={[styles.mainButton, isActive && styles.mainButtonActive]}
-                  onPress={toggleMonitoring}
-                  activeOpacity={0.8}
-                >
-                  <Feather
-                    name={status === 'recording' ? 'square' : 'mic'}
-                    size={28}
-                    color={isActive ? 'rgba(224, 242, 254, 0.95)' : '#98D4FA'}
-                  />
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-
-            <Text style={[styles.statusText, { color: getStatusColor() }]}>
-              {getStatusText()}
-            </Text>
-
-            {pendingClips.length > 0 && (
-              <Text style={styles.pendingCount}>
-                {pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} pending
-              </Text>
-            )}
-          </View>
-        </ImageBackground>
-      </View>
-
-      {/* Pending clips banner */}
-      {pendingClips.length > 0 && (
-        <View style={styles.pendingBanner}>
-          {isTranscribing ? (
-            <View style={styles.pendingRow}>
-              <ActivityIndicator color="#f4a261" size="small" />
-              <Text style={styles.pendingText}>
-                Transcribing {batchProgress!.completed}/{batchProgress!.total}...
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.pendingRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
-                <Feather name="music" size={12} color="#f4a261" />
-                <Text style={styles.pendingText}>
-                  {' '}{pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} saved locally
-                </Text>
-              </View>
-              <View style={styles.pendingActions}>
-                <TouchableOpacity style={styles.transcribeButton} onPress={handleTranscribeNow}>
-                  <Text style={styles.transcribeButtonText}>Transcribe</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.discardButton} onPress={handleDiscardPending}>
-                  <Text style={styles.discardButtonText}>Discard</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Weekly insight card */}
+      {/* Everything scrolls together */}
       <ScrollView
         style={styles.scrollArea}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Main Button — Jellyfish card */}
+        <View style={styles.monitorCard}>
+          <ImageBackground
+            source={require('../../assets/jellyfish.jpg')}
+            style={styles.monitorCardBg}
+            imageStyle={styles.monitorCardImage}
+            resizeMode="cover"
+          >
+            <View style={styles.monitorOverlay} />
+            <View style={styles.buttonSection}>
+              <View style={[styles.glowRing, isActive && styles.glowRingActive]}>
+                <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+                  <TouchableOpacity
+                    style={[styles.mainButton, isActive && styles.mainButtonActive]}
+                    onPress={toggleMonitoring}
+                    activeOpacity={0.8}
+                  >
+                    <Feather
+                      name={status === 'recording' ? 'square' : 'mic'}
+                      size={28}
+                      color={isActive ? 'rgba(224, 242, 254, 0.95)' : '#98D4FA'}
+                    />
+                  </TouchableOpacity>
+                </Animated.View>
+              </View>
+
+              <Text style={[styles.statusText, { color: getStatusColor() }]}>
+                {getStatusText()}
+              </Text>
+
+              {pendingClips.length > 0 && (
+                <Text style={styles.pendingCount}>
+                  {pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} pending
+                </Text>
+              )}
+            </View>
+          </ImageBackground>
+        </View>
+
+        {/* Pending clips banner */}
+        {pendingClips.length > 0 && (
+          <View style={styles.pendingBanner}>
+            {isTranscribing ? (
+              <View style={styles.pendingRow}>
+                <ActivityIndicator color="#f4a261" size="small" />
+                <Text style={styles.pendingText}>
+                  Transcribing {batchProgress!.completed}/{batchProgress!.total}...
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.pendingRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
+                  <Feather name="music" size={12} color="#f4a261" />
+                  <Text style={styles.pendingText}>
+                    {' '}{pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} saved locally
+                  </Text>
+                </View>
+                <View style={styles.pendingActions}>
+                  <TouchableOpacity style={styles.transcribeButton} onPress={handleTranscribeNow}>
+                    <Text style={styles.transcribeButtonText}>Transcribe</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.discardButton} onPress={handleDiscardPending}>
+                    <Text style={styles.discardButtonText}>Discard</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Weekly insight card */}
         <WeeklyInsightCard />
       </ScrollView>
 
@@ -284,7 +285,7 @@ const styles = StyleSheet.create({
     shadowRadius: 28,
     elevation: 10,
   },
-  monitorCardBg: { width: '100%' },
+  monitorCardBg: { width: '100%', minHeight: 280 },
   monitorCardImage: { opacity: 0.80 },
   monitorOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -384,7 +385,7 @@ const styles = StyleSheet.create({
 
   // ── Scroll area ───────────────────────────────────────────────────────────
   scrollArea: { flex: 1 },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 },
+  scrollContent: { paddingBottom: 100 },
 
   // ── FAB ───────────────────────────────────────────────────────────────────
   fab: {
@@ -394,15 +395,15 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: 'rgba(9, 41, 173, 0.22)',
+    backgroundColor: '#0929AD',
     borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.28)',
+    borderColor: 'rgba(152, 212, 250, 0.40)',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,
     shadowColor: '#98D4FA',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.30,
     shadowRadius: 10,
   },
 });

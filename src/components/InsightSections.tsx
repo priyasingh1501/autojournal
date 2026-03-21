@@ -3,11 +3,11 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 export const SECTION_LABELS: Record<string, { iconName: string; color: string }> = {
-  'Emotional check-in': { iconName: 'activity',     color: '#98D4FA' },
-  'Meals':              { iconName: 'coffee',        color: '#06d6a0' },
-  'Movement':           { iconName: 'zap',           color: '#f4a261' },
-  'Spending':           { iconName: 'credit-card',   color: '#00b4d8' },
-  'Recurring thoughts': { iconName: 'repeat',        color: '#90e0ef' },
+  'Emotional check-in': { iconName: 'activity',     color: 'rgba(224, 242, 254, 0.90)' },
+  'Meals':              { iconName: 'coffee',        color: 'rgba(224, 242, 254, 0.90)' },
+  'Movement':           { iconName: 'zap',           color: 'rgba(224, 242, 254, 0.90)' },
+  'Spending':           { iconName: 'credit-card',   color: 'rgba(224, 242, 254, 0.90)' },
+  'Recurring thoughts': { iconName: 'repeat',        color: 'rgba(224, 242, 254, 0.90)' },
 };
 
 export function renderInsightSections(text: string): React.ReactNode {
@@ -66,5 +66,5 @@ const sectionStyles = StyleSheet.create({
   section: { marginBottom: 14 },
   headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   heading: { fontSize: 13, fontWeight: '500', letterSpacing: 0.2, fontFamily: 'Baskerville' },
-  body: { fontSize: 14, color: 'rgba(152, 212, 250, 0.75)', lineHeight: 22, fontFamily: 'GillSans-Light' },
+  body: { fontSize: 14, color: 'rgba(224, 242, 254, 0.75)', lineHeight: 22, fontFamily: 'GillSans-Light' },
 });

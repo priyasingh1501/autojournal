@@ -127,7 +127,6 @@ export default function WeeklyInsightCard() {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(3, 18, 40, 0.72)',
     borderRadius: 20,
     padding: 16,
     marginBottom: 16,
