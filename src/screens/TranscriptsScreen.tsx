@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { StorageService } from '../services/StorageService';

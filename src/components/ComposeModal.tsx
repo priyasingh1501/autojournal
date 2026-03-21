@@ -15,7 +15,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { StorageService } from '../services/StorageService';
 import { TranscriptEntry } from '../types';
 

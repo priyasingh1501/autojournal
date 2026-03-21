@@ -1,7 +1,5 @@
 import OpenAI from 'openai';
-import * as FileSystem from 'expo-file-system';
-
-const IMAGE_DIR = `${FileSystem.documentDirectory}summary-images/`;
+import * as FileSystem from 'expo-file-system/legacy';
 
 /**
  * Generates a unique bioluminescent jellyfish image for a daily summary
@@ -13,6 +11,8 @@ export async function generateSummaryImage(
   openaiApiKey: string,
 ): Promise<string | null> {
   try {
+    // Resolved inside the function so documentDirectory is read at call-time, not module-load time
+    const imageDir = `${FileSystem.documentDirectory}summary-images/`;
     const client = new OpenAI({
       apiKey: openaiApiKey,
       dangerouslyAllowBrowser: true,
@@ -30,12 +30,12 @@ export async function generateSummaryImage(
       quality: 'standard',
     });
 
-    const url = response.data[0]?.url;
+    const url = response.data?.[0]?.url;
     if (!url) return null;
 
     // Ensure directory exists then download to a stable local path
-    await FileSystem.makeDirectoryAsync(IMAGE_DIR, { intermediates: true });
-    const localPath = `${IMAGE_DIR}${date}.jpg`;
+    await FileSystem.makeDirectoryAsync(imageDir, { intermediates: true });
+    const localPath = `${imageDir}${date}.jpg`;
     const { uri } = await FileSystem.downloadAsync(url, localPath);
     return uri;
   } catch {
@@ -49,7 +49,8 @@ export async function generateSummaryImage(
  */
 export async function deleteSummaryImage(date: string): Promise<void> {
   try {
-    const path = `${IMAGE_DIR}${date}.jpg`;
+    const imageDir = `${FileSystem.documentDirectory}summary-images/`;
+    const path = `${imageDir}${date}.jpg`;
     const info = await FileSystem.getInfoAsync(path);
     if (info.exists) await FileSystem.deleteAsync(path, { idempotent: true });
   } catch {}

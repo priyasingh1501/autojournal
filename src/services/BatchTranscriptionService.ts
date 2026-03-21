@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { TranscriptEntry } from '../types';
 import { transcribeAudio } from './TranscriptionService';
 import { StorageService } from './StorageService';

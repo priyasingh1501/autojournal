@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { TranscriptEntry, DailySummary } from '../types';
 import { StorageService } from './StorageService';
 import { generateSummaryImage } from './SummaryImageService';
