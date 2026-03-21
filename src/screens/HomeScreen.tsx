@@ -177,9 +177,9 @@ export default function HomeScreen() {
 
   const getStatusColor = () => {
     switch (status) {
-      case 'idle': return '#6b7280';
-      case 'monitoring': return '#10b981';
-      case 'recording': return '#e94560';
+      case 'idle': return 'rgba(147, 210, 232, 0.5)';
+      case 'monitoring': return '#48cae4';
+      case 'recording': return '#48cae4';
     }
   };
 
@@ -198,17 +198,20 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       {/* Main Button */}
       <View style={styles.buttonSection}>
-        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-          <TouchableOpacity
-            style={[styles.mainButton, isActive && styles.mainButtonActive]}
-            onPress={toggleMonitoring}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.mainButtonIcon}>
-              {status === 'idle' ? '🎙️' : status === 'recording' ? '🔴' : '👂'}
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
+        {/* Outer glow ring */}
+        <View style={[styles.glowRing, isActive && styles.glowRingActive]}>
+          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+            <TouchableOpacity
+              style={[styles.mainButton, isActive && styles.mainButtonActive]}
+              onPress={toggleMonitoring}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.mainButtonIcon}>
+                {status === 'idle' ? '🎙️' : status === 'recording' ? '🔴' : '👂'}
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
 
         <Text style={[styles.statusText, { color: getStatusColor() }]}>
           {getStatusText()}
@@ -224,7 +227,7 @@ export default function HomeScreen() {
         <View style={styles.pendingBanner}>
           {isTranscribing ? (
             <View style={styles.pendingRow}>
-              <ActivityIndicator color="#f59e0b" size="small" />
+              <ActivityIndicator color="#f4a261" size="small" />
               <Text style={styles.pendingText}>
                 Transcribing {batchProgress!.completed}/{batchProgress!.total}...
               </Text>
@@ -337,81 +340,140 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a2e' },
+  container: { flex: 1, backgroundColor: '#010c1a' },
+
+  // ── Mic button section ────────────────────────────────────────────────────
   buttonSection: { alignItems: 'center', paddingVertical: 32 },
-  mainButton: {
+
+  glowRing: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#16213e',
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: '#6b7280',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
   },
-  mainButtonActive: { borderColor: '#e94560', shadowColor: '#e94560' },
-  mainButtonIcon: { fontSize: 48 },
+  glowRingActive: {
+    backgroundColor: 'rgba(72, 202, 228, 0.14)',
+  },
+
+  mainButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(72, 202, 228, 0.4)',
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  mainButtonActive: {
+    backgroundColor: '#48cae4',
+    borderColor: '#48cae4',
+    shadowOpacity: 0.35,
+  },
+  mainButtonIcon: { fontSize: 40 },
+
   statusText: { marginTop: 16, fontSize: 18, fontWeight: '600' },
-  transcriptCount: { marginTop: 8, fontSize: 14, color: '#6b7280' },
+  transcriptCount: { marginTop: 8, fontSize: 14, color: 'rgba(147, 210, 232, 0.35)' },
+
+  // ── Pending banner ────────────────────────────────────────────────────────
   pendingBanner: {
     marginHorizontal: 20,
     marginBottom: 12,
-    backgroundColor: '#1c1f2e',
-    borderRadius: 12,
+    backgroundColor: 'rgba(244, 162, 97, 0.15)',
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#f59e0b44',
+    borderColor: 'rgba(244, 162, 97, 0.35)',
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
   },
   pendingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
-  pendingText: { color: '#f59e0b', fontSize: 14, fontWeight: '500', flex: 1 },
+  pendingText: { color: '#f4a261', fontSize: 14, fontWeight: '500', flex: 1 },
   pendingActions: { flexDirection: 'row', gap: 8 },
   transcribeButton: {
-    backgroundColor: '#f59e0b',
+    backgroundColor: '#f4a261',
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 8,
   },
-  transcribeButtonText: { color: '#000', fontSize: 13, fontWeight: '700' },
+  transcribeButtonText: { color: '#010c1a', fontSize: 13, fontWeight: '700' },
   discardButton: {
-    backgroundColor: '#374151',
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.2)',
   },
-  discardButtonText: { color: '#9ca3af', fontSize: 13, fontWeight: '600' },
+  discardButtonText: { color: '#48cae4', fontSize: 13, fontWeight: '600' },
+
+  // ── Scroll area ───────────────────────────────────────────────────────────
   scrollArea: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingBottom: 110 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#ffffff', marginBottom: 12 },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: 'rgba(224, 242, 254, 0.95)',
+    marginBottom: 12,
+  },
+
+  // ── Entry cards ───────────────────────────────────────────────────────────
   transcriptCard: {
-    backgroundColor: '#16213e',
-    borderRadius: 12,
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    borderRadius: 16,
     padding: 14,
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.13)',
     borderLeftWidth: 3,
-    borderLeftColor: '#e94560',
+    borderLeftColor: 'rgba(72, 202, 228, 0.5)',
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  transcriptCardManual: { borderLeftColor: '#818cf8' },
+  transcriptCardManual: { borderLeftColor: 'rgba(0, 180, 216, 0.4)' },
   transcriptCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   kindBadge: { fontSize: 11 },
-  transcriptTime: { fontSize: 12, color: '#9ca3af', flex: 1 },
+  transcriptTime: { fontSize: 12, color: 'rgba(147, 210, 232, 0.65)', flex: 1 },
   editBtn: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: '#1e3a5f', alignItems: 'center', justifyContent: 'center',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  editBtnText: { color: '#60a5fa', fontSize: 11, fontWeight: '700' },
-  transcriptText: { fontSize: 15, color: '#e5e7eb', lineHeight: 22 },
+  editBtnText: { color: '#48cae4', fontSize: 11, fontWeight: '700' },
+  transcriptText: { fontSize: 15, color: 'rgba(147, 210, 232, 0.65)', lineHeight: 22 },
   photoThumb: {
     width: '100%',
     height: 140,
     borderRadius: 8,
     marginTop: 8,
   },
-  emptyText: { color: '#6b7280', textAlign: 'center', marginTop: 40, fontSize: 15, lineHeight: 24 },
+  emptyText: {
+    color: 'rgba(147, 210, 232, 0.35)',
+    textAlign: 'center',
+    marginTop: 40,
+    fontSize: 15,
+    lineHeight: 24,
+  },
+
+  // ── FAB ───────────────────────────────────────────────────────────────────
   fab: {
     position: 'absolute',
     bottom: 28,
@@ -419,14 +481,14 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#818cf8',
+    backgroundColor: '#48cae4',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,
-    shadowColor: '#818cf8',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
   },
-  fabIcon: { fontSize: 22 },
+  fabIcon: { fontSize: 22, color: '#010c1a' },
 });

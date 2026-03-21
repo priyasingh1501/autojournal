@@ -206,7 +206,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
             </TouchableOpacity>
             <Text style={styles.title}>{isEditing ? 'Edit Entry' : 'New Entry'}</Text>
             {saving ? (
-              <ActivityIndicator color="#e94560" style={styles.headerBtn} />
+              <ActivityIndicator color="#48cae4" style={styles.headerBtn} />
             ) : (
               <TouchableOpacity
                 onPress={handleSave}
@@ -230,7 +230,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
               ref={inputRef}
               style={styles.textInput}
               placeholder="What's on your mind?"
-              placeholderTextColor="#4b5563"
+              placeholderTextColor="rgba(72, 202, 228, 0.3)"
               value={text}
               onChangeText={setText}
               multiline
@@ -276,12 +276,14 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
   },
   sheet: {
-    backgroundColor: '#16213e',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: '#020e20',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(72, 202, 228, 0.15)',
     maxHeight: '90%',
     minHeight: 320,
   },
@@ -293,20 +295,21 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1f2d4e',
+    borderBottomColor: 'rgba(72, 202, 228, 0.08)',
   },
   headerBtn: { minWidth: 56 },
-  title: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
-  cancelText: { color: '#9ca3af', fontSize: 15 },
-  saveText: { color: '#e94560', fontSize: 15, fontWeight: '700', textAlign: 'right' },
+  title: { fontSize: 16, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)' },
+  cancelText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 15 },
+  saveText: { color: '#48cae4', fontSize: 15, fontWeight: '700', textAlign: 'right' },
   saveTextDisabled: { opacity: 0.35 },
   body: { paddingHorizontal: 18, paddingTop: 14 },
   textInput: {
-    color: '#e5e7eb',
+    color: 'rgba(224, 242, 254, 0.95)',
     fontSize: 16,
     lineHeight: 24,
     minHeight: 120,
     marginBottom: 14,
+    backgroundColor: 'transparent',
   },
   photoPreviewContainer: {
     marginBottom: 12,
@@ -326,7 +329,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -337,12 +340,12 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: 'rgba(72, 202, 228, 0.18)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: 'rgba(72, 202, 228, 0.13)',
     alignSelf: 'flex-start',
   },
   photoButtonIcon: { fontSize: 16 },
-  photoButtonText: { color: '#9ca3af', fontSize: 14, fontWeight: '500' },
+  photoButtonText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '500' },
 });

@@ -2,11 +2,11 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 export const SECTION_LABELS: Record<string, { emoji: string; color: string }> = {
-  'Emotional check-in': { emoji: '🧠', color: '#818cf8' },
-  'Meals':              { emoji: '🍽️', color: '#34d399' },
-  'Movement':           { emoji: '💪', color: '#f59e0b' },
-  'Spending':           { emoji: '💰', color: '#60a5fa' },
-  'Recurring thoughts': { emoji: '💭', color: '#c084fc' },
+  'Emotional check-in': { emoji: '🧠', color: '#48cae4' },
+  'Meals':              { emoji: '🍽️', color: '#06d6a0' },
+  'Movement':           { emoji: '💪', color: '#f4a261' },
+  'Spending':           { emoji: '💰', color: '#00b4d8' },
+  'Recurring thoughts': { emoji: '💭', color: '#90e0ef' },
 };
 
 export function renderInsightSections(text: string): React.ReactNode {
@@ -63,5 +63,5 @@ const sectionStyles = StyleSheet.create({
   wrapper: { marginBottom: 4 },
   section: { marginBottom: 14 },
   heading: { fontSize: 13, fontWeight: '700', marginBottom: 4, letterSpacing: 0.2 },
-  body: { fontSize: 14, color: '#e5e7eb', lineHeight: 22 },
+  body: { fontSize: 14, color: 'rgba(147, 210, 232, 0.75)', lineHeight: 22 },
 });

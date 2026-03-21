@@ -258,9 +258,9 @@ export default function TranscriptsScreen() {
   };
 
   const BORDER: Record<JournalItem['kind'], string> = {
-    transcript: '#e94560',
-    manual: '#818cf8',
-    clip: '#f59e0b',
+    transcript: '#48cae4',
+    manual: '#00b4d8',
+    clip: '#f4a261',
   };
 
   const renderItem = ({ item }: { item: JournalItem }) => {
@@ -381,7 +381,7 @@ export default function TranscriptsScreen() {
           <TextInput
             style={styles.searchInput}
             placeholder="Search transcripts…"
-            placeholderTextColor="#6b7280"
+            placeholderTextColor="rgba(72, 202, 228, 0.4)"
             value={search}
             onChangeText={setSearch}
             returnKeyType="search"
@@ -415,7 +415,7 @@ export default function TranscriptsScreen() {
             {selected.size === 0 ? 'Tap to select' : `${selected.size} selected`}
           </Text>
           {loading ? (
-            <ActivityIndicator color="#e94560" size="small" />
+            <ActivityIndicator color="#e63946" size="small" />
           ) : (
             <TouchableOpacity
               onPress={handleDeleteSelected}
@@ -457,7 +457,9 @@ export default function TranscriptsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a2e' },
+  container: { flex: 1, backgroundColor: '#010c1a' },
+
+  // ── Top bar ───────────────────────────────────────────────────────────────
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -469,84 +471,99 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 10,
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    borderRadius: 12,
     paddingHorizontal: 10,
-    height: 38,
+    height: 40,
     gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.13)',
   },
   searchIcon: { fontSize: 14 },
-  searchInput: { flex: 1, color: '#e5e7eb', fontSize: 14 },
-  clearSearch: { color: '#6b7280', fontSize: 13, paddingHorizontal: 4 },
-  actionBtn: { color: '#e94560', fontSize: 15, fontWeight: '600' },
+  searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14 },
+  clearSearch: { color: 'rgba(147, 210, 232, 0.35)', fontSize: 13, paddingHorizontal: 4 },
+  actionBtn: { color: '#48cae4', fontSize: 15, fontWeight: '600' },
   disabled: { opacity: 0.35 },
+
+  // ── Select bar ────────────────────────────────────────────────────────────
   selectBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: '#16213e',
+    backgroundColor: 'rgba(6, 26, 55, 0.55)',
     borderBottomWidth: 1,
-    borderBottomColor: '#374151',
+    borderBottomColor: 'rgba(72, 202, 228, 0.13)',
   },
-  selectBarBtn: { color: '#9ca3af', fontSize: 14, fontWeight: '600', minWidth: 40 },
-  selectCount: { color: '#e5e7eb', fontSize: 14, fontWeight: '500' },
-  deleteAllBtn: { color: '#e94560', fontSize: 14, fontWeight: '700', minWidth: 40, textAlign: 'right' },
+  selectBarBtn: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40 },
+  selectCount: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontWeight: '500' },
+  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '700', minWidth: 40, textAlign: 'right' },
+
+  // ── Section headers ───────────────────────────────────────────────────────
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#1a1a2e',
+    backgroundColor: 'rgba(1, 12, 26, 0.95)',
     paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#1f2d4e',
+    borderBottomColor: 'rgba(72, 202, 228, 0.08)',
   },
   sectionHeaderLeft: { flex: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
-  sectionCount: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)' },
+  sectionCount: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', marginTop: 2 },
   deleteDayBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: '#2d1f2e',
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(230, 57, 70, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(230, 57, 70, 0.35)',
   },
-  deleteDayBtnText: { color: '#e94560', fontSize: 12, fontWeight: '600' },
+  deleteDayBtnText: { color: '#e63946', fontSize: 12, fontWeight: '600' },
+
+  // ── Cards ─────────────────────────────────────────────────────────────────
   listContent: { paddingBottom: 32 },
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#16213e',
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
     marginHorizontal: 16,
     marginTop: 8,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: '#e94560',
-  },
-  cardClip: { borderLeftColor: '#f59e0b' },
-  cardSelected: {
-    backgroundColor: '#1c2d4a',
     borderWidth: 1,
-    borderLeftWidth: 1,
-    borderColor: '#3b82f6',
+    borderColor: 'rgba(72, 202, 228, 0.13)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#48cae4',
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  cardSelected: {
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    borderColor: 'rgba(72, 202, 228, 0.3)',
+    borderLeftWidth: 3,
   },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: '#6b7280',
+    borderColor: 'rgba(147, 210, 232, 0.35)',
     marginRight: 10,
     marginTop: 1,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  checkboxSelected: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
-  checkmark: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  checkboxSelected: { backgroundColor: '#48cae4', borderColor: '#48cae4' },
+  checkmark: { color: '#010c1a', fontSize: 13, fontWeight: '700' },
   cardBody: { flex: 1 },
   cardHeader: {
     flexDirection: 'row',
@@ -556,29 +573,33 @@ const styles = StyleSheet.create({
   },
   cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   kindBadge: { fontSize: 12, marginRight: 5 },
-  cardTime: { fontSize: 12, color: '#9ca3af' },
-  cardDuration: { fontSize: 11, color: '#6b7280' },
+  cardTime: { fontSize: 12, color: 'rgba(147, 210, 232, 0.65)' },
+  cardDuration: { fontSize: 11, color: 'rgba(147, 210, 232, 0.35)' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   editBtn: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#1e3a5f',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  editBtnText: { color: '#60a5fa', fontSize: 11, fontWeight: '700' },
+  editBtnText: { color: '#48cae4', fontSize: 11, fontWeight: '700' },
   deleteBtn: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#374151',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(230, 57, 70, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(230, 57, 70, 0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  deleteBtnText: { color: '#9ca3af', fontSize: 10, fontWeight: '700' },
-  clipLabel: { fontSize: 13, color: '#f59e0b', fontStyle: 'italic' },
-  cardText: { fontSize: 14, color: '#e5e7eb', lineHeight: 20 },
+  deleteBtnText: { color: '#e63946', fontSize: 10, fontWeight: '700' },
+  clipLabel: { fontSize: 13, color: '#f4a261', fontStyle: 'italic' },
+  cardText: { fontSize: 14, color: 'rgba(147, 210, 232, 0.65)', lineHeight: 20 },
   photoThumb: {
     width: '100%',
     height: 160,
@@ -586,7 +607,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   emptyText: {
-    color: '#6b7280',
+    color: 'rgba(147, 210, 232, 0.35)',
     textAlign: 'center',
     marginTop: 80,
     fontSize: 15,

@@ -28,9 +28,9 @@ const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
 
 // ── markdown styles ───────────────────────────────────────────────────────────
 const markdownStyles = {
-  body: { color: '#e5e7eb', fontSize: 14, lineHeight: 22 },
+  body: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 14, lineHeight: 22 },
   heading2: {
-    color: '#ffffff',
+    color: 'rgba(224, 242, 254, 0.95)',
     fontSize: 14,
     fontWeight: '700' as const,
     marginTop: 12,
@@ -38,9 +38,9 @@ const markdownStyles = {
     borderBottomWidth: 0,
   },
   bullet_list: { marginLeft: 0 },
-  bullet_list_item: { color: '#e5e7eb', marginBottom: 2 },
-  bullet_list_icon: { color: '#818cf8', marginTop: 5 },
-  strong: { color: '#ffffff', fontWeight: '700' as const },
+  bullet_list_item: { color: 'rgba(147, 210, 232, 0.65)', marginBottom: 2 },
+  bullet_list_icon: { color: '#48cae4', marginTop: 5 },
+  strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '700' as const },
   paragraph: { marginTop: 0, marginBottom: 4 },
 };
 
@@ -233,7 +233,7 @@ export default function SummaryScreen() {
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               {generatingDate === item.date
-                ? <ActivityIndicator size="small" color="#9ca3af" />
+                ? <ActivityIndicator size="small" color="rgba(147, 210, 232, 0.65)" />
                 : <Text style={styles.regenText}>↻</Text>}
             </TouchableOpacity>
           </View>
@@ -380,7 +380,7 @@ export default function SummaryScreen() {
         activeOpacity={0.85}
       >
         {isGeneratingToday ? (
-          <ActivityIndicator color="#ffffff" />
+          <ActivityIndicator color="#010c1a" />
         ) : (
           <>
             <Text style={styles.fabIcon}>{todaySummary ? '↻' : '✨'}</Text>
@@ -395,9 +395,9 @@ export default function SummaryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a2e' },
+  container: { flex: 1, backgroundColor: '#010c1a' },
 
-  // Top bar
+  // ── Top bar ───────────────────────────────────────────────────────────────
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -406,31 +406,33 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
-  screenTitle: { fontSize: 22, fontWeight: '700', color: '#ffffff' },
-  counter: { fontSize: 14, color: '#6b7280' },
+  screenTitle: { fontSize: 22, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)' },
+  counter: { fontSize: 14, color: 'rgba(147, 210, 232, 0.35)' },
 
-  // Card stack container — fixed height so cards are centered
+  // ── Card stack container ─────────────────────────────────────────────────
   stackContainer: {
     height: CARD_HEIGHT + 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  // Cards — all absolutely positioned inside stackContainer
+  // ── Cards ─────────────────────────────────────────────────────────────────
   card: {
     position: 'absolute',
     width: SCREEN_WIDTH - 32,
     height: CARD_HEIGHT,
-    backgroundColor: '#16213e',
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
     borderRadius: 20,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.13)',
     borderLeftWidth: 3,
-    borderLeftColor: '#818cf8',
+    borderLeftColor: 'rgba(72, 202, 228, 0.35)',
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
     elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
   },
   cardBehind: {
     // animated scale + translateY applied inline
@@ -442,10 +444,10 @@ const styles = StyleSheet.create({
   placeholderCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderLeftColor: '#374151',
+    borderLeftColor: 'rgba(72, 202, 228, 0.13)',
   },
 
-  // Card inner content
+  // ── Card inner content ────────────────────────────────────────────────────
   cardScroll: { padding: 18, paddingBottom: 40 },
   cardHeader: {
     flexDirection: 'row',
@@ -454,25 +456,33 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   cardHeaderLeft: { flex: 1 },
-  cardDate: { fontSize: 20, fontWeight: '700', color: '#ffffff', marginBottom: 3 },
-  cardMeta: { fontSize: 12, color: '#6b7280' },
+  cardDate: { fontSize: 20, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3 },
+  cardMeta: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)' },
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: '#0f172a',
-    alignItems: 'center', justifyContent: 'center',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(6, 26, 55, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.13)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  downloadText: { color: '#60a5fa', fontSize: 14, fontWeight: '700' },
-  regenText: { color: '#9ca3af', fontSize: 17, fontWeight: '700' },
+  downloadText: { color: '#48cae4', fontSize: 14, fontWeight: '700' },
+  regenText: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 17, fontWeight: '700' },
 
   insightSection: { marginBottom: 8 },
-  divider: { height: 1, backgroundColor: '#1f2d4e', marginBottom: 12, marginTop: 4 },
+  divider: { height: 1, backgroundColor: 'rgba(72, 202, 228, 0.08)', marginBottom: 12, marginTop: 4 },
   breakdownLabel: {
-    fontSize: 10, fontWeight: '700', color: '#374151',
-    letterSpacing: 0.8, marginBottom: 8,
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(147, 210, 232, 0.35)',
+    letterSpacing: 0.8,
+    marginBottom: 8,
   },
 
-  // Swipe direction labels (like Tinder LIKE/NOPE)
+  // ── Swipe direction labels ─────────────────────────────────────────────────
   swipeLabel: {
     position: 'absolute',
     top: 22,
@@ -481,27 +491,37 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 2.5,
   },
-  swipeLabelLeft: { left: 16, borderColor: '#e94560' },
-  swipeLabelRight: { right: 16, borderColor: '#e94560' },
+  swipeLabelLeft: { left: 16, borderColor: '#48cae4' },
+  swipeLabelRight: { right: 16, borderColor: '#48cae4' },
   swipeLabelText: {
-    fontSize: 13, fontWeight: '900', color: '#e94560', letterSpacing: 1.5,
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#48cae4',
+    letterSpacing: 1.5,
   },
 
-  // Empty / done states
+  // ── Empty / done states ───────────────────────────────────────────────────
   emptyIcon: { fontSize: 56, marginBottom: 16 },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#ffffff', marginBottom: 8 },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8 },
   emptySubtitle: {
-    fontSize: 14, color: '#9ca3af', textAlign: 'center',
-    lineHeight: 22, paddingHorizontal: 28,
+    fontSize: 14,
+    color: 'rgba(147, 210, 232, 0.35)',
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 28,
   },
   restartBtn: {
-    marginTop: 24, paddingHorizontal: 20, paddingVertical: 10,
-    backgroundColor: '#1a1a2e', borderRadius: 12,
-    borderWidth: 1, borderColor: '#374151',
+    marginTop: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.2)',
   },
-  restartBtnText: { color: '#9ca3af', fontSize: 14, fontWeight: '600' },
+  restartBtnText: { color: '#48cae4', fontSize: 14, fontWeight: '600' },
 
-  // Bottom nav
+  // ── Bottom nav ─────────────────────────────────────────────────────────────
   navRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -510,24 +530,38 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   navBtn: {
-    paddingHorizontal: 14, paddingVertical: 7,
-    backgroundColor: '#16213e', borderRadius: 10,
-    borderWidth: 1, borderColor: '#374151',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.2)',
   },
-  navBtnText: { color: '#9ca3af', fontSize: 13, fontWeight: '600' },
+  navBtnText: { color: '#48cae4', fontSize: 13, fontWeight: '600' },
   navPlaceholder: { width: 80 },
-  swipeHint: { fontSize: 12, color: '#374151' },
+  swipeHint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)' },
 
-  // FAB
+  // ── FAB ───────────────────────────────────────────────────────────────────
   fabSpacer: { height: 72 },
   fab: {
-    position: 'absolute', bottom: 24, right: 20, left: 20,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#e94560', borderRadius: 16, paddingVertical: 16,
-    elevation: 6, shadowColor: '#e94560',
-    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 8,
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#48cae4',
+    borderRadius: 16,
+    paddingVertical: 16,
+    elevation: 6,
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
   },
   fabDisabled: { opacity: 0.6 },
-  fabIcon: { fontSize: 18, color: '#ffffff' },
-  fabLabel: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
+  fabIcon: { fontSize: 18, color: '#010c1a' },
+  fabLabel: { fontSize: 16, fontWeight: '700', color: '#010c1a' },
 });

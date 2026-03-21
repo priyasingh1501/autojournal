@@ -82,7 +82,7 @@ export default function WeeklyInsightCard() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {refreshing
-            ? <ActivityIndicator size="small" color="#818cf8" />
+            ? <ActivityIndicator size="small" color="#48cae4" />
             : <Text style={styles.refreshIcon}>↻</Text>}
         </TouchableOpacity>
       </View>
@@ -126,12 +126,19 @@ export default function WeeklyInsightCard() {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    borderRadius: 20,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.13)',
     borderLeftWidth: 3,
-    borderLeftColor: '#818cf8',
+    borderLeftColor: '#48cae4',
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 8,
   },
   headingRow: {
     flexDirection: 'row',
@@ -142,38 +149,41 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'rgba(224, 242, 254, 0.95)',
     flex: 1,
   },
   refreshBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#0f172a',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(6, 26, 55, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.13)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  refreshIcon: { color: '#9ca3af', fontSize: 15, fontWeight: '700' },
+  refreshIcon: { color: 'rgba(147, 210, 232, 0.65)', fontSize: 15, fontWeight: '700' },
 
   lastUpdated: {
     fontSize: 11,
-    color: '#374151',
+    color: 'rgba(147, 210, 232, 0.35)',
     marginTop: 12,
     textAlign: 'right',
   },
 
   skeletonLine: {
     height: 13,
-    backgroundColor: '#1f2d4e',
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
     borderRadius: 7,
     marginBottom: 9,
   },
   emptyText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: 'rgba(147, 210, 232, 0.35)',
     lineHeight: 22,
     textAlign: 'center',
     paddingVertical: 8,
+    fontStyle: 'italic',
   },
-  errorText: { fontSize: 14, color: '#f87171', lineHeight: 22 },
+  errorText: { fontSize: 14, color: '#e63946', lineHeight: 22 },
 });

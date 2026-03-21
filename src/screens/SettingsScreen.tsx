@@ -61,7 +61,7 @@ export default function SettingsScreen() {
               value={settings.openaiApiKey}
               onChangeText={(v) => setSettings(prev => ({ ...prev, openaiApiKey: v }))}
               placeholder="sk-..."
-              placeholderTextColor="#6b7280"
+              placeholderTextColor="rgba(72, 202, 228, 0.3)"
               secureTextEntry={!showOpenAIKey}
               autoCapitalize="none"
               autoCorrect={false}
@@ -81,7 +81,7 @@ export default function SettingsScreen() {
               value={settings.anthropicApiKey}
               onChangeText={(v) => setSettings(prev => ({ ...prev, anthropicApiKey: v }))}
               placeholder="sk-ant-..."
-              placeholderTextColor="#6b7280"
+              placeholderTextColor="rgba(72, 202, 228, 0.3)"
               secureTextEntry={!showAnthropicKey}
               autoCapitalize="none"
               autoCorrect={false}
@@ -168,50 +168,63 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a2e' },
+  container: { flex: 1, backgroundColor: '#010c1a' },
   content: { padding: 20 },
+
+  // ── Section cards ─────────────────────────────────────────────────────────
   section: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    borderRadius: 20,
     padding: 20,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(72, 202, 228, 0.13)',
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 8,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#ffffff',
+    color: 'rgba(224, 242, 254, 0.95)',
     marginBottom: 6,
   },
   sectionSubtitle: {
     fontSize: 13,
-    color: '#9ca3af',
+    color: 'rgba(147, 210, 232, 0.65)',
     marginBottom: 16,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#d1d5db',
+    color: 'rgba(224, 242, 254, 0.95)',
     marginTop: 14,
     marginBottom: 6,
   },
-  hint: { fontSize: 12, color: '#6b7280', marginBottom: 10 },
+  hint: { fontSize: 12, color: 'rgba(147, 210, 232, 0.35)', marginBottom: 10 },
+
+  // ── Input rows ─────────────────────────────────────────────────────────────
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f172a',
+    backgroundColor: 'rgba(1, 8, 18, 0.8)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: 'rgba(72, 202, 228, 0.13)',
     paddingRight: 12,
   },
   input: {
     flex: 1,
-    color: '#e5e7eb',
+    color: 'rgba(224, 242, 254, 0.95)',
     fontSize: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
   eyeButton: { padding: 4 },
+
+  // ── Threshold buttons ──────────────────────────────────────────────────────
   thresholdButtons: {
     flexDirection: 'row',
     gap: 8,
@@ -222,25 +235,34 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: '#0f172a',
+    backgroundColor: 'rgba(72, 202, 228, 0.08)',
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: 'rgba(72, 202, 228, 0.2)',
     alignItems: 'center',
   },
   thresholdButtonSelected: {
-    backgroundColor: '#e94560',
-    borderColor: '#e94560',
+    backgroundColor: '#48cae4',
+    borderColor: '#48cae4',
   },
-  thresholdButtonText: { color: '#9ca3af', fontSize: 13, fontWeight: '500' },
-  thresholdButtonTextSelected: { color: '#ffffff' },
+  thresholdButtonText: { color: '#48cae4', fontSize: 13, fontWeight: '500' },
+  thresholdButtonTextSelected: { color: '#010c1a', fontWeight: '700' },
+
+  // ── Save button ────────────────────────────────────────────────────────────
   saveButton: {
-    backgroundColor: '#e94560',
-    borderRadius: 14,
+    backgroundColor: '#48cae4',
+    borderRadius: 28,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 8,
+    shadowColor: '#48cae4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
   },
-  saveButtonText: { color: '#ffffff', fontSize: 17, fontWeight: '600' },
+  saveButtonText: { color: '#010c1a', fontSize: 17, fontWeight: '700' },
+
+  // ── Footer ─────────────────────────────────────────────────────────────────
   footer: { alignItems: 'center', marginTop: 24, marginBottom: 12 },
-  footerText: { color: '#6b7280', fontSize: 13, textAlign: 'center' },
+  footerText: { color: 'rgba(147, 210, 232, 0.35)', fontSize: 13, textAlign: 'center' },
 });
