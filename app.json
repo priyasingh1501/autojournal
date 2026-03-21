@@ -2,7 +2,8 @@
   "expo": {
     "name": "Auto Journal",
     "slug": "auto-journal",
-    "version": "1.1.0",
+    "version": "1.2.0",
+    "scheme": "autojournal",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -55,6 +56,22 @@
           "icon": "./assets/icon.png",
           "color": "#e94560",
           "sounds": []
+        }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "MicWidget",
+              "label": "Auto Journal",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "description": "Tap to start or stop voice monitoring",
+              "previewImage": "./assets/icon.png",
+              "updatePeriodMillis": 0
+            }
+          ]
         }
       ]
     ],

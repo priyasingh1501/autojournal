@@ -9,15 +9,18 @@ import {
   Animated,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { audioRecorderService, RecordingStatus } from '../services/AudioRecorderService';
 import { transcribePendingClips, BatchProgress } from '../services/BatchTranscriptionService';
 import { StorageService } from '../services/StorageService';
 import { TranscriptEntry, PendingClip } from '../types';
 import ComposeModal from '../components/ComposeModal';
 import WeeklyInsightCard from '../components/WeeklyInsightCard';
+import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 
 export default function HomeScreen() {
   const [status, setStatus] = useState<RecordingStatus>('idle');
@@ -32,6 +35,9 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData();
+      // When the screen gains focus (including via widget deeplink), check
+      // whether the widget set a monitoring intent while the app was closed.
+      syncWidgetMonitoringIntent();
     }, [])
   );
 
@@ -73,12 +79,48 @@ export default function HomeScreen() {
     setPendingClips(clips);
   };
 
+  // ── Widget ↔ app sync ────────────────────────────────────────────────────
+  // Called every time the Journal tab gains focus (including when the widget
+  // deeplink opens the app).  Reads the shared AsyncStorage flag set by the
+  // widget task handler and starts / stops monitoring to match.
+  const syncWidgetMonitoringIntent = async () => {
+    if (Platform.OS !== 'android') return;
+    try {
+      const val = await AsyncStorage.getItem(WIDGET_MONITORING_KEY);
+      if (val === 'true' && status === 'idle') {
+        await audioRecorderService.startMonitoring();
+      } else if (val === 'false' && status !== 'idle') {
+        await audioRecorderService.stopMonitoring();
+      }
+    } catch {
+      // Ignore; widget state is best-effort
+    }
+  };
+
+  // Persist the new monitoring state to AsyncStorage so the widget reflects it,
+  // then ask react-native-android-widget to re-render the widget UI.
+  const updateWidgetState = async (monitoring: boolean) => {
+    if (Platform.OS !== 'android') return;
+    try {
+      await AsyncStorage.setItem(WIDGET_MONITORING_KEY, monitoring ? 'true' : 'false');
+      const { requestWidgetUpdate } = require('react-native-android-widget');
+      const { MicWidget } = require('../widgets/MicWidget');
+      await requestWidgetUpdate({
+        widgetName: 'MicWidget',
+        renderWidget: () => require('react').default.createElement(MicWidget, { isMonitoring: monitoring }),
+      });
+    } catch {
+      // Widget might not be placed yet; ignore
+    }
+  };
+
   const toggleMonitoring = async () => {
     if (status === 'idle') {
-      // API keys are only needed for transcription, not for saving clips locally
       await audioRecorderService.startMonitoring();
+      await updateWidgetState(true);
     } else {
       await audioRecorderService.stopMonitoring();
+      await updateWidgetState(false);
     }
   };
 
