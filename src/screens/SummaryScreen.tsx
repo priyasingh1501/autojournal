@@ -12,6 +12,7 @@ import {
   ScrollView,
   Dimensions,
   ImageBackground,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +24,7 @@ import { renderInsightSections } from '../components/InsightSections';
 import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
 import { DailySummary } from '../types';
+import TalkScreen from './TalkScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.30;
@@ -76,6 +78,7 @@ export default function SummaryScreen() {
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [generatingDate, setGeneratingDate] = useState<string | null>(null);
+  const [talkingSummary, setTalkingSummary] = useState<DailySummary | null>(null);
 
   const pan = useRef(new Animated.ValueXY()).current;
   const isSwiping = useRef(false);
@@ -298,6 +301,16 @@ export default function SummaryScreen() {
         <View style={styles.divider} />
         <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
         <Markdown style={markdownStyles}>{item.summary}</Markdown>
+
+        {/* Talk about this day */}
+        <TouchableOpacity
+          style={styles.talkBtn}
+          onPress={() => setTalkingSummary(item)}
+          activeOpacity={0.85}
+        >
+          <Feather name="message-circle" size={15} color="rgba(224, 242, 254, 0.90)" />
+          <Text style={styles.talkBtnText}>Talk about this day</Text>
+        </TouchableOpacity>
       </ScrollView>
     </>
   );
@@ -414,6 +427,21 @@ export default function SummaryScreen() {
           : <Feather name={todaySummary ? 'refresh-cw' : 'star'} size={20} color="rgba(224, 242, 254, 0.8)" />
         }
       </TouchableOpacity>
+
+      {/* Talk about your day modal */}
+      <Modal
+        visible={!!talkingSummary}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setTalkingSummary(null)}
+      >
+        {talkingSummary && (
+          <TalkScreen
+            summary={talkingSummary}
+            onClose={() => setTalkingSummary(null)}
+          />
+        )}
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -597,4 +625,25 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   fabDisabled: { opacity: 0.5 },
+
+  // ── Talk button ────────────────────────────────────────────────────────────
+  talkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    backgroundColor: 'rgba(9, 41, 173, 0.15)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.18)',
+    justifyContent: 'center',
+  },
+  talkBtnText: {
+    fontSize: 14,
+    color: 'rgba(224, 242, 254, 0.90)',
+    fontFamily: 'GillSans-Light',
+    letterSpacing: 0.2,
+  },
 });

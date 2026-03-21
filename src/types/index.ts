@@ -44,3 +44,10 @@ export interface WeeklyInsight {
 }
 
 export type RecordingStatus = 'idle' | 'monitoring' | 'recording';
+
+export interface ConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: number;
+}
