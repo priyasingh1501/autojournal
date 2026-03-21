@@ -191,13 +191,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(224, 242, 254, 0.95)',
     marginBottom: 6,
-    fontFamily: 'Avenir',
+    fontFamily: 'Baskerville',
   },
   sectionSubtitle: {
     fontSize: 13,
     color: 'rgba(152, 212, 250, 0.65)',
     marginBottom: 16,
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
   label: {
     fontSize: 14,
@@ -205,9 +205,9 @@ const styles = StyleSheet.create({
     color: 'rgba(224, 242, 254, 0.95)',
     marginTop: 14,
     marginBottom: 6,
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
-  hint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', marginBottom: 10, fontFamily: 'Avenir' },
+  hint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', marginBottom: 10, fontFamily: 'GillSans-Light' },
 
   // ── Input rows ─────────────────────────────────────────────────────────────
   inputRow: {
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
   eyeButton: { padding: 4 },
 
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(9, 41, 173, 0.22)',
     borderColor: 'rgba(152, 212, 250, 0.50)',
   },
-  thresholdButtonText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
+  thresholdButtonText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
   thresholdButtonTextSelected: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' },
 
   // ── Save button ────────────────────────────────────────────────────────────
@@ -267,9 +267,9 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 6,
   },
-  saveButtonText: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 17, fontWeight: '600', fontFamily: 'Avenir' },
+  saveButtonText: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 17, fontWeight: '600', fontFamily: 'GillSans-Light' },
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   footer: { alignItems: 'center', marginTop: 24, marginBottom: 12 },
-  footerText: { color: 'rgba(152, 212, 250, 0.60)', fontSize: 13, textAlign: 'center', fontFamily: 'Avenir' },
+  footerText: { color: 'rgba(152, 212, 250, 0.60)', fontSize: 13, textAlign: 'center', fontFamily: 'GillSans-Light' },
 });

@@ -29,19 +29,20 @@ const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
 
 // ── markdown styles ───────────────────────────────────────────────────────────
 const markdownStyles = {
-  body: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, lineHeight: 22 },
+  body: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, lineHeight: 22, fontFamily: 'GillSans-Light' },
   heading2: {
     color: 'rgba(224, 242, 254, 0.95)',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600' as const,
+    fontFamily: 'Baskerville',
     marginTop: 12,
     marginBottom: 4,
     borderBottomWidth: 0,
   },
   bullet_list: { marginLeft: 0 },
-  bullet_list_item: { color: 'rgba(152, 212, 250, 0.65)', marginBottom: 2 },
+  bullet_list_item: { color: 'rgba(152, 212, 250, 0.65)', marginBottom: 2, fontFamily: 'GillSans-Light' },
   bullet_list_icon: { color: 'rgba(152, 212, 250, 0.85)', marginTop: 5 },
-  strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' as const },
+  strong: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '600' as const, fontFamily: 'GillSans-Light' },
   paragraph: { marginTop: 0, marginBottom: 4 },
 };
 
@@ -398,8 +399,8 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
-  screenTitle: { fontSize: 22, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
-  counter: { fontSize: 14, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'Avenir' },
+  screenTitle: { fontSize: 22, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
+  counter: { fontSize: 14, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
 
   // ── Card stack container ─────────────────────────────────────────────────
   stackContainer: {
@@ -445,8 +446,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   cardHeaderLeft: { flex: 1 },
-  cardDate: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Avenir' },
-  cardMeta: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'Avenir' },
+  cardDate: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Baskerville' },
+  cardMeta: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
     width: 32,
@@ -467,7 +468,7 @@ const styles = StyleSheet.create({
     color: 'rgba(152, 212, 250, 0.60)',
     letterSpacing: 0.8,
     marginBottom: 8,
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
 
   // ── Swipe direction labels ─────────────────────────────────────────────────
@@ -486,18 +487,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(152, 212, 250, 0.85)',
     letterSpacing: 1.5,
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
 
   // ── Empty / done states ───────────────────────────────────────────────────
-  emptyTitle: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Avenir' },
+  emptyTitle: { fontSize: 20, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Baskerville' },
   emptySubtitle: {
     fontSize: 14,
     color: 'rgba(152, 212, 250, 0.60)',
     textAlign: 'center',
     lineHeight: 22,
     paddingHorizontal: 28,
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
   restartBtn: {
     marginTop: 24,
@@ -508,7 +509,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.20)',
   },
-  restartBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 14, fontWeight: '600', fontFamily: 'Avenir' },
+  restartBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 14, fontWeight: '600', fontFamily: 'GillSans-Light' },
 
   // ── Bottom nav ─────────────────────────────────────────────────────────────
   navRow: {
@@ -526,9 +527,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.20)',
   },
-  navBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '600', fontFamily: 'Avenir' },
+  navBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '600', fontFamily: 'GillSans-Light' },
   navPlaceholder: { width: 80 },
-  swipeHint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'Avenir' },
+  swipeHint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
 
   // ── FAB ───────────────────────────────────────────────────────────────────
   fab: {

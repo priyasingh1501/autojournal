@@ -334,13 +334,13 @@ const styles = StyleSheet.create({
     marginTop: 18,
     fontSize: 17,
     fontWeight: '500',
-    fontFamily: 'Avenir',
+    fontFamily: 'Baskerville',
   },
   pendingCount: {
     marginTop: 6,
     fontSize: 13,
     color: '#f4a261',
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
 
   // ── Pending banner ────────────────────────────────────────────────────────
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
-  pendingText: { color: '#f4a261', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
+  pendingText: { color: '#f4a261', fontSize: 14, fontWeight: '500', fontFamily: 'GillSans-Light' },
   pendingActions: { flexDirection: 'row', gap: 8 },
   transcribeButton: {
     backgroundColor: 'rgba(244, 162, 97, 0.18)',
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(244, 162, 97, 0.4)',
   },
-  transcribeButtonText: { color: '#f4a261', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
+  transcribeButtonText: { color: '#f4a261', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
   discardButton: {
     backgroundColor: 'rgba(9, 41, 173, 0.12)',
     paddingHorizontal: 14,
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.18)',
   },
-  discardButtonText: { color: 'rgba(152, 212, 250, 0.70)', fontSize: 13, fontWeight: '500', fontFamily: 'Avenir' },
+  discardButtonText: { color: 'rgba(152, 212, 250, 0.70)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
 
   // ── Scroll area ───────────────────────────────────────────────────────────
   scrollArea: { flex: 1 },

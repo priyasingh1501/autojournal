@@ -299,9 +299,9 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(152, 212, 250, 0.08)',
   },
   headerBtn: { minWidth: 56 },
-  title: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
-  cancelText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 15, fontFamily: 'Avenir' },
-  saveText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '600', textAlign: 'right', fontFamily: 'Avenir' },
+  title: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
+  cancelText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 15, fontFamily: 'GillSans-Light' },
+  saveText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '600', textAlign: 'right', fontFamily: 'GillSans-Light' },
   saveTextDisabled: { opacity: 0.35 },
   body: { paddingHorizontal: 18, paddingTop: 14 },
   textInput: {
@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     minHeight: 120,
     marginBottom: 14,
     backgroundColor: 'transparent',
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
   photoPreviewContainer: {
     marginBottom: 12,
@@ -347,5 +347,5 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(152, 212, 250, 0.18)',
     alignSelf: 'flex-start',
   },
-  photoButtonText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
+  photoButtonText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '500', fontFamily: 'GillSans-Light' },
 });

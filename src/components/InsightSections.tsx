@@ -65,6 +65,6 @@ const sectionStyles = StyleSheet.create({
   wrapper: { marginBottom: 4 },
   section: { marginBottom: 14 },
   headingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  heading: { fontSize: 13, fontWeight: '600', letterSpacing: 0.2, fontFamily: 'Avenir' },
-  body: { fontSize: 14, color: 'rgba(152, 212, 250, 0.75)', lineHeight: 22, fontFamily: 'Avenir' },
+  heading: { fontSize: 13, fontWeight: '600', letterSpacing: 0.2, fontFamily: 'Baskerville' },
+  body: { fontSize: 14, color: 'rgba(152, 212, 250, 0.75)', lineHeight: 22, fontFamily: 'GillSans-Light' },
 });

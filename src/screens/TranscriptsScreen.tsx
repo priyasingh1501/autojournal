@@ -473,8 +473,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.13)',
   },
-  searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontFamily: 'Avenir' },
-  actionBtn: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '600', fontFamily: 'Avenir' },
+  searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontFamily: 'GillSans-Light' },
+  actionBtn: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '600', fontFamily: 'GillSans-Light' },
   disabled: { opacity: 0.35 },
 
   // ── Select bar ────────────────────────────────────────────────────────────
@@ -488,9 +488,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(152, 212, 250, 0.10)',
   },
-  selectBarBtn: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40, fontFamily: 'Avenir' },
-  selectCount: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontWeight: '500', fontFamily: 'Avenir' },
-  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '600', minWidth: 40, textAlign: 'right', fontFamily: 'Avenir' },
+  selectBarBtn: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '600', minWidth: 40, fontFamily: 'GillSans-Light' },
+  selectCount: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontWeight: '500', fontFamily: 'GillSans-Light' },
+  deleteAllBtn: { color: '#e63946', fontSize: 14, fontWeight: '600', minWidth: 40, textAlign: 'right', fontFamily: 'GillSans-Light' },
 
   // ── Section headers ───────────────────────────────────────────────────────
   sectionHeader: {
@@ -505,8 +505,8 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(9, 41, 173, 0.08)',
   },
   sectionHeaderLeft: { flex: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Avenir' },
-  sectionCount: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', marginTop: 2, fontFamily: 'Avenir' },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
+  sectionCount: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', marginTop: 2, fontFamily: 'GillSans-Light' },
   deleteDayBtn: {
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(230, 57, 70, 0.35)',
   },
-  deleteDayBtnText: { color: '#e63946', fontSize: 12, fontWeight: '600', fontFamily: 'Avenir' },
+  deleteDayBtnText: { color: '#e63946', fontSize: 12, fontWeight: '600', fontFamily: 'GillSans-Light' },
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   listContent: { paddingBottom: 32 },
@@ -560,8 +560,8 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  cardTime: { fontSize: 12, color: 'rgba(152, 212, 250, 0.65)', fontFamily: 'Avenir' },
-  cardDuration: { fontSize: 11, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'Avenir' },
+  cardTime: { fontSize: 12, color: 'rgba(152, 212, 250, 0.65)', fontFamily: 'GillSans-Light' },
+  cardDuration: { fontSize: 11, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
   cardActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   editBtn: {
     width: 22,
@@ -583,8 +583,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  clipLabel: { fontSize: 13, color: '#f4a261', fontStyle: 'italic', fontFamily: 'Avenir' },
-  cardText: { fontSize: 14, color: 'rgba(152, 212, 250, 0.65)', lineHeight: 20, fontFamily: 'Avenir' },
+  clipLabel: { fontSize: 13, color: '#f4a261', fontStyle: 'italic', fontFamily: 'GillSans-Light' },
+  cardText: { fontSize: 14, color: 'rgba(152, 212, 250, 0.65)', lineHeight: 20, fontFamily: 'GillSans-Light' },
   photoThumb: {
     width: '100%',
     height: 160,
@@ -597,6 +597,6 @@ const styles = StyleSheet.create({
     marginTop: 80,
     fontSize: 15,
     lineHeight: 24,
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
 });

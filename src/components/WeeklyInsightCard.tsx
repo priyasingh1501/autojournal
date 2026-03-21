@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(224, 242, 254, 0.95)',
     flex: 1,
-    fontFamily: 'Avenir',
+    fontFamily: 'Baskerville',
   },
   refreshBtn: {
     width: 30,
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
     color: 'rgba(152, 212, 250, 0.60)',
     marginTop: 12,
     textAlign: 'right',
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
 
   skeletonLine: {
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 8,
     fontStyle: 'italic',
-    fontFamily: 'Avenir',
+    fontFamily: 'GillSans-Light',
   },
-  errorText: { fontSize: 14, color: '#e63946', lineHeight: 22, fontFamily: 'Avenir' },
+  errorText: { fontSize: 14, color: '#e63946', lineHeight: 22, fontFamily: 'GillSans-Light' },
 });
