@@ -343,9 +343,23 @@ export default function SummaryScreen() {
       {/* Top bar */}
       <View style={styles.topBar}>
         <Text style={styles.screenTitle}>Summaries</Text>
-        {summaries.length > 0 && currentIndex < summaries.length && (
-          <Text style={styles.counter}>{currentIndex + 1} / {summaries.length}</Text>
-        )}
+        <View style={styles.topBarRight}>
+          {summaries.length > 0 && currentIndex < summaries.length && (
+            <Text style={styles.counter}>{currentIndex + 1} / {summaries.length}</Text>
+          )}
+          <TouchableOpacity
+            onPress={() => handleGenerate(today)}
+            disabled={isGeneratingToday}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            {isGeneratingToday
+              ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.70)" />
+              : <Text style={styles.generateLink}>
+                  {todaySummary ? 'Regenerate' : '+ Generate'}
+                </Text>
+            }
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Card stack — fills all space between top bar and tab bar */}
@@ -415,18 +429,6 @@ export default function SummaryScreen() {
         </View>
       )}
 
-      {/* Round FAB — generate today's summary */}
-      <TouchableOpacity
-        style={[styles.fab, isGeneratingToday && styles.fabDisabled]}
-        onPress={() => handleGenerate(today)}
-        disabled={isGeneratingToday}
-        activeOpacity={0.85}
-      >
-        {isGeneratingToday
-          ? <ActivityIndicator color="rgba(224, 242, 254, 0.8)" size="small" />
-          : <Feather name={todaySummary ? 'refresh-cw' : 'star'} size={20} color="rgba(224, 242, 254, 0.8)" />
-        }
-      </TouchableOpacity>
 
       {/* Talk about your day modal */}
       <Modal
@@ -458,8 +460,19 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
+  topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   screenTitle: { fontSize: 22, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
-  counter: { fontSize: 14, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
+  counter: { fontSize: 13, color: 'rgba(152, 212, 250, 0.50)', fontFamily: 'GillSans-Light' },
+  generateLink: {
+    fontSize: 14,
+    color: 'rgba(152, 212, 250, 0.80)',
+    fontFamily: 'GillSans-Light',
+    letterSpacing: 0.2,
+  },
 
   // ── Card stack container ─────────────────────────────────────────────────
   stackContainer: {
@@ -605,26 +618,6 @@ const styles = StyleSheet.create({
   navPlaceholder: { width: 80 },
   swipeHint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
 
-  // ── FAB ───────────────────────────────────────────────────────────────────
-  fab: {
-    position: 'absolute',
-    bottom: 28,
-    right: 24,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#0929AD',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.40)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.30,
-    shadowRadius: 10,
-  },
-  fabDisabled: { opacity: 0.5 },
 
   // ── Talk button — sticky primary CTA at card bottom ──────────────────────
   talkBtn: {
