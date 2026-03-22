@@ -58,6 +58,68 @@ export interface WeeklyInsight {
 
 export type RecordingStatus = 'idle' | 'monitoring' | 'recording';
 
+// ── Insight Analysis types ────────────────────────────────────────────────────
+
+export interface EmotionEntry {
+  name: string;                          // e.g. "anxiety", "joy"
+  intensity: 'low' | 'medium' | 'high';
+  occurrences: number;                   // count of days it surfaced
+  dates: string[];                       // YYYY-MM-DD list
+  color?: string;                        // assigned by service, not Claude
+}
+
+export interface EmotionAnalysis {
+  generatedAt: number;
+  windowDays: number;
+  emotions: EmotionEntry[];              // sorted by occurrences descending
+  narrative: string;
+}
+
+export interface ThemeEntry {
+  theme: string;                         // short label e.g. "Work pressure"
+  frequency: number;                     // count of days it appeared
+  trend: 'rising' | 'stable' | 'falling';
+  dates: string[];
+  excerpt: string;                       // representative quote/paraphrase
+}
+
+export interface ThoughtPatternAnalysis {
+  generatedAt: number;
+  windowDays: number;
+  themes: ThemeEntry[];                  // sorted by frequency descending
+  narrative: string;
+}
+
+export interface BigFiveScores {
+  openness: number;           // 0–100
+  conscientiousness: number;
+  extraversion: number;
+  agreeableness: number;
+  neuroticism: number;
+}
+
+export interface PersonalityAnalysis {
+  generatedAt: number;
+  windowDays: number;
+  scores: BigFiveScores;
+  narrative: string;
+  traitNarratives: Record<string, string>;  // one sentence per trait
+}
+
+export interface GrowthTip {
+  id: string;
+  title: string;
+  body: string;
+  category: 'emotion' | 'habits' | 'relationships' | 'mindset' | 'productivity';
+}
+
+export interface GrowthTipsAnalysis {
+  generatedAt: number;
+  windowDays: number;
+  tips: GrowthTip[];          // exactly 5
+  narrative: string;
+}
+
 export interface ConversationMessage {
   id: string;
   role: 'user' | 'assistant';

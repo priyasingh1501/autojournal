@@ -10,6 +10,7 @@ import * as Notifications from 'expo-notifications';
 import HomeScreen from './src/screens/HomeScreen';
 import TranscriptsScreen from './src/screens/TranscriptsScreen';
 import SummaryScreen from './src/screens/SummaryScreen';
+import InsightsScreen from './src/screens/InsightsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import {
   setupNotificationChannel,
@@ -177,6 +178,7 @@ export default function App() {
               },
               tabBarActiveTintColor: 'rgba(224, 242, 254, 0.95)',
               tabBarInactiveTintColor: 'rgba(152, 212, 250, 0.55)',
+              tabBarLabelStyle: { fontSize: 10 },
               headerStyle: { backgroundColor: '#02060E', elevation: 0, shadowOpacity: 0 },
               headerTintColor: 'rgba(224, 242, 254, 0.95)',
               headerShadowVisible: false,
@@ -204,6 +206,14 @@ export default function App() {
               options={{
                 headerShown: false,
                 tabBarIcon: ({ color }) => <Feather name="star" size={18} color={color} />,
+              }}
+            />
+            <Tab.Screen
+              name="Insights"
+              component={InsightsScreen}
+              options={{
+                headerShown: false,
+                tabBarIcon: ({ color }) => <Feather name="trending-up" size={18} color={color} />,
               }}
             />
             <Tab.Screen

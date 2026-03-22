@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Markdown from 'react-native-markdown-display';
@@ -76,6 +76,7 @@ function toPlainText(md: string) {
 
 // ── main component ────────────────────────────────────────────────────────────
 export default function SummaryScreen() {
+  const route = useRoute<any>();
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [generatingDate, setGeneratingDate] = useState<string | null>(null);
@@ -89,7 +90,19 @@ export default function SummaryScreen() {
   const summariesRef    = useRef<DailySummary[]>([]);
 
   useFocusEffect(
-    useCallback(() => { loadSummaries(); }, [])
+    useCallback(() => {
+      loadSummaries().then(() => {
+        // Jump to a specific date when navigated from Insights tab
+        const jumpToDate: string | undefined = route?.params?.jumpToDate;
+        if (jumpToDate) {
+          const idx = summariesRef.current.findIndex(s => s.date === jumpToDate);
+          if (idx !== -1) {
+            setCurrentIndex(idx);
+            currentIndexRef.current = idx;
+          }
+        }
+      });
+    }, [route?.params?.jumpToDate])
   );
 
   const loadSummaries = async () => {

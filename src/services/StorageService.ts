@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { TranscriptEntry, DailySummary, AppSettings, PendingClip, WeeklyInsight } from '../types';
+import {
+  TranscriptEntry, DailySummary, AppSettings, PendingClip, WeeklyInsight,
+  EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
+} from '../types';
 
 const KEYS = {
   TRANSCRIPTS_PREFIX: 'transcripts_',
@@ -7,6 +10,10 @@ const KEYS = {
   SETTINGS: 'app_settings',
   PENDING_CLIPS: 'pending_clips',
   WEEKLY_INSIGHTS_PREFIX: 'weekly_insight_',
+  EMOTION_ANALYSIS_PREFIX: 'insight_emotions_',
+  PATTERN_ANALYSIS_PREFIX: 'insight_patterns_',
+  PERSONALITY_ANALYSIS: 'insight_personality',
+  GROWTH_TIPS_ANALYSIS: 'insight_growthtips',
 };
 
 function todayKey(): string {
@@ -156,5 +163,39 @@ export const StorageService = {
       .map(k => k.replace(KEYS.SUMMARIES_PREFIX, ''))
       .sort()
       .reverse();
+  },
+
+  // ── Insight analyses ────────────────────────────────────────────────────────
+
+  async getEmotionAnalysis(windowTag: string): Promise<EmotionAnalysis | null> {
+    const json = await AsyncStorage.getItem(KEYS.EMOTION_ANALYSIS_PREFIX + windowTag);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveEmotionAnalysis(analysis: EmotionAnalysis, windowTag: string): Promise<void> {
+    await AsyncStorage.setItem(KEYS.EMOTION_ANALYSIS_PREFIX + windowTag, JSON.stringify(analysis));
+  },
+
+  async getThoughtPatternAnalysis(windowTag: string): Promise<ThoughtPatternAnalysis | null> {
+    const json = await AsyncStorage.getItem(KEYS.PATTERN_ANALYSIS_PREFIX + windowTag);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveThoughtPatternAnalysis(analysis: ThoughtPatternAnalysis, windowTag: string): Promise<void> {
+    await AsyncStorage.setItem(KEYS.PATTERN_ANALYSIS_PREFIX + windowTag, JSON.stringify(analysis));
+  },
+
+  async getPersonalityAnalysis(): Promise<PersonalityAnalysis | null> {
+    const json = await AsyncStorage.getItem(KEYS.PERSONALITY_ANALYSIS);
+    return json ? JSON.parse(json) : null;
+  },
+  async savePersonalityAnalysis(analysis: PersonalityAnalysis): Promise<void> {
+    await AsyncStorage.setItem(KEYS.PERSONALITY_ANALYSIS, JSON.stringify(analysis));
+  },
+
+  async getGrowthTipsAnalysis(): Promise<GrowthTipsAnalysis | null> {
+    const json = await AsyncStorage.getItem(KEYS.GROWTH_TIPS_ANALYSIS);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveGrowthTipsAnalysis(analysis: GrowthTipsAnalysis): Promise<void> {
+    await AsyncStorage.setItem(KEYS.GROWTH_TIPS_ANALYSIS, JSON.stringify(analysis));
   },
 };
