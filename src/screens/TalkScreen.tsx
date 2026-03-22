@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  PermissionsAndroid,
+  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -346,12 +348,20 @@ export default function TalkScreen({ summary, onClose }: Props) {
       try {
         // Request mic permission immediately — before any playback starts,
         // so the OS dialog appears as soon as the screen opens.
-        const { status, canAskAgain } = await Audio.requestPermissionsAsync();
-        if (!activeRef.current) return;
-        if (status !== 'granted') {
-          setConvState('error');
-          setError('Microphone access is required for calls.');
-          if (!canAskAgain) {
+        let micGranted = false;
+        if (Platform.OS === 'android') {
+          const result = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            {
+              title: 'Microphone Access',
+              message: 'untangle needs the microphone to record your voice for journaling.',
+              buttonNeutral: 'Ask Later',
+              buttonNegative: 'Deny',
+              buttonPositive: 'Allow',
+            },
+          );
+          micGranted = result === PermissionsAndroid.RESULTS.GRANTED;
+          if (!micGranted && result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
             Alert.alert(
               'Microphone Access Needed',
               'untangle needs the microphone for voice calls. Please enable it in Settings.',
@@ -361,6 +371,24 @@ export default function TalkScreen({ summary, onClose }: Props) {
               ],
             );
           }
+        } else {
+          const { status, canAskAgain } = await Audio.requestPermissionsAsync();
+          micGranted = status === 'granted';
+          if (!micGranted && !canAskAgain) {
+            Alert.alert(
+              'Microphone Access Needed',
+              'untangle needs the microphone for voice calls. Please enable it in Settings.',
+              [
+                { text: 'Not Now', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ],
+            );
+          }
+        }
+        if (!activeRef.current) return;
+        if (!micGranted) {
+          setConvState('error');
+          setError('Microphone access is required for calls.');
           return;
         }
 

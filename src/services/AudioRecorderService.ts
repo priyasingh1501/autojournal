@@ -1,5 +1,5 @@
 import { Audio } from 'expo-av';
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, PermissionsAndroid, Platform } from 'react-native';
 import { PendingClip } from '../types';
 import { StorageService } from './StorageService';
 
@@ -43,10 +43,41 @@ class AudioRecorderService {
   }
 
   async requestPermissions(): Promise<boolean> {
+    // On Android, use PermissionsAndroid directly — this is what registers the
+    // permission in the OS app settings (Settings → Apps → untangle → Permissions).
+    if (Platform.OS === 'android') {
+      try {
+        const result = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Access',
+            message: 'untangle needs the microphone to record your voice for journaling.',
+            buttonNeutral: 'Ask Later',
+            buttonNegative: 'Deny',
+            buttonPositive: 'Allow',
+          },
+        );
+        if (result === PermissionsAndroid.RESULTS.GRANTED) return true;
+        if (result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+          Alert.alert(
+            'Microphone Access Needed',
+            'untangle needs the microphone to record your voice. Please enable it in your device Settings.',
+            [
+              { text: 'Not Now', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ],
+          );
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    }
+
+    // iOS — use expo-av
     const { status, canAskAgain } = await Audio.requestPermissionsAsync();
     if (status === 'granted') return true;
     if (!canAskAgain) {
-      // iOS/Android won't show the dialog again — send user to Settings
       Alert.alert(
         'Microphone Access Needed',
         'untangle needs the microphone to record your voice. Please enable it in your device Settings.',
