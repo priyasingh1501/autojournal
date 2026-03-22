@@ -120,6 +120,31 @@ export interface GrowthTipsAnalysis {
   narrative: string;
 }
 
+// ── Minds types ───────────────────────────────────────────────────────────────
+
+export interface Mind {
+  id: string;
+  name: string;
+  era: string;               // e.g. "Roman Emperor · 161–180 AD"
+  philosophy: string;        // one-line description
+  accent: string;            // rgba colour for UI accent
+  symbol: string;            // single emoji/symbol for avatar
+}
+
+export interface MindHighlight {
+  passage: string;           // exact quote from the journal entry
+  comment: string;           // the mind's perspective (2-3 sentences)
+  date: string;              // YYYY-MM-DD of the source entry
+}
+
+export interface MindPerspective {
+  mindId: string;
+  framing: string;           // 1-2 sentence intro in the mind's voice
+  highlights: MindHighlight[];
+  generatedAt: number;
+  entryWindowDays: number;
+}
+
 export interface ConversationMessage {
   id: string;
   role: 'user' | 'assistant';

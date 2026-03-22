@@ -15,24 +15,33 @@ import {
   NOT_ENOUGH_DATA,
 } from '../services/InsightAnalysisService';
 import {
+  generateMindPerspective,
+  MINDS,
+  NOT_ENOUGH_DATA as MIND_NOT_ENOUGH_DATA,
+} from '../services/MindService';
+import {
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
+  MindPerspective,
 } from '../types';
 import TimeframeSelector from '../components/insights/TimeframeSelector';
 import EmotionTimeline from '../components/insights/EmotionTimeline';
 import ThoughtPatternList from '../components/insights/ThoughtPatternList';
 import PersonalityRadar from '../components/insights/PersonalityRadar';
 import GrowthTipsList from '../components/insights/GrowthTipsList';
+import MindCard from '../components/insights/MindCard';
+import PerspectiveView from '../components/insights/PerspectiveView';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type TabKey = 'emotions' | 'patterns' | 'personality' | 'growth';
+type TabKey = 'emotions' | 'patterns' | 'personality' | 'growth' | 'minds';
 type Timeframe = 30 | 90 | 180;
 
 const TABS: { key: TabKey; label: string; icon: string; tagline: string }[] = [
-  { key: 'emotions',    label: 'Emotions',    icon: 'heart',        tagline: 'Reveal the emotions behind your thoughts' },
-  { key: 'patterns',   label: 'Patterns',    icon: 'repeat',       tagline: 'Discover your top thought patterns'       },
-  { key: 'personality',label: 'Personality', icon: 'user',         tagline: 'Mirror for your personality'              },
-  { key: 'growth',     label: 'Growth',      icon: 'trending-up',  tagline: 'Personal growth on autopilot'             },
+  { key: 'emotions',    label: 'Emotions',    icon: 'heart',        tagline: 'Reveal the emotions behind your thoughts'        },
+  { key: 'patterns',   label: 'Patterns',    icon: 'repeat',       tagline: 'Discover your top thought patterns'              },
+  { key: 'personality',label: 'Personality', icon: 'user',         tagline: 'Mirror for your personality'                    },
+  { key: 'growth',     label: 'Growth',      icon: 'trending-up',  tagline: 'Personal growth on autopilot'                   },
+  { key: 'minds',      label: 'Minds',       icon: 'book-open',    tagline: 'Great thinkers reflect on your notes'           },
 ];
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
@@ -59,13 +68,58 @@ function Skeleton() {
   );
 }
 
-// ── Empty / Error states ──────────────────────────────────────────────────────
+// ── Empty / Error ─────────────────────────────────────────────────────────────
 
 function EmptyState({ message }: { message: string }) {
   return (
     <View style={styles.emptyWrap}>
       <Feather name="bar-chart-2" size={36} color="rgba(152,212,250,0.25)" />
       <Text style={styles.emptyText}>{message}</Text>
+    </View>
+  );
+}
+
+// ── Minds grid ────────────────────────────────────────────────────────────────
+
+function MindsGrid({
+  onSelect,
+  loadingMindId,
+}: {
+  onSelect: (id: string) => void;
+  loadingMindId: string | null;
+}) {
+  // Pair minds into rows of 2
+  const pairs: (typeof MINDS)[] = [];
+  for (let i = 0; i < MINDS.length; i += 2) pairs.push(MINDS.slice(i, i + 2));
+
+  return (
+    <View style={styles.grid}>
+      {pairs.map((pair, pi) => (
+        <View key={pi} style={styles.gridRow}>
+          {pair.map(mind => (
+            <View key={mind.id} style={styles.gridCell}>
+              {loadingMindId === mind.id ? (
+                <View style={[styles.loadingOverlay, {
+                  backgroundColor: mind.accent.replace(/[\d.]+\)$/, '0.08)'),
+                  borderColor: mind.accent.replace(/[\d.]+\)$/, '0.25)'),
+                }]}>
+                  <Text style={styles.loadingSymbol}>{mind.symbol}</Text>
+                  <ActivityIndicator size="small" color={mind.accent} style={{ marginTop: 8 }} />
+                  <Text style={[styles.loadingLabel, { color: mind.accent }]}>Reading…</Text>
+                </View>
+              ) : (
+                <MindCard
+                  mind={mind}
+                  onPress={() => onSelect(mind.id)}
+                  loading={loadingMindId !== null}
+                />
+              )}
+            </View>
+          ))}
+          {/* Fill last row if odd number of minds */}
+          {pair.length === 1 && <View style={styles.gridCell} />}
+        </View>
+      ))}
     </View>
   );
 }
@@ -81,9 +135,17 @@ export default function InsightsScreen() {
   const [personalityData, setPersonalityData] = useState<PersonalityAnalysis | null>(null);
   const [growthData,      setGrowthData]      = useState<GrowthTipsAnalysis | null>(null);
 
-  const [loading,  setLoading]  = useState<Record<TabKey, boolean>>({ emotions: false, patterns: false, personality: false, growth: false });
-  const [errors,   setErrors]   = useState<Record<TabKey, string | null>>({ emotions: null, patterns: null, personality: null, growth: null });
-  const [noData,   setNoData]   = useState<Record<TabKey, boolean>>({ emotions: false, patterns: false, personality: false, growth: false });
+  // Minds state
+  const [selectedMindId,  setSelectedMindId]  = useState<string | null>(null);
+  const [mindPerspective, setMindPerspective] = useState<MindPerspective | null>(null);
+  const [loadingMindId,   setLoadingMindId]   = useState<string | null>(null);
+  const [mindError,       setMindError]       = useState<string | null>(null);
+  const [mindNoData,      setMindNoData]      = useState(false);
+  const [mindRefreshing,  setMindRefreshing]  = useState(false);
+
+  const [loading,  setLoading]  = useState<Record<TabKey, boolean>>({ emotions: false, patterns: false, personality: false, growth: false, minds: false });
+  const [errors,   setErrors]   = useState<Record<TabKey, string | null>>({ emotions: null, patterns: null, personality: null, growth: null, minds: null });
+  const [noData,   setNoData]   = useState<Record<TabKey, boolean>>({ emotions: false, patterns: false, personality: false, growth: false, minds: false });
   const [growthRefreshing, setGrowthRefreshing] = useState(false);
 
   const setTabLoading = (tab: TabKey, v: boolean) => setLoading(l => ({ ...l, [tab]: v }));
@@ -94,44 +156,49 @@ export default function InsightsScreen() {
     navigationRef.current?.navigate('Summary', { jumpToDate: date });
   }, []);
 
+  const loadMind = useCallback(async (mindId: string, force = false) => {
+    setLoadingMindId(mindId);
+    setMindError(null);
+    setMindNoData(false);
+    try {
+      const p = await generateMindPerspective(mindId, force);
+      setMindPerspective(p);
+      setSelectedMindId(mindId);
+    } catch (e: any) {
+      if (e?.message === MIND_NOT_ENOUGH_DATA) setMindNoData(true);
+      else setMindError(e?.message ?? 'Could not load perspective. Try again.');
+    } finally {
+      setLoadingMindId(null);
+    }
+  }, []);
+
   const loadTab = useCallback(async (tab: TabKey, tf: Timeframe, force = false) => {
+    if (tab === 'minds') return; // Minds is handled separately via grid selection
     setTabLoading(tab, true);
     setTabError(tab, null);
     setTabNoData(tab, false);
     try {
       switch (tab) {
-        case 'emotions':
-          setEmotionData(await generateEmotionAnalysis(tf, force));
-          break;
-        case 'patterns':
-          setPatternData(await generateThoughtPatternAnalysis(tf, force));
-          break;
-        case 'personality':
-          setPersonalityData(await generatePersonalityAnalysis(force));
-          break;
-        case 'growth':
-          setGrowthData(await generateGrowthTips(force));
-          break;
+        case 'emotions':    setEmotionData(await generateEmotionAnalysis(tf, force));       break;
+        case 'patterns':    setPatternData(await generateThoughtPatternAnalysis(tf, force)); break;
+        case 'personality': setPersonalityData(await generatePersonalityAnalysis(force));   break;
+        case 'growth':      setGrowthData(await generateGrowthTips(force));                  break;
       }
     } catch (e: any) {
-      if (e?.message === NOT_ENOUGH_DATA) {
-        setTabNoData(tab, true);
-      } else {
-        setTabError(tab, e?.message ?? 'Something went wrong. Try again.');
-      }
+      if (e?.message === NOT_ENOUGH_DATA) setTabNoData(tab, true);
+      else setTabError(tab, e?.message ?? 'Something went wrong. Try again.');
     } finally {
       setTabLoading(tab, false);
     }
   }, []);
 
-  // Load the active tab on focus
   useFocusEffect(useCallback(() => {
-    loadTab(activeTab, timeframe);
+    if (activeTab !== 'minds') loadTab(activeTab, timeframe);
   }, [activeTab, timeframe]));
 
-  // When tab or timeframe changes, load new data
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
+    if (tab === 'minds') return;
     const needsData = tab === 'emotions'    ? !emotionData
                     : tab === 'patterns'    ? !patternData
                     : tab === 'personality' ? !personalityData
@@ -141,13 +208,19 @@ export default function InsightsScreen() {
 
   const handleTimeframeChange = (tf: Timeframe) => {
     setTimeframe(tf);
-    // Reset data for timeframe-dependent tabs
     if (activeTab === 'emotions')  setEmotionData(null);
     if (activeTab === 'patterns')  setPatternData(null);
     loadTab(activeTab, tf);
   };
 
-  const handleRefresh = () => loadTab(activeTab, timeframe, true);
+  const handleRefresh = () => {
+    if (activeTab === 'minds' && selectedMindId) {
+      setMindRefreshing(true);
+      loadMind(selectedMindId, true).finally(() => setMindRefreshing(false));
+    } else {
+      loadTab(activeTab, timeframe, true);
+    }
+  };
 
   const handleGrowthRefresh = async () => {
     setGrowthRefreshing(true);
@@ -162,21 +235,25 @@ export default function InsightsScreen() {
   const hasData   = activeTab === 'emotions'    ? !!emotionData
                   : activeTab === 'patterns'    ? !!patternData
                   : activeTab === 'personality' ? !!personalityData
-                  : !!growthData;
+                  : activeTab === 'growth'      ? !!growthData
+                  : false; // minds uses its own state
+
+  const activeMind = MINDS.find(m => m.id === selectedMindId) ?? null;
 
   return (
     <LinearGradient colors={['#02060E', '#041628', '#02060E']} style={{ flex: 1 }}>
       <SafeAreaView style={styles.safeArea}>
+
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Insights</Text>
           <TouchableOpacity
             style={styles.refreshBtn}
             onPress={handleRefresh}
-            disabled={isLoading}
+            disabled={isLoading || !!loadingMindId}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            {isLoading
+            {(isLoading || mindRefreshing)
               ? <ActivityIndicator size="small" color="rgba(152,212,250,0.85)" />
               : <Feather name="refresh-cw" size={14} color="rgba(152,212,250,0.65)" />}
           </TouchableOpacity>
@@ -214,39 +291,69 @@ export default function InsightsScreen() {
           contentContainerStyle={styles.contentInner}
           showsVerticalScrollIndicator={false}
         >
-          {/* Tagline */}
           <Text style={styles.tagline}>{currentTab.tagline}</Text>
 
-          {/* Timeframe selector (emotions + patterns only) */}
+          {/* Timeframe (emotions + patterns only) */}
           {(activeTab === 'emotions' || activeTab === 'patterns') && (
             <TimeframeSelector selected={timeframe} onChange={handleTimeframeChange} />
           )}
 
-          {/* Loading */}
-          {isLoading && <Skeleton />}
-
-          {/* No data */}
-          {!isLoading && hasNoData && (
-            <EmptyState message="Keep journaling — this insight appears once you have at least 3 daily summaries." />
-          )}
-
-          {/* Error */}
-          {!isLoading && hasError && !hasNoData && (
-            <EmptyState message={hasError} />
-          )}
-
-          {/* Data */}
-          {!isLoading && hasData && !hasError && (
+          {/* ── Minds tab ── */}
+          {activeTab === 'minds' && (
             <>
-              {activeTab === 'emotions'    && emotionData    && <EmotionTimeline     data={emotionData}     onJumpToDate={jumpToDate} />}
-              {activeTab === 'patterns'    && patternData    && <ThoughtPatternList  data={patternData}     onJumpToDate={jumpToDate} />}
-              {activeTab === 'personality' && personalityData && <PersonalityRadar   data={personalityData} />}
-              {activeTab === 'growth'      && growthData     && (
-                <GrowthTipsList
-                  data={growthData}
-                  onRefresh={handleGrowthRefresh}
-                  refreshing={growthRefreshing}
+              {/* No data */}
+              {mindNoData && (
+                <EmptyState message="Keep journaling — Minds appear once you have at least 2 daily summaries." />
+              )}
+              {/* Error */}
+              {mindError && !mindNoData && (
+                <EmptyState message={mindError} />
+              )}
+              {/* Perspective view */}
+              {!mindNoData && !mindError && selectedMindId && activeMind && mindPerspective && (
+                <PerspectiveView
+                  mind={activeMind}
+                  perspective={mindPerspective}
+                  onBack={() => { setSelectedMindId(null); setMindPerspective(null); }}
+                  onRefresh={() => {
+                    setMindRefreshing(true);
+                    loadMind(selectedMindId, true).finally(() => setMindRefreshing(false));
+                  }}
+                  refreshing={mindRefreshing}
+                  onJumpToDate={jumpToDate}
                 />
+              )}
+              {/* Grid (shown when no mind is selected) */}
+              {!selectedMindId && (
+                <MindsGrid
+                  onSelect={id => loadMind(id)}
+                  loadingMindId={loadingMindId}
+                />
+              )}
+            </>
+          )}
+
+          {/* ── Other tabs ── */}
+          {activeTab !== 'minds' && (
+            <>
+              {isLoading && <Skeleton />}
+              {!isLoading && hasNoData && (
+                <EmptyState message="Keep journaling — this insight appears once you have at least 3 daily summaries." />
+              )}
+              {!isLoading && hasError && !hasNoData && <EmptyState message={hasError} />}
+              {!isLoading && hasData && !hasError && (
+                <>
+                  {activeTab === 'emotions'    && emotionData    && <EmotionTimeline    data={emotionData}     onJumpToDate={jumpToDate} />}
+                  {activeTab === 'patterns'    && patternData    && <ThoughtPatternList data={patternData}     onJumpToDate={jumpToDate} />}
+                  {activeTab === 'personality' && personalityData && <PersonalityRadar  data={personalityData} />}
+                  {activeTab === 'growth'      && growthData     && (
+                    <GrowthTipsList
+                      data={growthData}
+                      onRefresh={handleGrowthRefresh}
+                      refreshing={growthRefreshing}
+                    />
+                  )}
+                </>
               )}
             </>
           )}
@@ -262,17 +369,11 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
 
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12,
   },
   headerTitle: {
-    fontSize: 26,
-    fontFamily: 'Baskerville',
-    fontWeight: '500',
+    fontSize: 26, fontFamily: 'Baskerville', fontWeight: '500',
     color: 'rgba(224,242,254,0.95)',
   },
   refreshBtn: {
@@ -283,20 +384,11 @@ const styles = StyleSheet.create({
   },
 
   tabScroll: { maxHeight: 52 },
-  tabRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 10,
-    paddingBottom: 12,
-  },
+  tabRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, paddingBottom: 12 },
   tabPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 22,
-    borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 16, paddingVertical: 9,
+    borderRadius: 22, borderWidth: 1,
     borderColor: 'rgba(152,212,250,0.15)',
     backgroundColor: 'rgba(152,212,250,0.05)',
   },
@@ -304,43 +396,32 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(152,212,250,0.16)',
     borderColor: 'rgba(152,212,250,0.45)',
   },
-  tabLabel: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.50)',
-  },
-  tabLabelActive: {
-    color: 'rgba(224,242,254,0.95)',
-  },
+  tabLabel: { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)' },
+  tabLabelActive: { color: 'rgba(224,242,254,0.95)' },
 
   content: { flex: 1 },
   contentInner: { paddingHorizontal: 20, paddingBottom: 40 },
 
   tagline: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.55)',
-    marginBottom: 18,
-    fontStyle: 'italic',
+    fontSize: 13, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.55)', marginBottom: 18, fontStyle: 'italic',
   },
 
-  skeletonLine: {
-    height: 14,
-    backgroundColor: 'rgba(9,41,173,0.10)',
-    borderRadius: 7,
+  // Minds grid
+  grid: { gap: 12 },
+  gridRow: { flexDirection: 'row', gap: 12 },
+  gridCell: { flex: 1 },
+  loadingOverlay: {
+    flex: 1, minHeight: 140, borderRadius: 18, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', padding: 16,
   },
+  loadingSymbol: { fontSize: 26 },
+  loadingLabel: { fontSize: 12, fontFamily: 'GillSans-Light', marginTop: 6 },
 
-  emptyWrap: {
-    alignItems: 'center',
-    paddingVertical: 48,
-    gap: 16,
-  },
+  skeletonLine: { height: 14, backgroundColor: 'rgba(9,41,173,0.10)', borderRadius: 7 },
+  emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 16 },
   emptyText: {
-    fontSize: 14,
-    color: 'rgba(152,212,250,0.55)',
-    fontFamily: 'GillSans-Light',
-    textAlign: 'center',
-    lineHeight: 22,
-    maxWidth: 280,
+    fontSize: 14, color: 'rgba(152,212,250,0.55)', fontFamily: 'GillSans-Light',
+    textAlign: 'center', lineHeight: 22, maxWidth: 280,
   },
 });
