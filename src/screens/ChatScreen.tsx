@@ -80,7 +80,7 @@ function MindPicker({
               <View>
                 <Text style={styles.defaultName}>untangle companion</Text>
                 <Text style={styles.defaultDesc}>
-                  CBT · Stoicism · Eastern philosophy · Acharya Prashant
+                  CBT · Stoicism · Eastern philosophy · depth psychology
                 </Text>
               </View>
             </View>
