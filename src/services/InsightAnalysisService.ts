@@ -68,8 +68,21 @@ function getClient(apiKey: string) {
 }
 
 function extractJson(raw: string): string {
+  // Grab everything after the sentinel (or use the full string as fallback)
   const idx = raw.indexOf(SENTINEL);
-  return idx !== -1 ? raw.slice(idx + SENTINEL.length).trim() : raw.trim();
+  let candidate = (idx !== -1 ? raw.slice(idx + SENTINEL.length) : raw).trim();
+
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  candidate = candidate.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+  // Extract the outermost JSON object { ... } to discard any trailing prose
+  const start = candidate.indexOf('{');
+  const end   = candidate.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    candidate = candidate.slice(start, end + 1);
+  }
+
+  return candidate;
 }
 
 // ── 1. Emotion Analysis ───────────────────────────────────────────────────────
@@ -77,9 +90,9 @@ function extractJson(raw: string): string {
 const EMOTION_SYSTEM = `You are an empathetic journal analyst helping a person understand the emotions behind their thoughts.
 Analyse the journal entries and detect recurring emotions the person has experienced.
 
-Output a 2-3 sentence narrative paragraph, then output exactly:
-${SENTINEL}
-Then output ONLY valid JSON (no other text):
+Output a 2-3 sentence narrative paragraph, then output EXACTLY this line by itself:
+===JSON===
+Then output ONLY a raw JSON object — no markdown, no code fences, no backticks, no extra text:
 {
   "narrative": "<2-3 sentence warm, personal summary>",
   "emotions": [
@@ -93,7 +106,8 @@ Rules:
 - dates: list every date that emotion was observed in the entries
 - Sort emotions by number of dates descending
 - Narrative: warm, second-person ("You've been..."), specific to what's in the entries
-- No generic platitudes`;
+- No generic platitudes
+- The JSON must be valid. No trailing commas. No code fences.`;
 
 export async function generateEmotionAnalysis(
   windowDays: 30 | 90 | 180 = 30,
@@ -124,7 +138,12 @@ export async function generateEmotionAnalysis(
 
   const raw = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
   const jsonStr = extractJson(raw);
-  const parsed = JSON.parse(jsonStr);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (e) {
+    throw new Error(`Could not parse emotions response. Raw: ${jsonStr.slice(0, 200)}`);
+  }
 
   const emotions: EmotionEntry[] = (parsed.emotions ?? []).map((e: any) => ({
     name: e.name,
@@ -150,9 +169,9 @@ export async function generateEmotionAnalysis(
 const PATTERN_SYSTEM = `You are a thoughtful journal analyst helping a person discover their top thought patterns.
 Analyse the journal entries and identify the most significant recurring themes and topics.
 
-Output a 2-3 sentence narrative, then output exactly:
-${SENTINEL}
-Then output ONLY valid JSON:
+Output a 2-3 sentence narrative paragraph, then output EXACTLY this line by itself:
+===JSON===
+Then output ONLY a raw JSON object — no markdown, no code fences, no backticks, no extra text:
 {
   "narrative": "<2-3 sentence summary>",
   "themes": [
@@ -171,7 +190,8 @@ Rules:
 - trend: compare how often the theme appears in the first half vs second half of the date range. rising = more recent, falling = more past, stable = evenly distributed
 - excerpt: a direct, specific phrase or observation from the entries — not a generic description
 - Sort by frequency descending
-- Narrative: warm, second-person, specific to their patterns`;
+- Narrative: warm, second-person, specific to their patterns
+- The JSON must be valid. No trailing commas. No comments.`;
 
 export async function generateThoughtPatternAnalysis(
   windowDays: 30 | 90 | 180 = 30,
@@ -201,7 +221,13 @@ export async function generateThoughtPatternAnalysis(
   });
 
   const raw = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
-  const parsed = JSON.parse(extractJson(raw));
+  const jsonStr = extractJson(raw);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (e) {
+    throw new Error(`Could not parse thought patterns response. Raw: ${jsonStr.slice(0, 200)}`);
+  }
 
   const analysis: ThoughtPatternAnalysis = {
     generatedAt: Date.now(),
@@ -219,9 +245,9 @@ export async function generateThoughtPatternAnalysis(
 const PERSONALITY_SYSTEM = `You are a thoughtful personality analyst using the Big Five personality model.
 Analyse the full journal history to build a personality portrait. Base scores on observable patterns in how the person thinks, relates, and engages with the world — not clinical assessment.
 
-Output a 3-4 sentence narrative, then output exactly:
-${SENTINEL}
-Then output ONLY valid JSON:
+Output a 3-4 sentence narrative paragraph, then output EXACTLY this line by itself:
+===JSON===
+Then output ONLY a raw JSON object — no markdown, no code fences, no backticks, no extra text:
 {
   "narrative": "<3-4 sentence overall portrait>",
   "scores": {
@@ -248,7 +274,8 @@ Trait scoring guidance (50 = neutral):
 - Neuroticism: emotional reactivity, worry, stress sensitivity, mood variability
 
 Write in warm, second-person prose. Be specific — reference actual patterns from the journal.
-This is a reflective portrait, not a clinical label.`;
+This is a reflective portrait, not a clinical label.
+The JSON must be valid. No trailing commas. No code fences.`;
 
 export async function generatePersonalityAnalysis(forceRefresh = false): Promise<PersonalityAnalysis> {
   const settings = await StorageService.getSettings();
@@ -281,7 +308,13 @@ export async function generatePersonalityAnalysis(forceRefresh = false): Promise
   });
 
   const raw = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
-  const parsed = JSON.parse(extractJson(raw));
+  const jsonStr = extractJson(raw);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (e) {
+    throw new Error(`Could not parse personality response. Raw: ${jsonStr.slice(0, 200)}`);
+  }
 
   const analysis: PersonalityAnalysis = {
     generatedAt: Date.now(),
@@ -301,9 +334,9 @@ const GROWTH_TIPS_SYSTEM = `You are a personal growth coach who gives tailored, 
 You will receive a summary of their emotional patterns, recurring thought themes, and personality traits.
 Generate exactly 5 growth tips that are directly tied to what you observe — no generic advice.
 
-Output a 2-sentence framing paragraph, then output exactly:
-${SENTINEL}
-Then output ONLY valid JSON:
+Output a 2-sentence framing paragraph, then output EXACTLY this line by itself:
+===JSON===
+Then output ONLY a raw JSON object — no markdown, no code fences, no backticks, no extra text:
 {
   "narrative": "<2-sentence intro tying tips to observed patterns>",
   "tips": [
@@ -320,7 +353,8 @@ Rules:
 - Each tip must reference something specific observed in their data
 - Tips must span at least 3 different categories
 - Actionable: tell them exactly what to do, not just what to think about
-- Warm, encouraging tone — like a coach who knows them well`;
+- Warm, encouraging tone — like a coach who knows them well
+- The JSON must be valid. No trailing commas. No code fences.`;
 
 export async function generateGrowthTips(forceRefresh = false): Promise<GrowthTipsAnalysis> {
   const settings = await StorageService.getSettings();
@@ -376,7 +410,13 @@ export async function generateGrowthTips(forceRefresh = false): Promise<GrowthTi
   });
 
   const raw = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
-  const parsed = JSON.parse(extractJson(raw));
+  const jsonStr = extractJson(raw);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (e) {
+    throw new Error(`Could not parse growth tips response. Raw: ${jsonStr.slice(0, 200)}`);
+  }
 
   const analysis: GrowthTipsAnalysis = {
     generatedAt: Date.now(),
