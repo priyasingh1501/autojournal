@@ -54,7 +54,7 @@
         {
           "photosPermission": "Allow untangle to access your photos to attach them to journal entries.",
           "cameraPermission": "Allow untangle to use your camera to take photos for journal entries.",
-          "microphonePermission": false
+          "microphonePermission": "untangle needs microphone access to record your voice and create your daily journal."
         }
       ],
       [
