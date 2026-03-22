@@ -1,4 +1,5 @@
 import { Audio } from 'expo-av';
+import { Alert, Linking } from 'react-native';
 import { PendingClip } from '../types';
 import { StorageService } from './StorageService';
 
@@ -42,8 +43,20 @@ class AudioRecorderService {
   }
 
   async requestPermissions(): Promise<boolean> {
-    const { status } = await Audio.requestPermissionsAsync();
-    return status === 'granted';
+    const { status, canAskAgain } = await Audio.requestPermissionsAsync();
+    if (status === 'granted') return true;
+    if (!canAskAgain) {
+      // iOS/Android won't show the dialog again — send user to Settings
+      Alert.alert(
+        'Microphone Access Needed',
+        'untangle needs the microphone to record your voice. Please enable it in your device Settings.',
+        [
+          { text: 'Not Now', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ],
+      );
+    }
+    return false;
   }
 
   async startMonitoring(): Promise<void> {

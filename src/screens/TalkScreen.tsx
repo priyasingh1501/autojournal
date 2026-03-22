@@ -8,6 +8,8 @@ import {
   ImageBackground,
   Dimensions,
   ActivityIndicator,
+  Alert,
+  Linking,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -344,11 +346,21 @@ export default function TalkScreen({ summary, onClose }: Props) {
       try {
         // Request mic permission immediately — before any playback starts,
         // so the OS dialog appears as soon as the screen opens.
-        const { status } = await Audio.requestPermissionsAsync();
+        const { status, canAskAgain } = await Audio.requestPermissionsAsync();
         if (!activeRef.current) return;
         if (status !== 'granted') {
           setConvState('error');
-          setError('Microphone permission denied. Please enable it in Settings.');
+          setError('Microphone access is required for calls.');
+          if (!canAskAgain) {
+            Alert.alert(
+              'Microphone Access Needed',
+              'untangle needs the microphone for voice calls. Please enable it in Settings.',
+              [
+                { text: 'Not Now', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ],
+            );
+          }
           return;
         }
 
