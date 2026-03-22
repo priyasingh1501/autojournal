@@ -84,6 +84,9 @@ export default function SummaryScreen() {
 
   const pan = useRef(new Animated.ValueXY()).current;
   const isSwiping = useRef(false);
+  // Always-fresh refs so PanResponder callbacks never close over stale state
+  const currentIndexRef = useRef(0);
+  const summariesRef    = useRef<DailySummary[]>([]);
 
   useFocusEffect(
     useCallback(() => { loadSummaries(); }, [])
@@ -93,55 +96,72 @@ export default function SummaryScreen() {
     const dates = await StorageService.getSummaryDates();
     const all = await Promise.all(dates.map(d => StorageService.getSummaryForDate(d)));
     const valid = all.filter(Boolean) as DailySummary[];
+    summariesRef.current = valid;
     setSummaries(valid);
-    setCurrentIndex(prev => (valid.length === 0 ? 0 : Math.min(prev, valid.length - 1)));
-  };
-
-  // ── swipe mechanics ──────────────────────────────────────────────────────
-  const swipeOff = (direction: 1 | -1) => {
-    if (isSwiping.current) return;
-    // direction 1 = swiped right → go to older (increment)
-    // direction -1 = swiped left → go to newer (decrement); snap back if already at newest
-    if (direction === -1 && currentIndex === 0) {
-      snapBack();
-      return;
-    }
-    isSwiping.current = true;
-    Animated.timing(pan, {
-      toValue: { x: direction * SCREEN_WIDTH * 1.5, y: 0 },
-      duration: 280,
-      useNativeDriver: true,
-    }).start(() => {
-      pan.setValue({ x: 0, y: 0 });
-      setCurrentIndex(prev => direction === 1 ? prev + 1 : prev - 1);
-      isSwiping.current = false;
+    setCurrentIndex(prev => {
+      const next = valid.length === 0 ? 0 : Math.min(prev, valid.length - 1);
+      currentIndexRef.current = next;
+      return next;
     });
   };
 
-  const snapBack = () => {
+  // ── swipe mechanics ──────────────────────────────────────────────────────
+  // Use refs so the PanResponder (created once) always sees fresh values.
+  const snapBack = useCallback(() => {
     Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: true, friction: 7 }).start();
-  };
+  }, []);
+
+  // Put snapBack in a ref so the one-time panResponder closure can call the latest version
+  const snapBackRef = useRef(snapBack);
+  snapBackRef.current = snapBack;
+
+  const swipeOff = useCallback((direction: 1 | -1) => {
+    if (isSwiping.current) return;
+    const idx = currentIndexRef.current;
+    const total = summariesRef.current.length;
+    // swipe left (direction -1) → newer → decrement; snap back if already at newest (idx 0)
+    // swipe right (direction  1) → older → increment; snap back if already at oldest
+    if (direction === -1 && idx === 0) { snapBackRef.current(); return; }
+    if (direction ===  1 && idx >= total - 1) { snapBackRef.current(); return; }
+
+    isSwiping.current = true;
+    Animated.timing(pan, {
+      toValue: { x: direction * SCREEN_WIDTH * 1.5, y: 0 },
+      duration: 260,
+      useNativeDriver: true,
+    }).start(() => {
+      pan.setValue({ x: 0, y: 0 });
+      const next = direction === 1 ? idx + 1 : idx - 1;
+      currentIndexRef.current = next;
+      setCurrentIndex(next);
+      isSwiping.current = false;
+    });
+  }, []);
+
+  const swipeOffRef = useRef(swipeOff);
+  swipeOffRef.current = swipeOff;
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gs) =>
+      onStartShouldSetPanResponderCapture: () => false,
+      // Capture phase — fires BEFORE the ScrollView sees the touch, so we can
+      // steal clearly-horizontal swipes away from the inner ScrollView.
+      onMoveShouldSetPanResponderCapture: (_, gs) =>
         !isSwiping.current &&
-        Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5 &&
+        Math.abs(gs.dx) > Math.abs(gs.dy) * 2.5 &&
         Math.abs(gs.dx) > 12,
+      onMoveShouldSetPanResponder: () => false,
       onPanResponderMove: (_, gs) => {
-        pan.setValue({ x: gs.dx, y: gs.dy * 0.08 });
+        pan.setValue({ x: gs.dx, y: gs.dy * 0.06 });
       },
       onPanResponderRelease: (_, gs) => {
         const shouldSwipe =
           Math.abs(gs.dx) > SWIPE_THRESHOLD || Math.abs(gs.vx) > VELOCITY_THRESHOLD;
-        if (shouldSwipe) {
-          swipeOff(gs.dx > 0 ? 1 : -1);
-        } else {
-          snapBack();
-        }
+        if (shouldSwipe) swipeOffRef.current(gs.dx > 0 ? 1 : -1);
+        else snapBackRef.current();
       },
-      onPanResponderTerminate: () => snapBack(),
+      onPanResponderTerminate: () => snapBackRef.current(),
     })
   ).current;
 
@@ -290,6 +310,7 @@ export default function SummaryScreen() {
         style={styles.cardScrollView}
         showsVerticalScrollIndicator={false}
         scrollEnabled={isTop}
+        nestedScrollEnabled={true}
         contentContainerStyle={styles.cardScroll}
       >
         {/* Five-section insights */}
@@ -409,7 +430,14 @@ export default function SummaryScreen() {
           </View>
         ) : (
           <>
-            {/* Top card — draggable, fills the full stack area */}
+            {/* Peek card — the next card sits stationary behind the top card */}
+            {currentIndex + 1 < summaries.length && (
+              <View style={[styles.card, styles.peekCard]} pointerEvents="none">
+                {renderCardContent(summaries[currentIndex + 1], false)}
+              </View>
+            )}
+
+            {/* Top card — draggable */}
             <Animated.View
               style={[styles.card, {
                 transform: [
@@ -424,13 +452,12 @@ export default function SummaryScreen() {
 
               {/* Swipe direction overlays */}
               <Animated.View style={[styles.swipeLabel, styles.swipeLabelLeft, { opacity: leftLabelOpacity }]}>
-                <Text style={styles.swipeLabelText}>OLDER</Text>
+                <Text style={styles.swipeLabelText}>← NEWER</Text>
               </Animated.View>
               <Animated.View style={[styles.swipeLabel, styles.swipeLabelRight, { opacity: rightLabelOpacity }]}>
-                <Text style={styles.swipeLabelText}>OLDER</Text>
+                <Text style={styles.swipeLabelText}>OLDER →</Text>
               </Animated.View>
             </Animated.View>
-
           </>
         )}
       </View>
@@ -441,7 +468,13 @@ export default function SummaryScreen() {
           {currentIndex > 0 ? (
             <TouchableOpacity
               style={styles.navBtn}
-              onPress={() => { if (!isSwiping.current) setCurrentIndex(prev => prev - 1); }}
+              onPress={() => {
+                if (!isSwiping.current) {
+                  const next = currentIndexRef.current - 1;
+                  currentIndexRef.current = next;
+                  setCurrentIndex(next);
+                }
+              }}
             >
               <Text style={styles.navBtnText}>Newer →</Text>
             </TouchableOpacity>
@@ -531,6 +564,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#02060E',
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.13)',
+  },
+  peekCard: {
+    // Sits behind the top card: slightly smaller + shifted down to create a stack illusion
+    transform: [{ scale: 0.95 }, { translateY: 10 }],
+    opacity: 0.55,
   },
   cardBehind: {
     // animated scale + translateY applied inline

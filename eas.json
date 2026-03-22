@@ -4,8 +4,16 @@
   },
   "build": {
     "preview": {
+      "ios": {
+        "simulator": true
+      },
       "android": {
         "buildType": "apk"
+      }
+    },
+    "device": {
+      "ios": {
+        "distribution": "internal"
       }
     },
     "production": {

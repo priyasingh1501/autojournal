@@ -11,7 +11,7 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
-import { WeeklyInsight } from '../types';
+import { WeeklyInsight, WeeklyData } from '../types';
 import { generateWeeklyInsight, NOT_ENOUGH_DATA } from '../services/WeeklyInsightService';
 import { SECTION_LABELS } from './InsightSections';
 
@@ -69,6 +69,129 @@ function firstSentence(body: string): string {
   return body.match(/[^.!?]+[.!?]+/)?.[0]?.trim() ?? body;
 }
 
+// ── Infographic components ────────────────────────────────────────────────────
+
+/** 5-dot mood bar: filled dots up to moodScore */
+function MoodBar({ score }: { score: number }) {
+  const labels = ['rough', 'hard', 'okay', 'good', 'great'];
+  return (
+    <View style={infoStyles.row}>
+      {Array.from({ length: 5 }, (_, i) => (
+        <View
+          key={i}
+          style={[
+            infoStyles.moodDot,
+            i < score ? infoStyles.moodDotOn : infoStyles.moodDotOff,
+          ]}
+        />
+      ))}
+      <Text style={infoStyles.infoLabel}>{labels[Math.min(score - 1, 4)]}</Text>
+    </View>
+  );
+}
+
+/** 7-circle strip Mon–Sun, filled = had movement */
+const DAY_INITIALS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+function MovementStrip({ days }: { days: boolean[] }) {
+  return (
+    <View style={infoStyles.row}>
+      {DAY_INITIALS.map((d, i) => (
+        <View
+          key={i}
+          style={[
+            infoStyles.movementCircle,
+            days[i] ? infoStyles.movementOn : infoStyles.movementOff,
+          ]}
+        >
+          <Text style={[
+            infoStyles.movementLetter,
+            days[i] ? infoStyles.movementLetterOn : infoStyles.movementLetterOff,
+          ]}>{d}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Pill badge for meal quality */
+const MEAL_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  good:  { label: 'Balanced',  color: 'rgba(110, 231, 183, 0.95)', bg: 'rgba(110, 231, 183, 0.12)' },
+  mixed: { label: 'Mixed',     color: 'rgba(251, 191,  36, 0.95)', bg: 'rgba(251, 191,  36, 0.12)' },
+  poor:  { label: 'Watch out', color: 'rgba(252, 165, 165, 0.95)', bg: 'rgba(252, 165, 165, 0.12)' },
+};
+function QualityBadge({ quality }: { quality: string }) {
+  const cfg = MEAL_CONFIG[quality] ?? MEAL_CONFIG.mixed;
+  return (
+    <View style={[infoStyles.badge, { backgroundColor: cfg.bg, borderColor: cfg.color + '44' }]}>
+      <Text style={[infoStyles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
+    </View>
+  );
+}
+
+/** Pill badge for spend level */
+const SPEND_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  none:   { label: 'None',    color: 'rgba(148, 163, 184, 0.80)', bg: 'rgba(148, 163, 184, 0.08)' },
+  low:    { label: 'Low',     color: 'rgba(110, 231, 183, 0.95)', bg: 'rgba(110, 231, 183, 0.12)' },
+  medium: { label: 'Medium',  color: 'rgba(251, 191,  36, 0.95)', bg: 'rgba(251, 191,  36, 0.12)' },
+  high:   { label: 'High',    color: 'rgba(252, 165, 165, 0.95)', bg: 'rgba(252, 165, 165, 0.12)' },
+};
+function SpendBadge({ level }: { level: string }) {
+  const cfg = SPEND_CONFIG[level] ?? SPEND_CONFIG.medium;
+  return (
+    <View style={[infoStyles.badge, { backgroundColor: cfg.bg, borderColor: cfg.color + '44' }]}>
+      <Text style={[infoStyles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
+    </View>
+  );
+}
+
+/** Learning count chip */
+function LearningCount({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <View style={infoStyles.learningChip}>
+      <Feather name="star" size={10} color="rgba(196, 181, 253, 0.90)" />
+      <Text style={infoStyles.learningText}>{count} logged</Text>
+    </View>
+  );
+}
+
+const infoStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
+  infoLabel: {
+    fontSize: 11,
+    color: 'rgba(152, 212, 250, 0.55)',
+    fontFamily: 'GillSans-Light',
+    marginLeft: 4,
+  },
+  moodDot: { width: 10, height: 10, borderRadius: 5 },
+  moodDotOn:  { backgroundColor: 'rgba(152, 212, 250, 0.85)' },
+  moodDotOff: { backgroundColor: 'rgba(152, 212, 250, 0.15)' },
+  movementCircle: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  movementOn:  { backgroundColor: 'rgba(110, 231, 183, 0.20)', borderWidth: 1, borderColor: 'rgba(110, 231, 183, 0.50)' },
+  movementOff: { backgroundColor: 'rgba(152, 212, 250, 0.05)', borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.12)' },
+  movementLetter: { fontSize: 10, fontFamily: 'GillSans-Light' },
+  movementLetterOn:  { color: 'rgba(110, 231, 183, 0.90)' },
+  movementLetterOff: { color: 'rgba(152, 212, 250, 0.30)' },
+  badge: {
+    paddingHorizontal: 9, paddingVertical: 3,
+    borderRadius: 20, borderWidth: 1,
+    marginTop: 6, alignSelf: 'flex-start',
+  },
+  badgeText: { fontSize: 11, fontFamily: 'GillSans-Light', letterSpacing: 0.2 },
+  learningChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 9, paddingVertical: 3,
+    borderRadius: 20, borderWidth: 1,
+    backgroundColor: 'rgba(196, 181, 253, 0.08)',
+    borderColor: 'rgba(196, 181, 253, 0.25)',
+    marginTop: 6, alignSelf: 'flex-start',
+  },
+  learningText: { fontSize: 11, color: 'rgba(196, 181, 253, 0.85)', fontFamily: 'GillSans-Light' },
+});
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function DayDots({ active, total = 7 }: { active: number; total?: number }) {
@@ -91,7 +214,15 @@ const dotStyles = StyleSheet.create({
   dotOff: { backgroundColor: 'rgba(152, 212, 250, 0.18)' },
 });
 
-function SectionRow({ sectionKey, body }: { sectionKey: string; body: string }) {
+function SectionRow({
+  sectionKey,
+  body,
+  weeklyData,
+}: {
+  sectionKey: string;
+  body: string;
+  weeklyData?: WeeklyData;
+}) {
   const [expanded, setExpanded] = useState(false);
   const meta = SECTION_LABELS[sectionKey];
   const preview = firstSentence(body);
@@ -100,6 +231,25 @@ function SectionRow({ sectionKey, body }: { sectionKey: string; body: string }) 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(e => !e);
+  };
+
+  // Pick the right infographic for this section
+  const renderInfographic = () => {
+    if (!weeklyData) return null;
+    switch (sectionKey) {
+      case 'Emotional check-in':
+        return <MoodBar score={weeklyData.moodScore} />;
+      case 'Movement':
+        return <MovementStrip days={weeklyData.movementDays} />;
+      case 'Meals':
+        return <QualityBadge quality={weeklyData.mealQuality} />;
+      case 'Spending':
+        return <SpendBadge level={weeklyData.spendLevel} />;
+      case 'Learnings':
+        return <LearningCount count={weeklyData.learningCount} />;
+      default:
+        return null;
+    }
   };
 
   return (
@@ -123,8 +273,11 @@ function SectionRow({ sectionKey, body }: { sectionKey: string; body: string }) 
         )}
       </View>
 
+      {/* Infographic (always visible) */}
+      {renderInfographic()}
+
       {/* Body — preview or full */}
-      <Text style={styles.sectionBody}>
+      <Text style={[styles.sectionBody, { marginTop: 6 }]}>
         {expanded ? body : preview}
       </Text>
     </TouchableOpacity>
@@ -236,7 +389,12 @@ export default function WeeklyInsightCard() {
           {/* Section accordion */}
           <View style={styles.sections}>
             {sections.map(s => (
-              <SectionRow key={s.key} sectionKey={s.key} body={s.body} />
+              <SectionRow
+                key={s.key}
+                sectionKey={s.key}
+                body={s.body}
+                weeklyData={insight.weeklyData}
+              />
             ))}
           </View>
 
@@ -317,7 +475,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 5,
   },
   sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionLabel: {

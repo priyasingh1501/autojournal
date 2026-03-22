@@ -231,8 +231,6 @@ export default function TalkScreen({ summary, onClose }: Props) {
   const startListening = useCallback(async () => {
     if (!activeRef.current) return;
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') { setConvState('error'); setError('Microphone permission denied.'); return; }
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
 
       hasSpeechRef.current  = false;
@@ -344,6 +342,16 @@ export default function TalkScreen({ summary, onClose }: Props) {
   useEffect(() => {
     (async () => {
       try {
+        // Request mic permission immediately — before any playback starts,
+        // so the OS dialog appears as soon as the screen opens.
+        const { status } = await Audio.requestPermissionsAsync();
+        if (!activeRef.current) return;
+        if (status !== 'granted') {
+          setConvState('error');
+          setError('Microphone permission denied. Please enable it in Settings.');
+          return;
+        }
+
         // Load settings once — cache for the lifetime of this call
         const settings = await StorageService.getSettings();
         cachedAnthropicKey.current = settings?.anthropicApiKey?.trim() ?? '';

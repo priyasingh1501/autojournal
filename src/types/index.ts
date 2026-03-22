@@ -36,11 +36,20 @@ export interface AppSettings {
   elevenLabsVoiceId?: string;  // ElevenLabs voice ID for Call mode
 }
 
+export interface WeeklyData {
+  moodScore: number;                              // 1–5 (1=very hard, 5=great)
+  movementDays: boolean[];                        // length 7, Mon–Sun, true = had movement
+  mealQuality: 'good' | 'mixed' | 'poor';
+  spendLevel: 'none' | 'low' | 'medium' | 'high';
+  learningCount: number;                          // distinct things learned
+}
+
 export interface WeeklyInsight {
   weekKey: string;        // e.g. "2026-W12"
   weekStart: string;      // YYYY-MM-DD Monday
   weekEnd: string;        // YYYY-MM-DD Sunday
   insightText: string;    // Claude-generated flowing prose
+  weeklyData?: WeeklyData; // structured signals for infographics
   daysActive: number;     // days with at least one entry
   totalEntries: number;   // sum of all entries across the week
   daysSummarised: number; // days with a DailySummary

@@ -56,24 +56,38 @@ async function collectWeekStats(dates: string[]): Promise<{
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are a caring personal journal assistant helping someone understand their week at a glance.
-You have access to their daily journal summaries. Analyse them and produce a structured but warm weekly check-in.
+You have access to their daily journal summaries. Analyse them and produce a structured weekly check-in followed by structured data.
 Tone: honest, warm, direct — like a trusted friend who notices patterns and gently calls them out.
-Format rules (strict):
-- Use EXACTLY these six section headings, each on its own line, followed by one or two sentences of insight:
+
+PART 1 — Text sections (plain text, no markdown):
+Use EXACTLY these six section headings, each on its own line, followed by one or two sentences:
   Emotional check-in:
   Meals:
   Movement:
   Spending:
   Recurring thoughts:
   Learnings:
+Rules:
 - No markdown symbols (no *, no #, no —). Plain text only.
-- Each section is 1–2 sentences. Be specific and reference actual events from the summaries, not generic advice.
-- For Meals: explicitly flag any unhealthy patterns (junk food, skipped meals, late-night eating). If meals look fine, say so briefly.
-- For Movement: explicitly call out any days with no workout or physical activity. If every day had movement, say so.
-- For Spending: give a short qualitative summary of the week's spending — high/low/unusual categories if mentioned.
-- For Recurring thoughts: name the actual themes, topics, or concerns that came up more than once.
-- For Learnings: surface anything read, studied, learned at work, new skills practised, or meaningful new observations across the week. If nothing was logged, say so briefly.
-- Do not begin the Emotional check-in with the word "This".`;
+- Each section 1–2 sentences. Be specific — reference actual events, not generic advice.
+- Meals: flag unhealthy patterns (junk, skipped meals, late-night). Say "Looks balanced" if fine.
+- Movement: call out days with no physical activity. If every day had movement, say so.
+- Spending: qualitative summary — high/low/unusual categories if mentioned.
+- Recurring thoughts: name actual themes or concerns that appeared more than once.
+- Learnings: surface things read, studied, learned at work, new skills, or new observations. Say "Nothing specific logged" if absent.
+- Do not begin Emotional check-in with the word "This".
+
+Then output exactly this line on its own:
+===DATA===
+
+PART 2 — Structured data (valid JSON only, no other text):
+{
+  "moodScore": <integer 1–5, where 1=very hard week, 3=neutral, 5=great week>,
+  "movementDays": [<bool Mon>, <bool Tue>, <bool Wed>, <bool Thu>, <bool Fri>, <bool Sat>, <bool Sun>],
+  "mealQuality": <"good" | "mixed" | "poor">,
+  "spendLevel": <"none" | "low" | "medium" | "high">,
+  "learningCount": <integer, number of distinct things learned>
+}`;
 
 function buildPrompt(
   summaries: DailySummary[],
@@ -135,17 +149,34 @@ export async function generateWeeklyInsight(
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const insightText = response.content
+  const fullText = response.content
     .filter(b => b.type === 'text')
     .map(b => (b as any).text)
     .join('')
     .trim();
+
+  const DATA_SENTINEL = '===DATA===';
+  const sentinelIdx = fullText.indexOf(DATA_SENTINEL);
+  const insightText = sentinelIdx !== -1
+    ? fullText.slice(0, sentinelIdx).trim()
+    : fullText;
+
+  let weeklyData: import('../types').WeeklyData | undefined;
+  if (sentinelIdx !== -1) {
+    try {
+      const jsonStr = fullText.slice(sentinelIdx + DATA_SENTINEL.length).trim();
+      weeklyData = JSON.parse(jsonStr);
+    } catch {
+      // malformed JSON — proceed without structured data
+    }
+  }
 
   const insight: WeeklyInsight = {
     weekKey,
     weekStart,
     weekEnd,
     insightText,
+    weeklyData,
     daysActive: stats.daysActive,
     totalEntries: stats.totalEntries,
     daysSummarised: summaries.length,

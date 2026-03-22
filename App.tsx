@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, Component } from 'react';
-import { AppState, AppStateStatus, Linking, Platform, View, Text, StyleSheet } from 'react-native';
+import { AppState, AppStateStatus, Linking, Platform, View, Text, StyleSheet, Alert } from 'react-native';
+import { Audio } from 'expo-av';
 import { Feather } from '@expo/vector-icons';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -94,6 +95,22 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Request microphone permission at app startup so the OS dialog appears
+    // on first launch rather than only when the user taps the mic button.
+    (async () => {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status === 'denied') {
+        Alert.alert(
+          'Microphone Access Needed',
+          'untangle uses the microphone to record your voice. Please enable it in Settings.',
+          [
+            { text: 'Not Now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ],
+        );
+      }
+    })();
+
     // Check if the app was cold-launched via the widget deeplink
     Linking.getInitialURL().then(url => {
       if (url) handleDeepLink(url);

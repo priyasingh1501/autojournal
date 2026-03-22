@@ -23,7 +23,8 @@
           "fetch",
           "processing"
         ]
-      }
+      },
+      "bundleIdentifier": "com.priyasingh.autojournal"
     },
     "android": {
       "package": "com.priyasingh.autojournal",
@@ -41,7 +42,12 @@
       ]
     },
     "plugins": [
-      "expo-av",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "untangle needs microphone access to record your voice and create your daily journal."
+        }
+      ],
       [
         "expo-image-picker",
         {
