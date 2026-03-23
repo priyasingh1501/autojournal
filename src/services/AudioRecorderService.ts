@@ -36,6 +36,10 @@ class AudioRecorderService {
   async requestPermissions(): Promise<boolean> {
     if (Platform.OS === 'android') {
       try {
+        // Check first — avoids showing the dialog on every tap if already granted
+        const already = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        if (already) return true;
+
         const result = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
           {
@@ -63,7 +67,10 @@ class AudioRecorderService {
       }
     }
 
-    // iOS
+    // iOS — check first before requesting
+    const { status: existing } = await Audio.getPermissionsAsync();
+    if (existing === 'granted') return true;
+
     const { status, canAskAgain } = await Audio.requestPermissionsAsync();
     if (status === 'granted') return true;
     if (!canAskAgain) {

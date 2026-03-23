@@ -350,39 +350,46 @@ export default function TalkScreen({ summary, onClose }: Props) {
         // so the OS dialog appears as soon as the screen opens.
         let micGranted = false;
         if (Platform.OS === 'android') {
-          const result = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-            {
-              title: 'Microphone Access',
-              message: 'untangle needs the microphone to record your voice for journaling.',
-              buttonNeutral: 'Ask Later',
-              buttonNegative: 'Deny',
-              buttonPositive: 'Allow',
-            },
-          );
-          micGranted = result === PermissionsAndroid.RESULTS.GRANTED;
-          if (!micGranted && result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
-            Alert.alert(
-              'Microphone Access Needed',
-              'untangle needs the microphone for voice calls. Please enable it in Settings.',
-              [
-                { text: 'Not Now', style: 'cancel' },
-                { text: 'Open Settings', onPress: () => Linking.openSettings() },
-              ],
+          micGranted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+          if (!micGranted) {
+            const result = await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+              {
+                title: 'Microphone Access',
+                message: 'untangle needs the microphone to record your voice for journaling.',
+                buttonNeutral: 'Ask Later',
+                buttonNegative: 'Deny',
+                buttonPositive: 'Allow',
+              },
             );
+            micGranted = result === PermissionsAndroid.RESULTS.GRANTED;
+            if (!micGranted && result === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+              Alert.alert(
+                'Microphone Access Needed',
+                'untangle needs the microphone for voice calls. Please enable it in Settings.',
+                [
+                  { text: 'Not Now', style: 'cancel' },
+                  { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                ],
+              );
+            }
           }
         } else {
-          const { status, canAskAgain } = await Audio.requestPermissionsAsync();
-          micGranted = status === 'granted';
-          if (!micGranted && !canAskAgain) {
-            Alert.alert(
-              'Microphone Access Needed',
-              'untangle needs the microphone for voice calls. Please enable it in Settings.',
-              [
-                { text: 'Not Now', style: 'cancel' },
-                { text: 'Open Settings', onPress: () => Linking.openSettings() },
-              ],
-            );
+          const { status: existing } = await Audio.getPermissionsAsync();
+          micGranted = existing === 'granted';
+          if (!micGranted) {
+            const { status, canAskAgain } = await Audio.requestPermissionsAsync();
+            micGranted = status === 'granted';
+            if (!micGranted && !canAskAgain) {
+              Alert.alert(
+                'Microphone Access Needed',
+                'untangle needs the microphone for voice calls. Please enable it in Settings.',
+                [
+                  { text: 'Not Now', style: 'cancel' },
+                  { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                ],
+              );
+            }
           }
         }
         if (!activeRef.current) return;
