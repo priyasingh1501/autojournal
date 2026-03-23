@@ -55,7 +55,7 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (status === 'monitoring' || status === 'recording') {
+    if (status === 'recording') {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
@@ -151,16 +151,14 @@ export default function HomeScreen() {
 
   const getStatusText = () => {
     switch (status) {
-      case 'idle': return 'Tap to start monitoring';
-      case 'monitoring': return 'Listening...';
-      case 'recording': return 'Recording your voice';
+      case 'idle':      return 'Tap to record';
+      case 'recording': return 'Recording — tap to stop';
     }
   };
 
   const getStatusColor = () => {
     switch (status) {
-      case 'idle': return 'rgba(152, 212, 250, 0.65)';
-      case 'monitoring': return 'rgba(224, 242, 254, 0.95)';
+      case 'idle':      return 'rgba(152, 212, 250, 0.65)';
       case 'recording': return 'rgba(224, 242, 254, 0.95)';
     }
   };
