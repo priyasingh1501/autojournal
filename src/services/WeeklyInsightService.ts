@@ -86,8 +86,12 @@ PART 2 — Structured data (valid JSON only, no other text):
   "movementDays": [<bool Mon>, <bool Tue>, <bool Wed>, <bool Thu>, <bool Fri>, <bool Sat>, <bool Sun>],
   "mealQuality": <"good" | "mixed" | "poor">,
   "spendLevel": <"none" | "low" | "medium" | "high">,
-  "learningCount": <integer, number of distinct things learned>
-}`;
+  "learningCount": <integer, number of distinct things learned>,
+  "spendDays": [<"none"|"low"|"medium"|"high" for Mon>, <Tue>, <Wed>, <Thu>, <Fri>, <Sat>, <Sun>],
+  "mealDays": [<"good"|"mixed"|"poor"|"none" for Mon>, <Tue>, <Wed>, <Thu>, <Fri>, <Sat>, <Sun>]
+}
+Rules for spendDays: "none" = no spending mentioned, "low" = small/routine spend, "medium" = notable purchase, "high" = large or impulsive spend. Use "none" for days with no journal entry.
+Rules for mealDays: "good" = healthy balanced meals, "mixed" = some healthy some not, "poor" = junk/skipped/late-night. Use "none" for days with no food mention.`;
 
 function buildPrompt(
   summaries: DailySummary[],

@@ -113,33 +113,46 @@ function MovementStrip({ days }: { days: boolean[] }) {
   );
 }
 
-/** Pill badge for meal quality */
-const MEAL_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  good:  { label: 'Balanced',  color: 'rgba(110, 231, 183, 0.95)', bg: 'rgba(110, 231, 183, 0.12)' },
-  mixed: { label: 'Mixed',     color: 'rgba(251, 191,  36, 0.95)', bg: 'rgba(251, 191,  36, 0.12)' },
-  poor:  { label: 'Watch out', color: 'rgba(252, 165, 165, 0.95)', bg: 'rgba(252, 165, 165, 0.12)' },
+/** Per-day spend strip Mon–Sun */
+const SPEND_DAY: Record<string, { bg: string; border: string; letter: string }> = {
+  none:   { bg: 'rgba(152,212,250,0.05)', border: 'rgba(152,212,250,0.12)',  letter: 'rgba(152,212,250,0.28)' },
+  low:    { bg: 'rgba(110,231,183,0.18)', border: 'rgba(110,231,183,0.50)',  letter: 'rgba(110,231,183,0.90)' },
+  medium: { bg: 'rgba(251,191, 36,0.18)', border: 'rgba(251,191, 36,0.50)',  letter: 'rgba(251,191, 36,0.90)' },
+  high:   { bg: 'rgba(252,165,165,0.20)', border: 'rgba(252,165,165,0.55)',  letter: 'rgba(252,165,165,0.95)' },
 };
-function QualityBadge({ quality }: { quality: string }) {
-  const cfg = MEAL_CONFIG[quality] ?? MEAL_CONFIG.mixed;
+function SpendStrip({ days }: { days: ('none'|'low'|'medium'|'high')[] }) {
   return (
-    <View style={[infoStyles.badge, { backgroundColor: cfg.bg, borderColor: cfg.color + '44' }]}>
-      <Text style={[infoStyles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
+    <View style={infoStyles.row}>
+      {DAY_INITIALS.map((d, i) => {
+        const cfg = SPEND_DAY[days[i] ?? 'none'];
+        return (
+          <View key={i} style={[infoStyles.movementCircle, { backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }]}>
+            <Text style={[infoStyles.movementLetter, { color: cfg.letter }]}>{d}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
 
-/** Pill badge for spend level */
-const SPEND_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  none:   { label: 'None',    color: 'rgba(148, 163, 184, 0.80)', bg: 'rgba(148, 163, 184, 0.08)' },
-  low:    { label: 'Low',     color: 'rgba(110, 231, 183, 0.95)', bg: 'rgba(110, 231, 183, 0.12)' },
-  medium: { label: 'Medium',  color: 'rgba(251, 191,  36, 0.95)', bg: 'rgba(251, 191,  36, 0.12)' },
-  high:   { label: 'High',    color: 'rgba(252, 165, 165, 0.95)', bg: 'rgba(252, 165, 165, 0.12)' },
+/** Per-day meal quality strip Mon–Sun */
+const MEAL_DAY: Record<string, { bg: string; border: string; letter: string }> = {
+  none:  { bg: 'rgba(152,212,250,0.05)', border: 'rgba(152,212,250,0.12)',  letter: 'rgba(152,212,250,0.28)' },
+  good:  { bg: 'rgba(110,231,183,0.18)', border: 'rgba(110,231,183,0.50)',  letter: 'rgba(110,231,183,0.90)' },
+  mixed: { bg: 'rgba(251,191, 36,0.18)', border: 'rgba(251,191, 36,0.50)',  letter: 'rgba(251,191, 36,0.90)' },
+  poor:  { bg: 'rgba(252,165,165,0.20)', border: 'rgba(252,165,165,0.55)',  letter: 'rgba(252,165,165,0.95)' },
 };
-function SpendBadge({ level }: { level: string }) {
-  const cfg = SPEND_CONFIG[level] ?? SPEND_CONFIG.medium;
+function MealStrip({ days }: { days: ('good'|'mixed'|'poor'|'none')[] }) {
   return (
-    <View style={[infoStyles.badge, { backgroundColor: cfg.bg, borderColor: cfg.color + '44' }]}>
-      <Text style={[infoStyles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
+    <View style={infoStyles.row}>
+      {DAY_INITIALS.map((d, i) => {
+        const cfg = MEAL_DAY[days[i] ?? 'none'];
+        return (
+          <View key={i} style={[infoStyles.movementCircle, { backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }]}>
+            <Text style={[infoStyles.movementLetter, { color: cfg.letter }]}>{d}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -242,9 +255,13 @@ function SectionRow({
       case 'Movement':
         return <MovementStrip days={weeklyData.movementDays} />;
       case 'Meals':
-        return <QualityBadge quality={weeklyData.mealQuality} />;
+        return weeklyData.mealDays
+          ? <MealStrip days={weeklyData.mealDays as any} />
+          : null;
       case 'Spending':
-        return <SpendBadge level={weeklyData.spendLevel} />;
+        return weeklyData.spendDays
+          ? <SpendStrip days={weeklyData.spendDays as any} />
+          : null;
       case 'Learnings':
         return <LearningCount count={weeklyData.learningCount} />;
       default:

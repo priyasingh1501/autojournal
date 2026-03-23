@@ -39,9 +39,11 @@ export interface AppSettings {
 export interface WeeklyData {
   moodScore: number;                              // 1–5 (1=very hard, 5=great)
   movementDays: boolean[];                        // length 7, Mon–Sun, true = had movement
-  mealQuality: 'good' | 'mixed' | 'poor';
-  spendLevel: 'none' | 'low' | 'medium' | 'high';
+  mealQuality: 'good' | 'mixed' | 'poor';        // overall (fallback)
+  spendLevel: 'none' | 'low' | 'medium' | 'high'; // overall (fallback)
   learningCount: number;                          // distinct things learned
+  spendDays?: ('none' | 'low' | 'medium' | 'high')[]; // per-day Mon–Sun
+  mealDays?: ('good' | 'mixed' | 'poor' | 'none')[];  // per-day Mon–Sun
 }
 
 export interface WeeklyInsight {
