@@ -45,7 +45,7 @@ function EmotionChip({
 
   return (
     <TouchableOpacity
-      style={[styles.chip, { borderColor: color + '44', backgroundColor: color + '12' }]}
+      style={[styles.chip, { borderColor: color + '99', backgroundColor: color + '40' }]}
       onPress={toggle}
       activeOpacity={0.8}
     >
