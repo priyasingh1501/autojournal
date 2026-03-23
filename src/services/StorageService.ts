@@ -10,6 +10,7 @@ const KEYS = {
   SETTINGS: 'app_settings',
   PENDING_CLIPS: 'pending_clips',
   WEEKLY_INSIGHTS_PREFIX: 'weekly_insight_',
+  MONTHLY_INSIGHTS_PREFIX: 'monthly_insight_',
   EMOTION_ANALYSIS_PREFIX: 'insight_emotions_',
   PATTERN_ANALYSIS_PREFIX: 'insight_patterns_',
   PERSONALITY_ANALYSIS: 'insight_personality',
@@ -152,6 +153,18 @@ export const StorageService = {
   async saveWeeklyInsight(insight: WeeklyInsight): Promise<void> {
     await AsyncStorage.setItem(
       KEYS.WEEKLY_INSIGHTS_PREFIX + insight.weekKey,
+      JSON.stringify(insight),
+    );
+  },
+
+  async getMonthlyInsight(monthKey: string): Promise<WeeklyInsight | null> {
+    const json = await AsyncStorage.getItem(KEYS.MONTHLY_INSIGHTS_PREFIX + monthKey);
+    return json ? JSON.parse(json) : null;
+  },
+
+  async saveMonthlyInsight(insight: WeeklyInsight): Promise<void> {
+    await AsyncStorage.setItem(
+      KEYS.MONTHLY_INSIGHTS_PREFIX + insight.weekKey,
       JSON.stringify(insight),
     );
   },

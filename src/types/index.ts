@@ -36,14 +36,20 @@ export interface AppSettings {
   elevenLabsVoiceId?: string;  // ElevenLabs voice ID for Call mode
 }
 
+export interface SpendCategory {
+  name: string;                                   // e.g. "Food & Dining"
+  level: 'low' | 'medium' | 'high';
+  summary: string;                                // one-line description
+}
+
 export interface WeeklyData {
   moodScore: number;                              // 1–5 (1=very hard, 5=great)
-  movementDays: boolean[];                        // length 7, Mon–Sun, true = had movement
-  mealQuality: 'good' | 'mixed' | 'poor';        // overall (fallback)
-  spendLevel: 'none' | 'low' | 'medium' | 'high'; // overall (fallback)
+  movementDays: boolean[];                        // one bool per day of the month so far
+  mealQuality: 'good' | 'mixed' | 'poor';        // overall fallback
+  spendLevel: 'none' | 'low' | 'medium' | 'high'; // overall fallback
   learningCount: number;                          // distinct things learned
-  spendDays?: ('none' | 'low' | 'medium' | 'high')[]; // per-day Mon–Sun
-  mealDays?: ('good' | 'mixed' | 'poor' | 'none')[];  // per-day Mon–Sun
+  spendCategories?: SpendCategory[];              // per-category spend breakdown
+  mealWeeks?: ('good' | 'mixed' | 'poor')[];     // one entry per week of the month
 }
 
 export interface WeeklyInsight {

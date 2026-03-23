@@ -11,11 +11,10 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
-import { WeeklyInsight, WeeklyData } from '../types';
+import { WeeklyInsight, WeeklyData, SpendCategory } from '../types';
 import { generateWeeklyInsight, NOT_ENOUGH_DATA } from '../services/WeeklyInsightService';
 import { SECTION_LABELS } from './InsightSections';
 
-// Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -32,13 +31,11 @@ function formatRelativeTime(ts: number): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
-/** Parse the plain-text insight into structured { key, body } sections */
 function parseSections(text: string): Array<{ key: string; body: string }> {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const sectionKeys = Object.keys(SECTION_LABELS);
   const sections: Array<{ key: string; body: string }> = [];
   let i = 0;
-
   while (i < lines.length) {
     const line = lines[i];
     const headingKey = sectionKeys.find(k =>
@@ -64,70 +61,57 @@ function parseSections(text: string): Array<{ key: string; body: string }> {
   return sections;
 }
 
-/** First sentence of a body string */
 function firstSentence(body: string): string {
   return body.match(/[^.!?]+[.!?]+/)?.[0]?.trim() ?? body;
 }
 
 // ── Infographic components ────────────────────────────────────────────────────
 
-/** 5-dot mood bar: filled dots up to moodScore */
+/** 5-dot mood bar */
 function MoodBar({ score }: { score: number }) {
   const labels = ['rough', 'hard', 'okay', 'good', 'great'];
   return (
     <View style={infoStyles.row}>
       {Array.from({ length: 5 }, (_, i) => (
-        <View
-          key={i}
-          style={[
-            infoStyles.moodDot,
-            i < score ? infoStyles.moodDotOn : infoStyles.moodDotOff,
-          ]}
-        />
+        <View key={i} style={[infoStyles.moodDot, i < score ? infoStyles.moodDotOn : infoStyles.moodDotOff]} />
       ))}
       <Text style={infoStyles.infoLabel}>{labels[Math.min(score - 1, 4)]}</Text>
     </View>
   );
 }
 
-/** 7-circle strip Mon–Sun, filled = had movement */
-const DAY_INITIALS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-function MovementStrip({ days }: { days: boolean[] }) {
+/** Monthly movement grid — rows of 7 dots, labelled W1 W2 … */
+function MovementGrid({ days }: { days: boolean[] }) {
+  const rows: boolean[][] = [];
+  for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
   return (
-    <View style={infoStyles.row}>
-      {DAY_INITIALS.map((d, i) => (
-        <View
-          key={i}
-          style={[
-            infoStyles.movementCircle,
-            days[i] ? infoStyles.movementOn : infoStyles.movementOff,
-          ]}
-        >
-          <Text style={[
-            infoStyles.movementLetter,
-            days[i] ? infoStyles.movementLetterOn : infoStyles.movementLetterOff,
-          ]}>{d}</Text>
+    <View style={{ gap: 5, marginTop: 7 }}>
+      {rows.map((row, wi) => (
+        <View key={wi} style={infoStyles.gridRow}>
+          <Text style={infoStyles.weekLabel}>W{wi + 1}</Text>
+          {row.map((active, di) => (
+            <View key={di} style={[infoStyles.gridDot, active ? infoStyles.gridDotOn : infoStyles.gridDotOff]} />
+          ))}
         </View>
       ))}
     </View>
   );
 }
 
-/** Per-day spend strip Mon–Sun */
-const SPEND_DAY: Record<string, { bg: string; border: string; letter: string }> = {
-  none:   { bg: 'rgba(152,212,250,0.05)', border: 'rgba(152,212,250,0.12)',  letter: 'rgba(152,212,250,0.28)' },
-  low:    { bg: 'rgba(110,231,183,0.18)', border: 'rgba(110,231,183,0.50)',  letter: 'rgba(110,231,183,0.90)' },
-  medium: { bg: 'rgba(251,191, 36,0.18)', border: 'rgba(251,191, 36,0.50)',  letter: 'rgba(251,191, 36,0.90)' },
-  high:   { bg: 'rgba(252,165,165,0.20)', border: 'rgba(252,165,165,0.55)',  letter: 'rgba(252,165,165,0.95)' },
+/** Weekly meal quality strip — W1 W2 W3 W4 coloured circles */
+const MEAL_WEEK_CFG = {
+  good:  { bg: 'rgba(110,231,183,0.18)', border: 'rgba(110,231,183,0.55)', text: 'rgba(110,231,183,0.95)' },
+  mixed: { bg: 'rgba(251,191, 36,0.18)', border: 'rgba(251,191, 36,0.55)', text: 'rgba(251,191, 36,0.95)' },
+  poor:  { bg: 'rgba(252,165,165,0.20)', border: 'rgba(252,165,165,0.55)', text: 'rgba(252,165,165,0.95)' },
 };
-function SpendStrip({ days }: { days: ('none'|'low'|'medium'|'high')[] }) {
+function MealWeekStrip({ weeks }: { weeks: ('good' | 'mixed' | 'poor')[] }) {
   return (
     <View style={infoStyles.row}>
-      {DAY_INITIALS.map((d, i) => {
-        const cfg = SPEND_DAY[days[i] ?? 'none'];
+      {weeks.map((q, i) => {
+        const cfg = MEAL_WEEK_CFG[q] ?? MEAL_WEEK_CFG.mixed;
         return (
-          <View key={i} style={[infoStyles.movementCircle, { backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }]}>
-            <Text style={[infoStyles.movementLetter, { color: cfg.letter }]}>{d}</Text>
+          <View key={i} style={[infoStyles.mealWeekCircle, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
+            <Text style={[infoStyles.mealWeekLabel, { color: cfg.text }]}>W{i + 1}</Text>
           </View>
         );
       })}
@@ -135,24 +119,44 @@ function SpendStrip({ days }: { days: ('none'|'low'|'medium'|'high')[] }) {
   );
 }
 
-/** Per-day meal quality strip Mon–Sun */
-const MEAL_DAY: Record<string, { bg: string; border: string; letter: string }> = {
-  none:  { bg: 'rgba(152,212,250,0.05)', border: 'rgba(152,212,250,0.12)',  letter: 'rgba(152,212,250,0.28)' },
-  good:  { bg: 'rgba(110,231,183,0.18)', border: 'rgba(110,231,183,0.50)',  letter: 'rgba(110,231,183,0.90)' },
-  mixed: { bg: 'rgba(251,191, 36,0.18)', border: 'rgba(251,191, 36,0.50)',  letter: 'rgba(251,191, 36,0.90)' },
-  poor:  { bg: 'rgba(252,165,165,0.20)', border: 'rgba(252,165,165,0.55)',  letter: 'rgba(252,165,165,0.95)' },
+/** Spend category breakdown */
+const LEVEL_DOT_COUNT = { low: 1, medium: 2, high: 3 };
+const LEVEL_COLOR = {
+  low:    'rgba(110,231,183,0.90)',
+  medium: 'rgba(251,191, 36,0.90)',
+  high:   'rgba(252,165,165,0.95)',
 };
-function MealStrip({ days }: { days: ('good'|'mixed'|'poor'|'none')[] }) {
+
+function CategoryLevelDots({ level }: { level: 'low' | 'medium' | 'high' }) {
+  const filled = LEVEL_DOT_COUNT[level] ?? 1;
+  const color  = LEVEL_COLOR[level];
   return (
-    <View style={infoStyles.row}>
-      {DAY_INITIALS.map((d, i) => {
-        const cfg = MEAL_DAY[days[i] ?? 'none'];
-        return (
-          <View key={i} style={[infoStyles.movementCircle, { backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border }]}>
-            <Text style={[infoStyles.movementLetter, { color: cfg.letter }]}>{d}</Text>
+    <View style={{ flexDirection: 'row', gap: 3, alignItems: 'center' }}>
+      {[0, 1, 2].map(i => (
+        <View
+          key={i}
+          style={[
+            infoStyles.levelDot,
+            { backgroundColor: i < filled ? color : 'rgba(152,212,250,0.12)' },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+function SpendCategoryList({ categories }: { categories: SpendCategory[] }) {
+  return (
+    <View style={{ gap: 7, marginTop: 8 }}>
+      {categories.map(cat => (
+        <View key={cat.name} style={infoStyles.catRow}>
+          <View style={infoStyles.catHeader}>
+            <Text style={infoStyles.catName}>{cat.name}</Text>
+            <CategoryLevelDots level={cat.level} />
           </View>
-        );
-      })}
+          <Text style={infoStyles.catSummary}>{cat.summary}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -169,62 +173,71 @@ function LearningCount({ count }: { count: number }) {
 }
 
 const infoStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
-  infoLabel: {
-    fontSize: 11,
-    color: 'rgba(152, 212, 250, 0.55)',
-    fontFamily: 'GillSans-Light',
-    marginLeft: 4,
+  row: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' },
+  infoLabel: { fontSize: 11, color: 'rgba(152,212,250,0.55)', fontFamily: 'GillSans-Light', marginLeft: 4 },
+
+  // Mood
+  moodDot:    { width: 10, height: 10, borderRadius: 5 },
+  moodDotOn:  { backgroundColor: 'rgba(152,212,250,0.85)' },
+  moodDotOff: { backgroundColor: 'rgba(152,212,250,0.15)' },
+
+  // Movement grid
+  gridRow:   { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  weekLabel: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', width: 18 },
+  gridDot:   { width: 14, height: 14, borderRadius: 7 },
+  gridDotOn:  { backgroundColor: 'rgba(110,231,183,0.22)', borderWidth: 1, borderColor: 'rgba(110,231,183,0.55)' },
+  gridDotOff: { backgroundColor: 'rgba(152,212,250,0.05)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)' },
+
+  // Meal weeks
+  mealWeekCircle: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1,
   },
-  moodDot: { width: 10, height: 10, borderRadius: 5 },
-  moodDotOn:  { backgroundColor: 'rgba(152, 212, 250, 0.85)' },
-  moodDotOff: { backgroundColor: 'rgba(152, 212, 250, 0.15)' },
-  movementCircle: {
-    width: 22, height: 22, borderRadius: 11,
-    alignItems: 'center', justifyContent: 'center',
+  mealWeekLabel: { fontSize: 10, fontFamily: 'GillSans-Light', fontWeight: '500' },
+
+  // Spend categories
+  catRow: {
+    backgroundColor: 'rgba(152,212,250,0.04)',
+    borderRadius: 10, borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.09)',
+    paddingHorizontal: 12, paddingVertical: 8,
+    gap: 3,
   },
-  movementOn:  { backgroundColor: 'rgba(110, 231, 183, 0.20)', borderWidth: 1, borderColor: 'rgba(110, 231, 183, 0.50)' },
-  movementOff: { backgroundColor: 'rgba(152, 212, 250, 0.05)', borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.12)' },
-  movementLetter: { fontSize: 10, fontFamily: 'GillSans-Light' },
-  movementLetterOn:  { color: 'rgba(110, 231, 183, 0.90)' },
-  movementLetterOff: { color: 'rgba(152, 212, 250, 0.30)' },
-  badge: {
-    paddingHorizontal: 9, paddingVertical: 3,
-    borderRadius: 20, borderWidth: 1,
-    marginTop: 6, alignSelf: 'flex-start',
-  },
-  badgeText: { fontSize: 11, fontFamily: 'GillSans-Light', letterSpacing: 0.2 },
+  catHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  catName:    { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.85)', fontWeight: '500' },
+  catSummary: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', lineHeight: 16 },
+  levelDot:   { width: 7, height: 7, borderRadius: 4 },
+
+  // Learning
   learningChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 9, paddingVertical: 3,
     borderRadius: 20, borderWidth: 1,
-    backgroundColor: 'rgba(196, 181, 253, 0.08)',
-    borderColor: 'rgba(196, 181, 253, 0.25)',
+    backgroundColor: 'rgba(196,181,253,0.08)',
+    borderColor: 'rgba(196,181,253,0.25)',
     marginTop: 6, alignSelf: 'flex-start',
   },
-  learningText: { fontSize: 11, color: 'rgba(196, 181, 253, 0.85)', fontFamily: 'GillSans-Light' },
+  learningText: { fontSize: 11, color: 'rgba(196,181,253,0.85)', fontFamily: 'GillSans-Light' },
 });
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function DayDots({ active, total = 7 }: { active: number; total?: number }) {
+function DayDots({ active, total = 31 }: { active: number; total?: number }) {
+  const clamped = Math.min(total, 31);
   return (
     <View style={dotStyles.row}>
-      {Array.from({ length: total }, (_, i) => (
-        <View
-          key={i}
-          style={[dotStyles.dot, i < active ? dotStyles.dotOn : dotStyles.dotOff]}
-        />
+      {Array.from({ length: clamped }, (_, i) => (
+        <View key={i} style={[dotStyles.dot, i < active ? dotStyles.dotOn : dotStyles.dotOff]} />
       ))}
     </View>
   );
 }
 
 const dotStyles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 5, alignItems: 'center' },
-  dot: { width: 7, height: 7, borderRadius: 4 },
-  dotOn:  { backgroundColor: 'rgba(152, 212, 250, 0.85)' },
-  dotOff: { backgroundColor: 'rgba(152, 212, 250, 0.18)' },
+  row: { flexDirection: 'row', gap: 3, alignItems: 'center', flexWrap: 'wrap', maxWidth: 160 },
+  dot:    { width: 6, height: 6, borderRadius: 3 },
+  dotOn:  { backgroundColor: 'rgba(152,212,250,0.85)' },
+  dotOff: { backgroundColor: 'rgba(152,212,250,0.18)' },
 });
 
 function SectionRow({
@@ -237,7 +250,7 @@ function SectionRow({
   weeklyData?: WeeklyData;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const meta = SECTION_LABELS[sectionKey];
+  const meta    = SECTION_LABELS[sectionKey];
   const preview = firstSentence(body);
   const hasMore = body.trim().length > preview.length + 2;
 
@@ -246,21 +259,22 @@ function SectionRow({
     setExpanded(e => !e);
   };
 
-  // Pick the right infographic for this section
   const renderInfographic = () => {
     if (!weeklyData) return null;
     switch (sectionKey) {
       case 'Emotional check-in':
         return <MoodBar score={weeklyData.moodScore} />;
       case 'Movement':
-        return <MovementStrip days={weeklyData.movementDays} />;
+        return weeklyData.movementDays?.length
+          ? <MovementGrid days={weeklyData.movementDays} />
+          : null;
       case 'Meals':
-        return weeklyData.mealDays
-          ? <MealStrip days={weeklyData.mealDays as any} />
+        return weeklyData.mealWeeks?.length
+          ? <MealWeekStrip weeks={weeklyData.mealWeeks as any} />
           : null;
       case 'Spending':
-        return weeklyData.spendDays
-          ? <SpendStrip days={weeklyData.spendDays as any} />
+        return weeklyData.spendCategories?.length
+          ? <SpendCategoryList categories={weeklyData.spendCategories} />
           : null;
       case 'Learnings':
         return <LearningCount count={weeklyData.learningCount} />;
@@ -275,25 +289,22 @@ function SectionRow({
       onPress={hasMore ? toggle : undefined}
       activeOpacity={hasMore ? 0.75 : 1}
     >
-      {/* Icon + label row */}
       <View style={styles.sectionHeader}>
         <View style={styles.sectionLeft}>
-          <Feather name={meta.iconName as any} size={12} color="rgba(152, 212, 250, 0.70)" />
+          <Feather name={meta.iconName as any} size={12} color="rgba(152,212,250,0.70)" />
           <Text style={styles.sectionLabel}>{sectionKey}</Text>
         </View>
         {hasMore && (
           <Feather
             name={expanded ? 'chevron-up' : 'chevron-down'}
             size={13}
-            color="rgba(152, 212, 250, 0.35)"
+            color="rgba(152,212,250,0.35)"
           />
         )}
       </View>
 
-      {/* Infographic (always visible) */}
       {renderInfographic()}
 
-      {/* Body — preview or full */}
       <Text style={[styles.sectionBody, { marginTop: 6 }]}>
         {expanded ? body : preview}
       </Text>
@@ -340,12 +351,17 @@ export default function WeeklyInsightCard() {
       setInsight(result);
     } catch (e: any) {
       if (e?.message === NOT_ENOUGH_DATA) setNotEnoughData(true);
-      else setError(e?.message ?? 'Could not load weekly insight.');
+      else setError(e?.message ?? 'Could not load monthly insight.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
+
+  // Month label e.g. "March 2026"
+  const monthLabel = insight
+    ? new Date(insight.weekStart + 'T12:00:00').toLocaleDateString([], { month: 'long', year: 'numeric' })
+    : new Date().toLocaleDateString([], { month: 'long', year: 'numeric' });
 
   const sections = insight ? parseSections(insight.insightText) : [];
 
@@ -353,7 +369,10 @@ export default function WeeklyInsightCard() {
     <View style={styles.card}>
       {/* ── Heading ── */}
       <View style={styles.headingRow}>
-        <Text style={styles.heading}>This week</Text>
+        <View>
+          <Text style={styles.heading}>Monthly insights</Text>
+          <Text style={styles.headingSub}>{monthLabel}</Text>
+        </View>
         <TouchableOpacity
           onPress={() => loadInsight(true)}
           disabled={refreshing || loading}
@@ -361,8 +380,8 @@ export default function WeeklyInsightCard() {
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           {refreshing
-            ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.85)" />
-            : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
+            ? <ActivityIndicator size="small" color="rgba(152,212,250,0.85)" />
+            : <Feather name="refresh-cw" size={13} color="rgba(152,212,250,0.65)" />}
         </TouchableOpacity>
       </View>
 
@@ -378,7 +397,7 @@ export default function WeeklyInsightCard() {
       {/* ── Not enough data ── */}
       {!loading && notEnoughData && (
         <Text style={styles.emptyText}>
-          Keep journaling — weekly insights appear once you have a summary for at least one day this week.
+          Keep journaling — monthly insights appear once you have at least one daily summary this month.
         </Text>
       )}
 
@@ -394,9 +413,7 @@ export default function WeeklyInsightCard() {
               <Text style={styles.statNum}>{insight.daysActive}</Text>
               <Text style={styles.statLabel}>days active</Text>
             </View>
-
-            <DayDots active={insight.daysActive} />
-
+            <DayDots active={insight.daysActive} total={insight.daysSummarised} />
             <View style={styles.statBlock}>
               <Text style={styles.statNum}>{insight.totalEntries}</Text>
               <Text style={styles.statLabel}>entries</Text>
@@ -423,111 +440,69 @@ export default function WeeklyInsightCard() {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 16,
-    backgroundColor: 'transparent',
-  },
+  card: { borderRadius: 20, padding: 16, marginBottom: 16, backgroundColor: 'transparent' },
 
-  // ── Header ─────────────────────────────────────────────────────────────────
   headingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
     marginBottom: 14,
   },
   heading: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: 'rgba(224, 242, 254, 0.95)',
-    fontFamily: 'Baskerville',
+    fontSize: 15, fontWeight: '500',
+    color: 'rgba(224,242,254,0.95)', fontFamily: 'Baskerville',
+  },
+  headingSub: {
+    fontSize: 11, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.50)', marginTop: 2,
   },
   refreshBtn: {
     width: 30, height: 30, borderRadius: 15,
-    backgroundColor: 'rgba(6, 26, 55, 0.55)',
-    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.18)',
+    backgroundColor: 'rgba(6,26,55,0.55)',
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.18)',
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // ── Stats ──────────────────────────────────────────────────────────────────
   statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(152, 212, 250, 0.05)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.10)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(152,212,250,0.05)',
+    borderRadius: 14, borderWidth: 1, borderColor: 'rgba(152,212,250,0.10)',
+    paddingHorizontal: 16, paddingVertical: 12, marginBottom: 12,
   },
   statBlock: { alignItems: 'center' },
   statNum: {
-    fontSize: 20,
-    fontWeight: '500',
-    color: 'rgba(224, 242, 254, 0.90)',
-    fontFamily: 'Baskerville',
+    fontSize: 20, fontWeight: '500',
+    color: 'rgba(224,242,254,0.90)', fontFamily: 'Baskerville',
   },
   statLabel: {
-    fontSize: 10,
-    color: 'rgba(152, 212, 250, 0.55)',
-    fontFamily: 'GillSans-Light',
-    marginTop: 1,
-    letterSpacing: 0.3,
+    fontSize: 10, color: 'rgba(152,212,250,0.55)',
+    fontFamily: 'GillSans-Light', marginTop: 1, letterSpacing: 0.3,
   },
 
-  // ── Sections ───────────────────────────────────────────────────────────────
   sections: { gap: 6 },
   sectionRow: {
-    backgroundColor: 'rgba(152, 212, 250, 0.04)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.09)',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    backgroundColor: 'rgba(152,212,250,0.04)',
+    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.09)',
+    paddingHorizontal: 14, paddingVertical: 11,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionLeft:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: 'rgba(152, 212, 250, 0.70)',
-    fontFamily: 'GillSans-Light',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
+    fontSize: 11, fontWeight: '500',
+    color: 'rgba(152,212,250,0.70)', fontFamily: 'GillSans-Light',
+    letterSpacing: 0.4, textTransform: 'uppercase',
   },
   sectionBody: {
-    fontSize: 13,
-    color: 'rgba(224, 242, 254, 0.75)',
-    lineHeight: 20,
-    fontFamily: 'GillSans-Light',
+    fontSize: 13, color: 'rgba(224,242,254,0.75)',
+    lineHeight: 20, fontFamily: 'GillSans-Light',
   },
 
-  // ── Footer ─────────────────────────────────────────────────────────────────
   lastUpdated: {
-    fontSize: 11,
-    color: 'rgba(152, 212, 250, 0.45)',
-    marginTop: 10,
-    textAlign: 'right',
-    fontFamily: 'GillSans-Light',
+    fontSize: 11, color: 'rgba(152,212,250,0.45)',
+    marginTop: 10, textAlign: 'right', fontFamily: 'GillSans-Light',
   },
-
-  // ── Skeleton ───────────────────────────────────────────────────────────────
-  skeletonLine: {
-    height: 13,
-    backgroundColor: 'rgba(9, 41, 173, 0.08)',
-    borderRadius: 7,
-  },
+  skeletonLine: { height: 13, backgroundColor: 'rgba(9,41,173,0.08)', borderRadius: 7 },
   emptyText: {
-    fontSize: 14, color: 'rgba(152, 212, 250, 0.60)', lineHeight: 22,
-    textAlign: 'center', paddingVertical: 8, fontStyle: 'italic',
-    fontFamily: 'GillSans-Light',
+    fontSize: 14, color: 'rgba(152,212,250,0.60)', lineHeight: 22,
+    textAlign: 'center', paddingVertical: 8, fontStyle: 'italic', fontFamily: 'GillSans-Light',
   },
   errorText: { fontSize: 14, color: '#e63946', lineHeight: 22, fontFamily: 'GillSans-Light' },
 });
