@@ -43,13 +43,11 @@ export default function HomeScreen() {
       onStatus: (s) => setStatus(s),
       onPendingClip: (clip) => {
         setPendingClips(prev => [...prev, clip]);
+        // Auto-transcribe as soon as the recording is saved
+        handleTranscribeNow();
       },
       onError: (err) => {
-        if (err === '__BATCH_READY__') {
-          handleTranscribeNow();
-        } else {
-          Alert.alert('Error', err);
-        }
+        Alert.alert('Error', err);
       },
     });
   }, []);
@@ -131,24 +129,6 @@ export default function HomeScreen() {
     }
   };
 
-  const handleDiscardPending = () => {
-    Alert.alert(
-      'Discard Clips',
-      `Delete all ${pendingClips.length} unprocessed audio clip${pendingClips.length !== 1 ? 's' : ''}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: async () => {
-            await StorageService.clearPendingClips();
-            setPendingClips([]);
-          },
-        },
-      ],
-    );
-  };
-
   const getStatusText = () => {
     switch (status) {
       case 'idle':      return 'Tap to record';
@@ -204,43 +184,19 @@ export default function HomeScreen() {
                 {getStatusText()}
               </Text>
 
-              {pendingClips.length > 0 && (
-                <Text style={styles.pendingCount}>
-                  {pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} pending
-                </Text>
-              )}
             </View>
           </ImageBackground>
         </View>
 
-        {/* Pending clips banner */}
-        {pendingClips.length > 0 && (
+        {/* Transcription progress banner */}
+        {isTranscribing && (
           <View style={styles.pendingBanner}>
-            {isTranscribing ? (
-              <View style={styles.pendingRow}>
-                <ActivityIndicator color="#f4a261" size="small" />
-                <Text style={styles.pendingText}>
-                  Transcribing {batchProgress!.completed}/{batchProgress!.total}...
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.pendingRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
-                  <Feather name="music" size={12} color="#f4a261" />
-                  <Text style={styles.pendingText}>
-                    {' '}{pendingClips.length} clip{pendingClips.length !== 1 ? 's' : ''} saved locally
-                  </Text>
-                </View>
-                <View style={styles.pendingActions}>
-                  <TouchableOpacity style={styles.transcribeButton} onPress={handleTranscribeNow}>
-                    <Text style={styles.transcribeButtonText}>Transcribe</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.discardButton} onPress={handleDiscardPending}>
-                    <Text style={styles.discardButtonText}>Discard</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            <View style={styles.pendingRow}>
+              <ActivityIndicator color="#f4a261" size="small" />
+              <Text style={styles.pendingText}>
+                Transcribing…
+              </Text>
+            </View>
           </View>
         )}
 
