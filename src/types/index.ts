@@ -58,6 +58,7 @@ export interface WeeklyData {
   mealWeeks?: ('good' | 'mixed' | 'poor')[];     // one entry per week of the month
   meditationDays?: boolean[];                     // one bool per day of the month so far
   emotionCounts?: EmotionCount[];                 // emotions ranked by how many entries reflected them
+  recurringTopics?: { word: string; count: number }[]; // word cloud data, sorted by count desc
 }
 
 export interface WeeklyInsight {

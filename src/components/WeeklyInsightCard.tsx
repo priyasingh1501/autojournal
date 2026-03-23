@@ -195,6 +195,45 @@ function SpendCategoryList({ categories }: { categories: SpendCategory[] }) {
   );
 }
 
+/** Word cloud for recurring topics — size + opacity scale with frequency */
+function WordCloud({ topics }: { topics: { word: string; count: number }[] }) {
+  const maxCount = Math.max(...topics.map(t => t.count), 1);
+  // Shuffle slightly so it doesn't look like a ranked list
+  const shuffled = [...topics].sort(() => Math.random() - 0.5);
+  return (
+    <View style={cloudStyles.container}>
+      {shuffled.map(t => {
+        const ratio    = t.count / maxCount;
+        const fontSize = Math.round(11 + ratio * 12);      // 11 – 23 px
+        const opacity  = 0.40 + ratio * 0.60;              // 0.40 – 1.0
+        const bg       = `rgba(147,197,253,${(0.05 + ratio * 0.12).toFixed(2)})`;
+        const border   = `rgba(147,197,253,${(0.15 + ratio * 0.30).toFixed(2)})`;
+        return (
+          <View key={t.word} style={[cloudStyles.chip, { backgroundColor: bg, borderColor: border }]}>
+            <Text style={[cloudStyles.word, { fontSize, opacity }]}>{t.word}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const cloudStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    gap: 7, marginTop: 8,
+  },
+  chip: {
+    borderRadius: 20, borderWidth: 1,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  word: {
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(224,242,254,0.90)',
+    lineHeight: 20,
+  },
+});
+
 /** Learning count chip */
 function LearningCount({ count }: { count: number }) {
   if (count === 0) return null;
@@ -318,6 +357,10 @@ function SectionRow({
       case 'Spending':
         return weeklyData.spendCategories?.length
           ? <SpendCategoryList categories={weeklyData.spendCategories} />
+          : null;
+      case 'Recurring thoughts':
+        return weeklyData.recurringTopics?.length
+          ? <WordCloud topics={weeklyData.recurringTopics} />
           : null;
       case 'Learnings':
         return <LearningCount count={weeklyData.learningCount} />;
