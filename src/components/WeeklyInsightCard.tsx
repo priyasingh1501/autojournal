@@ -69,9 +69,9 @@ function firstSentence(body: string): string {
 
 /** Emotion bar chart — horizontal bars proportional to entry count */
 const EMOTION_SENTIMENT_COLOR = {
-  positive: { bar: 'rgba(110,231,183,0.55)', text: 'rgba(110,231,183,0.90)', track: 'rgba(110,231,183,0.10)' },
-  neutral:  { bar: 'rgba(147,197,253,0.45)', text: 'rgba(147,197,253,0.80)', track: 'rgba(147,197,253,0.08)' },
-  negative: { bar: 'rgba(252,165,165,0.50)', text: 'rgba(252,165,165,0.90)', track: 'rgba(252,165,165,0.10)' },
+  positive: { bar: 'rgba(236,72,153,0.65)',  text: 'rgba(249,168,212,0.95)', track: 'rgba(236,72,153,0.10)' },
+  neutral:  { bar: 'rgba(236,72,153,0.42)',  text: 'rgba(249,168,212,0.75)', track: 'rgba(236,72,153,0.07)' },
+  negative: { bar: 'rgba(190,24,93,0.65)',   text: 'rgba(249,168,212,0.85)', track: 'rgba(190,24,93,0.10)'  },
 };
 
 function EmotionBars({ emotions }: { emotions: EmotionCount[] }) {

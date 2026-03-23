@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 export const SECTION_LABELS: Record<string, { iconName: string; color: string }> = {
-  'Emotional check-in': { iconName: 'activity',     color: 'rgba(224, 242, 254, 0.90)' },
+  'Emotional check-in': { iconName: 'activity',     color: 'rgba(236, 72, 153, 0.90)'  },
   'Meals':              { iconName: 'coffee',        color: 'rgba(224, 242, 254, 0.90)' },
   'Movement':           { iconName: 'zap',           color: 'rgba(224, 242, 254, 0.90)' },
   'Meditation':         { iconName: 'moon',          color: 'rgba(196, 181, 253, 0.90)' },
