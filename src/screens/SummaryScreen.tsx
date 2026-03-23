@@ -4,8 +4,7 @@ import {
   View,
   Text,
   StyleSheet,
-  Animated,
-  PanResponder,
+  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
@@ -28,8 +27,6 @@ import TalkScreen from './TalkScreen';
 import ChatScreen from './ChatScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.30;
-const VELOCITY_THRESHOLD = 0.5;
 
 // ── markdown styles ───────────────────────────────────────────────────────────
 const markdownStyles = {
@@ -80,27 +77,22 @@ export default function SummaryScreen() {
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [generatingDate, setGeneratingDate] = useState<string | null>(null);
-  const [callSummary, setCallSummary]   = useState<DailySummary | null>(null);
-  const [chatSummary, setChatSummary]   = useState<DailySummary | null>(null);
+  const [callSummary, setCallSummary] = useState<DailySummary | null>(null);
+  const [chatSummary, setChatSummary] = useState<DailySummary | null>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
 
-  const pan = useRef(new Animated.ValueXY()).current;
-  const isSwiping = useRef(false);
-  // Always-fresh refs so PanResponder callbacks never close over stale state
+  const flatListRef = useRef<FlatList<DailySummary>>(null);
   const currentIndexRef = useRef(0);
-  const summariesRef    = useRef<DailySummary[]>([]);
-  // Ref to the top card's ScrollView — used to disable it when we steal a horizontal swipe
-  const cardScrollRef = useRef<ScrollView>(null);
+  const summariesRef = useRef<DailySummary[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       loadSummaries().then(() => {
-        // Jump to a specific date when navigated from Insights tab
         const jumpToDate: string | undefined = route?.params?.jumpToDate;
         if (jumpToDate) {
           const idx = summariesRef.current.findIndex(s => s.date === jumpToDate);
           if (idx !== -1) {
-            setCurrentIndex(idx);
-            currentIndexRef.current = idx;
+            scrollToIndex(idx, false);
           }
         }
       });
@@ -113,91 +105,19 @@ export default function SummaryScreen() {
     const valid = all.filter(Boolean) as DailySummary[];
     summariesRef.current = valid;
     setSummaries(valid);
-    setCurrentIndex(prev => {
-      const next = valid.length === 0 ? 0 : Math.min(prev, valid.length - 1);
-      currentIndexRef.current = next;
-      return next;
-    });
+    const clamped = valid.length === 0 ? 0 : Math.min(currentIndexRef.current, valid.length - 1);
+    currentIndexRef.current = clamped;
+    setCurrentIndex(clamped);
   };
 
-  // ── swipe mechanics ──────────────────────────────────────────────────────
-  // Use refs so the PanResponder (created once) always sees fresh values.
-  const snapBack = useCallback(() => {
-    Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: true, friction: 7 }).start();
-  }, []);
-
-  // Put snapBack in a ref so the one-time panResponder closure can call the latest version
-  const snapBackRef = useRef(snapBack);
-  snapBackRef.current = snapBack;
-
-  const swipeOff = useCallback((direction: 1 | -1) => {
-    if (isSwiping.current) return;
-    const idx = currentIndexRef.current;
-    const total = summariesRef.current.length;
-    // swipe left (direction -1) → newer → decrement; snap back if already at newest (idx 0)
-    // swipe right (direction  1) → older → increment; snap back if already at oldest
-    if (direction === -1 && idx === 0) { snapBackRef.current(); return; }
-    if (direction ===  1 && idx >= total - 1) { snapBackRef.current(); return; }
-
-    isSwiping.current = true;
-    Animated.timing(pan, {
-      toValue: { x: direction * SCREEN_WIDTH * 1.5, y: 0 },
-      duration: 260,
-      useNativeDriver: true,
-    }).start(() => {
-      pan.setValue({ x: 0, y: 0 });
-      const next = direction === 1 ? idx + 1 : idx - 1;
-      currentIndexRef.current = next;
-      setCurrentIndex(next);
-      isSwiping.current = false;
-    });
-  }, []);
-
-  const swipeOffRef = useRef(swipeOff);
-  swipeOffRef.current = swipeOff;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => false,
-
-      // CAPTURE phase — fires top-down BEFORE children process the move.
-      // Returning true here steals the gesture from the ScrollView or any child.
-      // Ratio 1.8 + 12px minimum: catches clear horizontal swipes without
-      // accidentally stealing button taps (taps have near-zero dx).
-      onMoveShouldSetPanResponderCapture: (_, gs) => {
-        if (isSwiping.current) return false;
-        const isHoriz = Math.abs(gs.dx) > Math.abs(gs.dy) * 1.8 && Math.abs(gs.dx) > 12;
-        if (isHoriz) {
-          // Immediately lock the card ScrollView so it can't start scrolling
-          // vertically while we animate the card sideways (native bridge call,
-          // bypasses JS re-render delay).
-          cardScrollRef.current?.setNativeProps?.({ scrollEnabled: false });
-        }
-        return isHoriz;
-      },
-
-      // Keep bubble phase OFF — if we returned false in capture the child
-      // (ScrollView or TouchableOpacity) rightfully owns this gesture; stealing
-      // it here would break vertical scroll and button taps on older cards.
-      onMoveShouldSetPanResponder: () => false,
-
-      onPanResponderMove: (_, gs) => {
-        pan.setValue({ x: gs.dx, y: gs.dy * 0.06 });
-      },
-      onPanResponderRelease: (_, gs) => {
-        cardScrollRef.current?.setNativeProps?.({ scrollEnabled: true });
-        const shouldSwipe =
-          Math.abs(gs.dx) > SWIPE_THRESHOLD || Math.abs(gs.vx) > VELOCITY_THRESHOLD;
-        if (shouldSwipe) swipeOffRef.current(gs.dx > 0 ? 1 : -1);
-        else snapBackRef.current();
-      },
-      onPanResponderTerminate: () => {
-        cardScrollRef.current?.setNativeProps?.({ scrollEnabled: true });
-        snapBackRef.current();
-      },
-    })
-  ).current;
+  const scrollToIndex = (idx: number, animated = true) => {
+    currentIndexRef.current = idx;
+    setCurrentIndex(idx);
+    // Slight delay so FlatList has mounted/updated before scrolling
+    setTimeout(() => {
+      flatListRef.current?.scrollToIndex({ index: idx, animated, viewPosition: 0 });
+    }, 50);
+  };
 
   // ── generate / download ──────────────────────────────────────────────────
   const today = new Date().toISOString().split('T')[0];
@@ -214,9 +134,11 @@ export default function SummaryScreen() {
       const result = await generateDailySummary(transcripts, date);
       setSummaries(prev => {
         const filtered = prev.filter(s => s.date !== date);
-        return [result, ...filtered].sort((a, b) => b.date.localeCompare(a.date));
+        const next = [result, ...filtered].sort((a, b) => b.date.localeCompare(a.date));
+        summariesRef.current = next;
+        return next;
       });
-      setCurrentIndex(0);
+      scrollToIndex(0);
     } catch (err: any) {
       Alert.alert('Error', err.message);
     } finally {
@@ -253,14 +175,13 @@ export default function SummaryScreen() {
         UTI: 'public.plain-text',
       });
     } catch (err: any) {
-      Alert.alert('Export failed', err?.message ?? 'Could not export the summary. Please try again.');
+      Alert.alert('Export failed', err?.message ?? 'Could not export the summary.');
     }
   };
 
   // ── card content ─────────────────────────────────────────────────────────
-  const renderCardContent = (item: DailySummary, isTop: boolean, key?: string) => (
+  const renderCardContent = (item: DailySummary) => (
     <>
-      {/* Jellyfish image header */}
       {item.imageUri ? (
         <ImageBackground
           source={{ uri: item.imageUri }}
@@ -268,12 +189,10 @@ export default function SummaryScreen() {
           imageStyle={styles.cardImageStyle}
           resizeMode="cover"
         >
-          {/* Fade-to-card gradient at the bottom */}
           <LinearGradient
             colors={['transparent', 'rgba(2,6,14,0.55)', 'rgba(2,6,14,0.92)']}
             style={StyleSheet.absoluteFill}
           />
-          {/* Date + actions pinned over the image */}
           <View style={styles.cardHeaderOnImage}>
             <View style={styles.cardHeaderLeft}>
               <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
@@ -282,40 +201,6 @@ export default function SummaryScreen() {
                 {' · '}generated {formatCreatedAt(item.createdAt)}
               </Text>
             </View>
-            {isTop && (
-              <View style={styles.cardActions}>
-                <TouchableOpacity
-                  onPress={() => handleDownload(item)}
-                  style={styles.actionBtn}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Feather name="download" size={13} color="rgba(152, 212, 250, 0.85)" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleGenerate(item.date)}
-                  disabled={!!generatingDate}
-                  style={styles.actionBtn}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  {generatingDate === item.date
-                    ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
-                    : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </ImageBackground>
-      ) : (
-        /* Fallback header when no image yet */
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderLeft}>
-            <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
-            <Text style={styles.cardMeta}>
-              {item.transcriptCount} entr{item.transcriptCount !== 1 ? 'ies' : 'y'}
-              {' · '}generated {formatCreatedAt(item.createdAt)}
-            </Text>
-          </View>
-          {isTop && (
             <View style={styles.cardActions}>
               <TouchableOpacity
                 onPress={() => handleDownload(item)}
@@ -335,33 +220,51 @@ export default function SummaryScreen() {
                   : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
               </TouchableOpacity>
             </View>
-          )}
+          </View>
+        </ImageBackground>
+      ) : (
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <Text style={styles.cardDate}>{formatDate(item.date)}</Text>
+            <Text style={styles.cardMeta}>
+              {item.transcriptCount} entr{item.transcriptCount !== 1 ? 'ies' : 'y'}
+              {' · '}generated {formatCreatedAt(item.createdAt)}
+            </Text>
+          </View>
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              onPress={() => handleDownload(item)}
+              style={styles.actionBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name="download" size={13} color="rgba(152, 212, 250, 0.85)" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => handleGenerate(item.date)}
+              disabled={!!generatingDate}
+              style={styles.actionBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              {generatingDate === item.date
+                ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.65)" />
+                : <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.65)" />}
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
-      {/* Scrollable body */}
       <ScrollView
-        ref={isTop ? cardScrollRef : undefined}
         style={styles.cardScrollView}
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={isTop}
-        // directionalLockEnabled: once scroll direction is determined iOS won't
-        // fight horizontal swipes; Android ignores this prop but that's fine.
-        directionalLockEnabled={true}
-        // nestedScrollEnabled only needed inside another ScrollView — removing it
-        // stops Android from routing events through the nested-scroll system,
-        // letting the parent PanResponder capture phase work correctly.
-        nestedScrollEnabled={false}
         contentContainerStyle={styles.cardScroll}
+        showsVerticalScrollIndicator={false}
+        directionalLockEnabled={true}
       >
-        {/* Five-section insights */}
         {item.insightText ? (
           <View style={styles.insightSection}>
             {renderInsightSections(item.insightText)}
           </View>
         ) : null}
 
-        {/* Reflection — generated from Call / Chat session */}
         {item.reflectionText ? (
           <>
             <View style={styles.divider} />
@@ -370,13 +273,11 @@ export default function SummaryScreen() {
           </>
         ) : null}
 
-        {/* Full breakdown */}
         <View style={styles.divider} />
         <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
         <Markdown style={markdownStyles}>{item.summary}</Markdown>
       </ScrollView>
 
-      {/* Sticky dual CTA — Call + Chat */}
       <View style={styles.ctaRow}>
         <TouchableOpacity
           style={[styles.ctaBtn, styles.ctaBtnCall]}
@@ -386,9 +287,7 @@ export default function SummaryScreen() {
           <Feather name="phone" size={15} color="rgba(224, 242, 254, 0.95)" />
           <Text style={styles.ctaBtnText}>Call</Text>
         </TouchableOpacity>
-
         <View style={styles.ctaDivider} />
-
         <TouchableOpacity
           style={[styles.ctaBtn, styles.ctaBtnChat]}
           onPress={() => setChatSummary(item)}
@@ -401,28 +300,17 @@ export default function SummaryScreen() {
     </>
   );
 
-  // ── card stack render ─────────────────────────────────────────────────────
-  const current = summaries[currentIndex];
+  // ── FlatList item ─────────────────────────────────────────────────────────
+  const renderItem = useCallback(({ item }: { item: DailySummary }) => (
+    <View style={[styles.page, { height: containerHeight || undefined }]}>
+      <View style={styles.card}>
+        {renderCardContent(item)}
+      </View>
+    </View>
+  ), [containerHeight, generatingDate]);
+
   const todaySummary = summaries.find(s => s.date === today);
   const isGeneratingToday = generatingDate === today;
-
-  const rotate = pan.x.interpolate({
-    inputRange: [-SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2],
-    outputRange: ['-8deg', '0deg', '8deg'],
-    extrapolate: 'clamp',
-  });
-
-  // Overlay opacity for left/right swipe direction labels
-  const leftLabelOpacity = pan.x.interpolate({
-    inputRange: [-SCREEN_WIDTH / 3, -40],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-  const rightLabelOpacity = pan.x.interpolate({
-    inputRange: [40, SCREEN_WIDTH / 3],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -430,7 +318,7 @@ export default function SummaryScreen() {
       <View style={styles.topBar}>
         <Text style={styles.screenTitle}>Summaries</Text>
         <View style={styles.topBarRight}>
-          {summaries.length > 0 && currentIndex < summaries.length && (
+          {summaries.length > 0 && (
             <Text style={styles.counter}>{currentIndex + 1} / {summaries.length}</Text>
           )}
           <TouchableOpacity
@@ -448,85 +336,74 @@ export default function SummaryScreen() {
         </View>
       </View>
 
-      {/* Card stack — fills all space between top bar and tab bar */}
-      <View style={styles.stackContainer}>
+      {/* Card area */}
+      <View
+        style={styles.stackContainer}
+        onLayout={e => setContainerHeight(e.nativeEvent.layout.height)}
+      >
         {summaries.length === 0 ? (
-          /* Empty state */
-          <View style={[styles.card, styles.placeholderCard]}>
+          <View style={styles.emptyCard}>
             <Feather name="star" size={44} color="rgba(152, 212, 250, 0.40)" style={{ marginBottom: 16 }} />
             <Text style={styles.emptyTitle}>No summaries yet</Text>
             <Text style={styles.emptySubtitle}>
-              Summaries auto-generate at 11:59 PM.{'\n'}Tap below to generate today's now.
+              Summaries auto-generate at 11:59 PM.{'\n'}Tap above to generate today's now.
             </Text>
           </View>
-        ) : currentIndex >= summaries.length ? (
-          /* All swiped through */
-          <View style={[styles.card, styles.placeholderCard]}>
-            <Feather name="check-circle" size={44} color="rgba(152, 212, 250, 0.40)" style={{ marginBottom: 16 }} />
-            <Text style={styles.emptyTitle}>All caught up!</Text>
-            <Text style={styles.emptySubtitle}>You've reviewed all your summaries.</Text>
-            <TouchableOpacity style={styles.restartBtn} onPress={() => setCurrentIndex(0)}>
-              <Text style={styles.restartBtnText}>← Start over</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            {/* Peek card — the next card sits stationary behind the top card */}
-            {currentIndex + 1 < summaries.length && (
-              <View style={[styles.card, styles.peekCard]} pointerEvents="none">
-                {renderCardContent(summaries[currentIndex + 1], false)}
-              </View>
-            )}
-
-            {/* Top card — draggable */}
-            <Animated.View
-              style={[styles.card, {
-                transform: [
-                  { translateX: pan.x },
-                  { translateY: pan.y },
-                  { rotate },
-                ],
-              }]}
-              {...panResponder.panHandlers}
-            >
-              {renderCardContent(current, true)}
-
-              {/* Swipe direction overlays */}
-              <Animated.View style={[styles.swipeLabel, styles.swipeLabelLeft, { opacity: leftLabelOpacity }]}>
-                <Text style={styles.swipeLabelText}>← NEWER</Text>
-              </Animated.View>
-              <Animated.View style={[styles.swipeLabel, styles.swipeLabelRight, { opacity: rightLabelOpacity }]}>
-                <Text style={styles.swipeLabelText}>OLDER →</Text>
-              </Animated.View>
-            </Animated.View>
-          </>
-        )}
+        ) : containerHeight > 0 ? (
+          <FlatList
+            ref={flatListRef}
+            data={summaries}
+            keyExtractor={item => item.date}
+            renderItem={renderItem}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            initialScrollIndex={currentIndex}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index,
+            })}
+            onMomentumScrollEnd={e => {
+              const newIdx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+              currentIndexRef.current = newIdx;
+              setCurrentIndex(newIdx);
+            }}
+            // Scroll-to-index failures (sparse data) — fail silently
+            onScrollToIndexFailed={info => {
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+              }, 100);
+            }}
+          />
+        ) : null}
       </View>
 
-      {/* Bottom nav row — sits outside the card, above the tab bar */}
-      {summaries.length > 0 && currentIndex < summaries.length && (
+      {/* Bottom nav */}
+      {summaries.length > 0 && (
         <View style={styles.navRow}>
           {currentIndex > 0 ? (
             <TouchableOpacity
               style={styles.navBtn}
-              onPress={() => {
-                if (!isSwiping.current) {
-                  const next = currentIndexRef.current - 1;
-                  currentIndexRef.current = next;
-                  setCurrentIndex(next);
-                }
-              }}
+              onPress={() => scrollToIndex(currentIndex - 1)}
             >
-              <Text style={styles.navBtnText}>Newer →</Text>
+              <Text style={styles.navBtnText}>← Newer</Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.navPlaceholder} />
           )}
           <Text style={styles.swipeHint}>swipe to go back in time</Text>
-          <View style={styles.navPlaceholder} />
+          {currentIndex < summaries.length - 1 ? (
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => scrollToIndex(currentIndex + 1)}
+            >
+              <Text style={styles.navBtnText}>Older →</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.navPlaceholder} />
+          )}
         </View>
       )}
-
 
       {/* Call modal */}
       <Modal
@@ -573,199 +450,129 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 8,
   },
-  topBarRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+  topBarRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   screenTitle: { fontSize: 22, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
   counter: { fontSize: 13, color: 'rgba(152, 212, 250, 0.50)', fontFamily: 'GillSans-Light' },
   generateLink: {
-    fontSize: 14,
-    color: 'rgba(152, 212, 250, 0.80)',
-    fontFamily: 'GillSans-Light',
-    letterSpacing: 0.2,
+    fontSize: 14, color: 'rgba(152, 212, 250, 0.80)',
+    fontFamily: 'GillSans-Light', letterSpacing: 0.2,
   },
 
-  // ── Card stack container ─────────────────────────────────────────────────
-  stackContainer: {
-    flex: 1,
-    backgroundColor: '#02060E',
+  // ── Stack container + pages ───────────────────────────────────────────────
+  stackContainer: { flex: 1 },
+
+  // Each FlatList page is exactly SCREEN_WIDTH wide; card sits inside with margin
+  page: {
+    width: SCREEN_WIDTH,
+    paddingHorizontal: 16,
   },
 
-  // ── Cards ─────────────────────────────────────────────────────────────────
   card: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 16,
-    right: 16,
+    flex: 1,
     borderRadius: 20,
     overflow: 'hidden',
     backgroundColor: '#02060E',
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.13)',
   },
-  peekCard: {
-    // Sits behind the top card: slightly smaller + shifted down to create a stack illusion
-    transform: [{ scale: 0.95 }, { translateY: 10 }],
-    opacity: 0.55,
-  },
-  cardBehind: {
-    // animated scale + translateY applied inline
-  },
-  cardBehind2: {
-    transform: [{ scale: 0.88 }, { translateY: 24 }],
-    opacity: 0.5,
-  },
-  placeholderCard: {
+
+  // ── Empty state ───────────────────────────────────────────────────────────
+  emptyCard: {
+    flex: 1,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.13)',
+    backgroundColor: '#02060E',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyTitle: {
+    fontSize: 20, fontWeight: '500',
+    color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Baskerville',
+  },
+  emptySubtitle: {
+    fontSize: 14, color: 'rgba(152, 212, 250, 0.60)',
+    textAlign: 'center', lineHeight: 22,
+    paddingHorizontal: 28, fontFamily: 'GillSans-Light',
   },
 
   // ── Card image header ─────────────────────────────────────────────────────
-  cardImageHeader: {
-    width: '100%',
-    height: 190,
-    justifyContent: 'flex-end',
-  },
-  cardImageStyle: {
-    opacity: 0.90,
-  },
+  cardImageHeader: { width: '100%', height: 190, justifyContent: 'flex-end' },
+  cardImageStyle: { opacity: 0.90 },
   cardHeaderOnImage: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    paddingHorizontal: 18,
-    paddingBottom: 14,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'flex-end', paddingHorizontal: 18, paddingBottom: 14,
   },
 
   // ── Card inner content ────────────────────────────────────────────────────
-  cardScroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 24 },
   cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    padding: 18,
-    paddingBottom: 0,
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'flex-start', padding: 18, paddingBottom: 0,
   },
   cardHeaderLeft: { flex: 1 },
-  cardDate: { fontSize: 20, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Baskerville' },
+  cardDate: {
+    fontSize: 20, fontWeight: '500',
+    color: 'rgba(224, 242, 254, 0.95)', marginBottom: 3, fontFamily: 'Baskerville',
+  },
   cardMeta: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: 'rgba(2, 6, 14, 0.60)',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.20)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.20)',
+    alignItems: 'center', justifyContent: 'center',
   },
 
   cardScrollView: { flex: 1, backgroundColor: '#02060E' },
+  cardScroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 24 },
   insightSection: { marginBottom: 8 },
-  divider: { height: 1, backgroundColor: 'rgba(9, 41, 173, 0.08)', marginBottom: 12, marginTop: 4 },
+  divider: {
+    height: 1, backgroundColor: 'rgba(9, 41, 173, 0.08)',
+    marginBottom: 12, marginTop: 4,
+  },
   breakdownLabel: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: 'rgba(152, 212, 250, 0.60)',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-    fontFamily: 'GillSans-Light',
+    fontSize: 10, fontWeight: '500',
+    color: 'rgba(152, 212, 250, 0.60)', letterSpacing: 0.8,
+    marginBottom: 8, fontFamily: 'GillSans-Light',
   },
   reflectionText: {
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 14, lineHeight: 22,
     color: 'rgba(224, 242, 254, 0.75)',
-    fontFamily: 'Baskerville',
-    fontStyle: 'italic',
-    marginBottom: 4,
+    fontFamily: 'Baskerville', fontStyle: 'italic', marginBottom: 4,
   },
-
-  // ── Swipe direction labels ─────────────────────────────────────────────────
-  swipeLabel: {
-    position: 'absolute',
-    top: 22,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 2.5,
-  },
-  swipeLabelLeft: { left: 16, borderColor: '#98D4FA' },
-  swipeLabelRight: { right: 16, borderColor: '#98D4FA' },
-  swipeLabelText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: 'rgba(152, 212, 250, 0.85)',
-    letterSpacing: 1.5,
-    fontFamily: 'GillSans-Light',
-  },
-
-  // ── Empty / done states ───────────────────────────────────────────────────
-  emptyTitle: { fontSize: 20, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', marginBottom: 8, fontFamily: 'Baskerville' },
-  emptySubtitle: {
-    fontSize: 14,
-    color: 'rgba(152, 212, 250, 0.60)',
-    textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: 28,
-    fontFamily: 'GillSans-Light',
-  },
-  restartBtn: {
-    marginTop: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(9, 41, 173, 0.08)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.20)',
-  },
-  restartBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 14, fontWeight: '500', fontFamily: 'GillSans-Light' },
 
   // ── Bottom nav ─────────────────────────────────────────────────────────────
   navRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 10,
   },
   navBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 14, paddingVertical: 7,
     backgroundColor: 'rgba(9, 41, 173, 0.08)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.20)',
+    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.20)',
   },
-  navBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
+  navBtnText: {
+    color: 'rgba(152, 212, 250, 0.85)', fontSize: 13,
+    fontWeight: '500', fontFamily: 'GillSans-Light',
+  },
   navPlaceholder: { width: 80 },
   swipeHint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', fontFamily: 'GillSans-Light' },
 
-
-  // ── Dual CTA row — sticky at card bottom ─────────────────────────────────
+  // ── Dual CTA row ──────────────────────────────────────────────────────────
   ctaRow: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(152, 212, 250, 0.12)',
+    borderTopWidth: 1, borderTopColor: 'rgba(152, 212, 250, 0.12)',
   },
   ctaBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    paddingVertical: 15,
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 7, paddingVertical: 15,
   },
   ctaBtnCall: { backgroundColor: '#0929AD' },
   ctaBtnChat: { backgroundColor: 'rgba(9, 41, 173, 0.45)' },
   ctaDivider: { width: 1, backgroundColor: 'rgba(152, 212, 250, 0.15)' },
   ctaBtnText: {
-    fontSize: 15,
-    color: 'rgba(224, 242, 254, 0.95)',
-    fontFamily: 'GillSans-Light',
-    letterSpacing: 0.2,
+    fontSize: 15, color: 'rgba(224, 242, 254, 0.95)',
+    fontFamily: 'GillSans-Light', letterSpacing: 0.2,
   },
 });
