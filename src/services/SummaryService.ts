@@ -89,6 +89,7 @@ PART 1 — Categorised daily summary (strict markdown):
 ## Meals & Food
 ## Spends & Expenses
 ## Health & Fitness
+## Meditation & Mindfulness
 ## Tasks & Decisions
 ## Highlights
 
@@ -96,6 +97,7 @@ Under each header, use short bullet points (- item). Be concise.
 If an entry mentions a price, amount, or purchase → Spends & Expenses.
 If an entry mentions food, eating, drinking, restaurant → Meals & Food.
 If an entry mentions exercise, gym, steps, sport → Health & Fitness.
+If an entry mentions meditation, breathwork, mindfulness, pranayama, sitting practice, journaling intention → Meditation & Mindfulness.
 If an entry mentions reading a book, something learned at work, a new skill, a new observation or realisation → Learnings.
 Write in second person ("You..."). Warm and personal tone. Total length 150–400 words.
 
@@ -103,10 +105,11 @@ Then output exactly this line on its own:
 ===INSIGHTS===
 
 PART 2 — Daily personal insight (plain text only, no markdown):
-Use EXACTLY these six section headings, each on its own line, followed by 1–2 sentences:
+Use EXACTLY these seven section headings, each on its own line, followed by 1–2 sentences:
   Emotional check-in:
   Meals:
   Movement:
+  Meditation:
   Spending:
   Recurring thoughts:
   Learnings:
@@ -116,6 +119,7 @@ Rules:
 - Be specific — reference actual things from the entries.
 - For Meals: flag any unhealthy patterns (junk food, skipped meals, late-night eating). Say "Looks balanced" if nothing concerning.
 - For Movement: call out if there was no workout or physical activity today. Mention what was done if there was.
+- For Meditation: note any meditation, breathwork, mindfulness, or pranayama practice. Say "None logged today" if not mentioned.
 - For Spending: give a short qualitative note — high/low/unusual. Say "No spending logged" if nothing mentioned.
 - For Recurring thoughts: name actual themes or concerns that appear more than once, or say "None that stood out today."
 - For Learnings: note anything the person read, studied, learned at work, a new skill practised, or a meaningful new observation. Say "Nothing specific logged today" if nothing stands out.

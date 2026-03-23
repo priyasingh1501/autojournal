@@ -98,6 +98,24 @@ function MovementGrid({ days }: { days: boolean[] }) {
   );
 }
 
+/** Monthly meditation grid — same layout as movement, purple accent */
+function MeditationGrid({ days }: { days: boolean[] }) {
+  const rows: boolean[][] = [];
+  for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
+  return (
+    <View style={{ gap: 5, marginTop: 7 }}>
+      {rows.map((row, wi) => (
+        <View key={wi} style={infoStyles.gridRow}>
+          <Text style={infoStyles.weekLabel}>W{wi + 1}</Text>
+          {row.map((active, di) => (
+            <View key={di} style={[infoStyles.gridDot, active ? infoStyles.meditationDotOn : infoStyles.gridDotOff]} />
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** Weekly meal quality strip — W1 W2 W3 W4 coloured circles */
 const MEAL_WEEK_CFG = {
   good:  { bg: 'rgba(110,231,183,0.18)', border: 'rgba(110,231,183,0.55)', text: 'rgba(110,231,183,0.95)' },
@@ -185,8 +203,9 @@ const infoStyles = StyleSheet.create({
   gridRow:   { flexDirection: 'row', alignItems: 'center', gap: 5 },
   weekLabel: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', width: 18 },
   gridDot:   { width: 14, height: 14, borderRadius: 7 },
-  gridDotOn:  { backgroundColor: 'rgba(110,231,183,0.22)', borderWidth: 1, borderColor: 'rgba(110,231,183,0.55)' },
-  gridDotOff: { backgroundColor: 'rgba(152,212,250,0.05)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)' },
+  gridDotOn:        { backgroundColor: 'rgba(110,231,183,0.22)', borderWidth: 1, borderColor: 'rgba(110,231,183,0.55)' },
+  gridDotOff:       { backgroundColor: 'rgba(152,212,250,0.05)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)' },
+  meditationDotOn:  { backgroundColor: 'rgba(196,181,253,0.22)', borderWidth: 1, borderColor: 'rgba(196,181,253,0.60)' },
 
   // Meal weeks
   mealWeekCircle: {
@@ -267,6 +286,10 @@ function SectionRow({
       case 'Movement':
         return weeklyData.movementDays?.length
           ? <MovementGrid days={weeklyData.movementDays} />
+          : null;
+      case 'Meditation':
+        return weeklyData.meditationDays?.length
+          ? <MeditationGrid days={weeklyData.meditationDays} />
           : null;
       case 'Meals':
         return weeklyData.mealWeeks?.length

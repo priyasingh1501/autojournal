@@ -50,6 +50,7 @@ export interface WeeklyData {
   learningCount: number;                          // distinct things learned
   spendCategories?: SpendCategory[];              // per-category spend breakdown
   mealWeeks?: ('good' | 'mixed' | 'poor')[];     // one entry per week of the month
+  meditationDays?: boolean[];                     // one bool per day of the month so far
 }
 
 export interface WeeklyInsight {
