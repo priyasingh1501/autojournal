@@ -107,8 +107,7 @@ function MindPicker({
                       onPress={() => onSelect(mind.id)}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.mindSymbol}>{mind.symbol}</Text>
-                      <Text style={[styles.mindName, { color: mind.accent }]}>{mind.name}</Text>
+                      <Text style={styles.mindName}>{mind.name}</Text>
                       <Text style={styles.mindEra}>{mind.era}</Text>
                       <Text style={styles.mindPhil} numberOfLines={2}>{mind.philosophy}</Text>
                     </TouchableOpacity>
@@ -431,8 +430,7 @@ const styles = StyleSheet.create({
     flex: 1, borderRadius: 18, borderWidth: 1,
     padding: 16, minHeight: 140, gap: 4,
   },
-  mindSymbol: { fontSize: 24, marginBottom: 2 },
-  mindName: { fontSize: 14, fontFamily: 'Baskerville', fontWeight: '500', lineHeight: 20 },
+  mindName: { fontSize: 14, fontFamily: 'Baskerville', fontWeight: '500', lineHeight: 20, color: 'rgba(224,242,254,0.95)' },
   mindEra: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', lineHeight: 14 },
   mindPhil: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.55)', lineHeight: 16, marginTop: 2 },
 
