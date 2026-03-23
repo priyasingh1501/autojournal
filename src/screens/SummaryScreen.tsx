@@ -88,6 +88,8 @@ export default function SummaryScreen() {
   // Always-fresh refs so PanResponder callbacks never close over stale state
   const currentIndexRef = useRef(0);
   const summariesRef    = useRef<DailySummary[]>([]);
+  // Ref to the top card's ScrollView — used to disable it when we steal a horizontal swipe
+  const cardScrollRef = useRef<ScrollView>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -158,23 +160,42 @@ export default function SummaryScreen() {
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
-      // Capture phase — fires BEFORE the ScrollView sees the touch, so we can
-      // steal clearly-horizontal swipes away from the inner ScrollView.
-      onMoveShouldSetPanResponderCapture: (_, gs) =>
-        !isSwiping.current &&
-        Math.abs(gs.dx) > Math.abs(gs.dy) * 2.5 &&
-        Math.abs(gs.dx) > 12,
+
+      // CAPTURE phase — fires top-down BEFORE children process the move.
+      // Returning true here steals the gesture from the ScrollView or any child.
+      // Ratio 1.8 + 12px minimum: catches clear horizontal swipes without
+      // accidentally stealing button taps (taps have near-zero dx).
+      onMoveShouldSetPanResponderCapture: (_, gs) => {
+        if (isSwiping.current) return false;
+        const isHoriz = Math.abs(gs.dx) > Math.abs(gs.dy) * 1.8 && Math.abs(gs.dx) > 12;
+        if (isHoriz) {
+          // Immediately lock the card ScrollView so it can't start scrolling
+          // vertically while we animate the card sideways (native bridge call,
+          // bypasses JS re-render delay).
+          cardScrollRef.current?.setNativeProps?.({ scrollEnabled: false });
+        }
+        return isHoriz;
+      },
+
+      // Keep bubble phase OFF — if we returned false in capture the child
+      // (ScrollView or TouchableOpacity) rightfully owns this gesture; stealing
+      // it here would break vertical scroll and button taps on older cards.
       onMoveShouldSetPanResponder: () => false,
+
       onPanResponderMove: (_, gs) => {
         pan.setValue({ x: gs.dx, y: gs.dy * 0.06 });
       },
       onPanResponderRelease: (_, gs) => {
+        cardScrollRef.current?.setNativeProps?.({ scrollEnabled: true });
         const shouldSwipe =
           Math.abs(gs.dx) > SWIPE_THRESHOLD || Math.abs(gs.vx) > VELOCITY_THRESHOLD;
         if (shouldSwipe) swipeOffRef.current(gs.dx > 0 ? 1 : -1);
         else snapBackRef.current();
       },
-      onPanResponderTerminate: () => snapBackRef.current(),
+      onPanResponderTerminate: () => {
+        cardScrollRef.current?.setNativeProps?.({ scrollEnabled: true });
+        snapBackRef.current();
+      },
     })
   ).current;
 
@@ -237,7 +258,7 @@ export default function SummaryScreen() {
   };
 
   // ── card content ─────────────────────────────────────────────────────────
-  const renderCardContent = (item: DailySummary, isTop: boolean) => (
+  const renderCardContent = (item: DailySummary, isTop: boolean, key?: string) => (
     <>
       {/* Jellyfish image header */}
       {item.imageUri ? (
@@ -320,10 +341,17 @@ export default function SummaryScreen() {
 
       {/* Scrollable body */}
       <ScrollView
+        ref={isTop ? cardScrollRef : undefined}
         style={styles.cardScrollView}
         showsVerticalScrollIndicator={false}
         scrollEnabled={isTop}
-        nestedScrollEnabled={true}
+        // directionalLockEnabled: once scroll direction is determined iOS won't
+        // fight horizontal swipes; Android ignores this prop but that's fine.
+        directionalLockEnabled={true}
+        // nestedScrollEnabled only needed inside another ScrollView — removing it
+        // stops Android from routing events through the nested-scroll system,
+        // letting the parent PanResponder capture phase work correctly.
+        nestedScrollEnabled={false}
         contentContainerStyle={styles.cardScroll}
       >
         {/* Five-section insights */}
