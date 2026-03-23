@@ -36,6 +36,12 @@ export interface AppSettings {
   elevenLabsVoiceId?: string;  // ElevenLabs voice ID for Call mode
 }
 
+export interface EmotionCount {
+  name: string;                                   // e.g. "anxiety", "gratitude"
+  count: number;                                  // number of entries/days where this emotion appeared
+  sentiment: 'positive' | 'neutral' | 'negative';
+}
+
 export interface SpendCategory {
   name: string;                                   // e.g. "Food & Dining"
   level: 'low' | 'medium' | 'high';
@@ -51,6 +57,7 @@ export interface WeeklyData {
   spendCategories?: SpendCategory[];              // per-category spend breakdown
   mealWeeks?: ('good' | 'mixed' | 'poor')[];     // one entry per week of the month
   meditationDays?: boolean[];                     // one bool per day of the month so far
+  emotionCounts?: EmotionCount[];                 // emotions ranked by how many entries reflected them
 }
 
 export interface WeeklyInsight {

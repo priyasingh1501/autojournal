@@ -11,7 +11,7 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
-import { WeeklyInsight, WeeklyData, SpendCategory } from '../types';
+import { WeeklyInsight, WeeklyData, SpendCategory, EmotionCount } from '../types';
 import { generateWeeklyInsight, NOT_ENOUGH_DATA } from '../services/WeeklyInsightService';
 import { SECTION_LABELS } from './InsightSections';
 
@@ -67,15 +67,31 @@ function firstSentence(body: string): string {
 
 // ── Infographic components ────────────────────────────────────────────────────
 
-/** 5-dot mood bar */
-function MoodBar({ score }: { score: number }) {
-  const labels = ['rough', 'hard', 'okay', 'good', 'great'];
+/** Emotion bar chart — horizontal bars proportional to entry count */
+const EMOTION_SENTIMENT_COLOR = {
+  positive: { bar: 'rgba(110,231,183,0.55)', text: 'rgba(110,231,183,0.90)', track: 'rgba(110,231,183,0.10)' },
+  neutral:  { bar: 'rgba(147,197,253,0.45)', text: 'rgba(147,197,253,0.80)', track: 'rgba(147,197,253,0.08)' },
+  negative: { bar: 'rgba(252,165,165,0.50)', text: 'rgba(252,165,165,0.90)', track: 'rgba(252,165,165,0.10)' },
+};
+
+function EmotionBars({ emotions }: { emotions: EmotionCount[] }) {
+  const maxCount = Math.max(...emotions.map(e => e.count), 1);
   return (
-    <View style={infoStyles.row}>
-      {Array.from({ length: 5 }, (_, i) => (
-        <View key={i} style={[infoStyles.moodDot, i < score ? infoStyles.moodDotOn : infoStyles.moodDotOff]} />
-      ))}
-      <Text style={infoStyles.infoLabel}>{labels[Math.min(score - 1, 4)]}</Text>
+    <View style={{ gap: 6, marginTop: 8 }}>
+      {emotions.map(e => {
+        const cfg = EMOTION_SENTIMENT_COLOR[e.sentiment] ?? EMOTION_SENTIMENT_COLOR.neutral;
+        const pct = e.count / maxCount;
+        return (
+          <View key={e.name} style={infoStyles.emotionRow}>
+            <Text style={[infoStyles.emotionName, { color: cfg.text }]}>{e.name}</Text>
+            <View style={[infoStyles.emotionTrack, { backgroundColor: cfg.track }]}>
+              <View style={[infoStyles.emotionBar, { flex: pct, backgroundColor: cfg.bar }]} />
+              <View style={{ flex: 1 - pct }} />
+            </View>
+            <Text style={[infoStyles.emotionCount, { color: cfg.text }]}>{e.count}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -194,10 +210,12 @@ const infoStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 7, flexWrap: 'wrap' },
   infoLabel: { fontSize: 11, color: 'rgba(152,212,250,0.55)', fontFamily: 'GillSans-Light', marginLeft: 4 },
 
-  // Mood
-  moodDot:    { width: 10, height: 10, borderRadius: 5 },
-  moodDotOn:  { backgroundColor: 'rgba(152,212,250,0.85)' },
-  moodDotOff: { backgroundColor: 'rgba(152,212,250,0.15)' },
+  // Emotion bars
+  emotionRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  emotionName:  { fontSize: 11, fontFamily: 'GillSans-Light', width: 90, textTransform: 'capitalize' },
+  emotionTrack: { flex: 1, height: 6, borderRadius: 3, flexDirection: 'row', overflow: 'hidden' },
+  emotionBar:   { height: 6, borderRadius: 3 },
+  emotionCount: { fontSize: 11, fontFamily: 'GillSans-Light', width: 18, textAlign: 'right' },
 
   // Movement grid
   gridRow:   { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -282,7 +300,9 @@ function SectionRow({
     if (!weeklyData) return null;
     switch (sectionKey) {
       case 'Emotional check-in':
-        return <MoodBar score={weeklyData.moodScore} />;
+        return weeklyData.emotionCounts?.length
+          ? <EmotionBars emotions={weeklyData.emotionCounts} />
+          : null;
       case 'Movement':
         return weeklyData.movementDays?.length
           ? <MovementGrid days={weeklyData.movementDays} />

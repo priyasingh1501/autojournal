@@ -89,6 +89,9 @@ PART 2 — Structured data (valid JSON only, no other text, no markdown, no code
   "learningCount": <integer, number of distinct things learned>,
   "mealWeeks": [<"good"|"mixed"|"poor" for week-1>, <week-2>, <week-3>, <week-4 if applicable>],
   "meditationDays": [<bool for day-1>, <bool for day-2>, ..., <bool for today — one entry per day of month so far>],
+  "emotionCounts": [
+    { "name": "<emotion name, lowercase>", "count": <integer — number of entries where this emotion was present>, "sentiment": "<positive|neutral|negative>" }
+  ],
   "spendCategories": [
     { "name": "<category>", "level": "<low|medium|high>", "summary": "<one brief sentence>" }
   ]
@@ -96,6 +99,7 @@ PART 2 — Structured data (valid JSON only, no other text, no markdown, no code
 Rules for movementDays: length must match the number of days elapsed so far this month. true = any physical activity mentioned.
 Rules for meditationDays: same length as movementDays. true = any meditation, breathwork, mindfulness, or pranayama mentioned that day.
 Rules for mealWeeks: week-1 = days 1–7, week-2 = days 8–14, week-3 = days 15–21, week-4 = days 22+. Only include weeks that have started.
+Rules for emotionCounts: list 4–8 distinct emotions actually detected across the entries. Count = number of separate daily entries where the emotion is clearly present. Sort by count descending. Use single lowercase words or short phrases (e.g. "anxiety", "gratitude", "frustration", "excitement", "calm", "loneliness"). Sentiment: positive = feels good, negative = feels difficult, neutral = neither.
 Rules for spendCategories: include only categories actually mentioned in the entries. Use these names when applicable: "Food & Dining", "Shopping", "Transport", "Entertainment", "Health & Fitness", "Bills & Utilities", "Travel", "Other". Skip a category if it was not mentioned at all. Maximum 6 categories.`;
 
 function buildPrompt(summaries: DailySummary[], monthStart: string, monthEnd: string): string {
