@@ -78,10 +78,32 @@ export interface WeeklyInsight {
 
 export type RecordingStatus = 'idle' | 'monitoring' | 'recording';
 
+export interface WaistEntry {
+  date: string;   // YYYY-MM-DD
+  cm: number;
+}
+
 export interface UserGoals {
-  monthlySpendBudget?: number;           // total ₹/month e.g. 15000
-  workoutDaysPerWeek?: number;           // 1–7 days per week
-  healthyMealDaysPerWeek?: number;       // 1–7 days per week to eat healthy
+  // ── Spending ─────────────────────────────────────────────────
+  monthlySpendBudget?: number;           // ₹/month
+
+  // ── Training (split strength vs cardio) ─────────────────────
+  strengthDaysPerWeek?: number;          // resistance/compound — target 4
+  cardioDaysPerWeek?: number;            // low-intensity cardio — target 2
+
+  // ── Nutrition ────────────────────────────────────────────────
+  dailyCalorieTarget?: number;           // kcal/day e.g. 1400
+  dailyProteinTarget?: number;           // grams/day e.g. 95
+
+  // ── Body composition milestones ──────────────────────────────
+  bodyFatTargetPct?: number;             // current phase target e.g. 42
+  muscleMassTargetKg?: number;           // skeletal muscle target e.g. 17
+  waistTargetCm?: number;                // waist goal in cm
+  waistHistory?: WaistEntry[];           // weekly measurements
+
+  // ── Legacy (backward compat) ─────────────────────────────────
+  workoutDaysPerWeek?: number;
+  healthyMealDaysPerWeek?: number;
 }
 
 // ── Insight Analysis types ────────────────────────────────────────────────────

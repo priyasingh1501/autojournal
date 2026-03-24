@@ -255,6 +255,14 @@ function WordCloud({ topics }: { topics: { word: string; count: number }[] }) {
   );
 }
 
+const mealGoalStyles = StyleSheet.create({
+  panel:       { marginTop: 8, backgroundColor: 'rgba(251,191,36,0.04)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(251,191,36,0.12)', padding: 10, gap: 6 },
+  row:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  nutriLabel:  { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)' },
+  nutriTarget: { fontSize: 13, fontFamily: 'Baskerville', color: 'rgba(251,191,36,0.90)' },
+  hint:        { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.38)', lineHeight: 14, marginTop: 2 },
+});
+
 const cloudStyles = StyleSheet.create({
   container: {
     flexDirection: 'row', flexWrap: 'wrap',
@@ -392,24 +400,44 @@ function SectionRow({
         const grid = weeklyData?.movementDays?.length
           ? <MovementGrid days={weeklyData.movementDays} />
           : null;
-        // Goal: workoutDaysPerWeek → target for the month
-        const activeDays = weeklyData?.movementDays?.filter(Boolean).length ?? 0;
-        const weeksElapsed = weeklyData?.movementDays?.length
+        const activeDays    = weeklyData?.movementDays?.filter(Boolean).length ?? 0;
+        const weeksElapsed  = weeklyData?.movementDays?.length
           ? Math.max(1, Math.ceil(weeklyData.movementDays.length / 7))
+          : 1;
+        // Strength goal
+        const strengthTarget = (goals?.strengthDaysPerWeek ?? goals?.workoutDaysPerWeek)
+          ? ((goals?.strengthDaysPerWeek ?? goals?.workoutDaysPerWeek)! * weeksElapsed)
           : null;
-        const workoutTarget = goals?.workoutDaysPerWeek && weeksElapsed
-          ? goals.workoutDaysPerWeek * weeksElapsed
+        // Cardio goal
+        const cardioTarget = goals?.cardioDaysPerWeek
+          ? goals.cardioDaysPerWeek * weeksElapsed
           : null;
-        const workoutBar = workoutTarget
-          ? <GoalProgressBar
-              label="WORKOUT GOAL"
-              current={activeDays}
-              target={workoutTarget}
-              unit="days"
-              color="rgba(110,231,183,0.70)"
-            />
+        // Combined total goal
+        const totalTarget = (strengthTarget ?? 0) + (cardioTarget ?? 0);
+
+        const bars = totalTarget > 0
+          ? <>
+              {strengthTarget && (
+                <GoalProgressBar
+                  label={`STRENGTH · ${goals?.strengthDaysPerWeek ?? goals?.workoutDaysPerWeek}×/week`}
+                  current={Math.min(activeDays, strengthTarget)}
+                  target={strengthTarget}
+                  unit="sessions"
+                  color="rgba(110,231,183,0.70)"
+                />
+              )}
+              {cardioTarget && (
+                <GoalProgressBar
+                  label={`CARDIO · ${goals?.cardioDaysPerWeek}×/week`}
+                  current={Math.max(0, activeDays - (strengthTarget ?? 0))}
+                  target={cardioTarget}
+                  unit="sessions"
+                  color="rgba(147,197,253,0.70)"
+                />
+              )}
+            </>
           : null;
-        return grid || workoutBar ? <>{grid}{workoutBar}</> : null;
+        return grid || bars ? <>{grid}{bars}</> : null;
       }
 
       case 'Meditation':
@@ -421,27 +449,30 @@ function SectionRow({
         const strip = weeklyData?.mealWeeks?.length
           ? <MealWeekStrip weeks={weeklyData.mealWeeks as any} />
           : null;
-        // Goal: healthyMealDaysPerWeek
-        const goodWeeks  = weeklyData?.mealWeeks?.filter(w => w === 'good').length ?? 0;
-        const totalWeeks = weeklyData?.mealWeeks?.length ?? 0;
-        const mealTarget = goals?.healthyMealDaysPerWeek && totalWeeks > 0
-          ? goals.healthyMealDaysPerWeek * totalWeeks   // healthy days expected
+        // Nutrition targets panel — shown when calorie/protein goals are set
+        const hasNutritionGoals = goals?.dailyCalorieTarget || goals?.dailyProteinTarget;
+        const nutritionPanel = hasNutritionGoals
+          ? <View style={mealGoalStyles.panel}>
+              {goals?.dailyCalorieTarget && (
+                <View style={mealGoalStyles.row}>
+                  <Text style={mealGoalStyles.nutriLabel}>Daily calories</Text>
+                  <Text style={mealGoalStyles.nutriTarget}>
+                    {goals.dailyCalorieTarget.toLocaleString()} kcal
+                  </Text>
+                </View>
+              )}
+              {goals?.dailyProteinTarget && (
+                <View style={mealGoalStyles.row}>
+                  <Text style={mealGoalStyles.nutriLabel}>Daily protein</Text>
+                  <Text style={mealGoalStyles.nutriTarget}>
+                    {goals.dailyProteinTarget} g
+                  </Text>
+                </View>
+              )}
+              <Text style={mealGoalStyles.hint}>Journal your meals so Claude can track patterns</Text>
+            </View>
           : null;
-        // Estimate: "good" week = 7 healthy days, "mixed" = 4, "poor" = 1
-        const estimatedHealthyDays = weeklyData?.mealWeeks
-          ? weeklyData.mealWeeks.reduce((sum, w) =>
-              sum + (w === 'good' ? 7 : w === 'mixed' ? 4 : 1), 0)
-          : 0;
-        const mealBar = mealTarget
-          ? <GoalProgressBar
-              label="HEALTHY EATING GOAL"
-              current={estimatedHealthyDays}
-              target={mealTarget}
-              unit="days"
-              color="rgba(251,191,36,0.70)"
-            />
-          : null;
-        return strip || mealBar ? <>{strip}{mealBar}</> : null;
+        return strip || nutritionPanel ? <>{strip}{nutritionPanel}</> : null;
       }
 
       case 'Spending': {

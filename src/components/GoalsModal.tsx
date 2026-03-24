@@ -7,31 +7,24 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StorageService } from '../services/StorageService';
-import { UserGoals } from '../types';
+import { UserGoals, WaistEntry } from '../types';
 
-// ── Day picker (1–7 circles) ──────────────────────────────────────────────────
+// ── Reusable sub-components ───────────────────────────────────────────────────
 
-function DayPicker({
-  value,
-  onChange,
-  max = 7,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  max?: number;
-}) {
+/** 1-to-max row of tappable circles */
+function DayPicker({ value, onChange, max = 7 }: { value: number; onChange: (v: number) => void; max?: number }) {
   return (
     <View style={dp.row}>
       {Array.from({ length: max }, (_, i) => i + 1).map(d => {
-        const active = d <= value;
+        const on = d <= value;
         return (
           <TouchableOpacity
             key={d}
             onPress={() => onChange(value === d ? 0 : d)}
-            style={[dp.circle, active ? dp.circleOn : dp.circleOff]}
+            style={[dp.circle, on ? dp.on : dp.off]}
             activeOpacity={0.7}
           >
-            <Text style={[dp.label, active ? dp.labelOn : dp.labelOff]}>{d}</Text>
+            <Text style={[dp.label, on ? dp.labelOn : dp.labelOff]}>{d}</Text>
           </TouchableOpacity>
         );
       })}
@@ -40,46 +33,100 @@ function DayPicker({
 }
 
 const dp = StyleSheet.create({
-  row:       { flexDirection: 'row', gap: 8, marginTop: 10 },
-  circle:    { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  circleOn:  { backgroundColor: 'rgba(9,41,173,0.50)', borderColor: 'rgba(152,212,250,0.60)' },
-  circleOff: { backgroundColor: 'rgba(152,212,250,0.05)', borderColor: 'rgba(152,212,250,0.18)' },
-  label:     { fontSize: 13, fontFamily: 'GillSans-Light' },
-  labelOn:   { color: 'rgba(224,242,254,0.95)' },
-  labelOff:  { color: 'rgba(152,212,250,0.40)' },
+  row:     { flexDirection: 'row', gap: 7, marginTop: 10, flexWrap: 'wrap' },
+  circle:  { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  on:      { backgroundColor: 'rgba(9,41,173,0.50)', borderColor: 'rgba(152,212,250,0.65)' },
+  off:     { backgroundColor: 'rgba(152,212,250,0.04)', borderColor: 'rgba(152,212,250,0.16)' },
+  label:   { fontSize: 12, fontFamily: 'GillSans-Light' },
+  labelOn: { color: 'rgba(224,242,254,0.95)' },
+  labelOff:{ color: 'rgba(152,212,250,0.35)' },
 });
 
-// ── Section block ─────────────────────────────────────────────────────────────
-
-function GoalSection({
-  icon,
-  title,
-  color,
-  children,
+/** Labelled numeric text input row */
+function NumericField({
+  label, value, onChange, placeholder, unit, hint,
 }: {
-  icon: string;
-  title: string;
-  color: string;
-  children: React.ReactNode;
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder: string; unit: string; hint?: string;
 }) {
   return (
-    <View style={gs.card}>
-      <View style={gs.header}>
-        <View style={[gs.iconWrap, { backgroundColor: color.replace('0.90)', '0.10)') }]}>
-          <Feather name={icon as any} size={14} color={color} />
-        </View>
-        <Text style={gs.title}>{title}</Text>
+    <View style={nf.wrap}>
+      <Text style={nf.label}>{label}</Text>
+      <View style={nf.row}>
+        <TextInput
+          style={nf.input}
+          value={value}
+          onChangeText={onChange}
+          placeholder={placeholder}
+          placeholderTextColor="rgba(152,212,250,0.28)"
+          keyboardType="numeric"
+          returnKeyType="done"
+        />
+        <Text style={nf.unit}>{unit}</Text>
+        {value.length > 0 && (
+          <TouchableOpacity onPress={() => onChange('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Feather name="x-circle" size={13} color="rgba(152,212,250,0.35)" />
+          </TouchableOpacity>
+        )}
       </View>
-      {children}
+      {hint && <Text style={nf.hint}>{hint}</Text>}
     </View>
   );
 }
 
-const gs = StyleSheet.create({
-  card:    { backgroundColor: 'rgba(152,212,250,0.04)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(152,212,250,0.09)', padding: 16, gap: 4 },
-  header:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+const nf = StyleSheet.create({
+  wrap:  { gap: 5 },
+  label: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 0.4, textTransform: 'uppercase' },
+  row:   { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(152,212,250,0.05)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.16)', paddingHorizontal: 14, paddingVertical: 10 },
+  input: { flex: 1, fontSize: 17, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.95)', padding: 0 },
+  unit:  { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)' },
+  hint:  { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.38)', lineHeight: 14 },
+});
+
+/** Coloured section card */
+function Section({ icon, title, accent, children }: { icon: string; title: string; accent: string; children: React.ReactNode }) {
+  const iconBg = accent.replace(/[\d.]+\)$/, '0.10)');
+  return (
+    <View style={[sec.card, { borderColor: accent.replace(/[\d.]+\)$/, '0.14)') }]}>
+      <View style={sec.header}>
+        <View style={[sec.iconWrap, { backgroundColor: iconBg }]}>
+          <Feather name={icon as any} size={14} color={accent} />
+        </View>
+        <Text style={[sec.title, { color: accent }]}>{title}</Text>
+      </View>
+      <View style={sec.body}>{children}</View>
+    </View>
+  );
+}
+
+const sec = StyleSheet.create({
+  card:    { borderRadius: 16, borderWidth: 1, backgroundColor: 'rgba(152,212,250,0.03)', padding: 16 },
+  header:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
   iconWrap:{ width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  title:   { fontSize: 13, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.95)' },
+  title:   { fontSize: 13, fontFamily: 'Baskerville', fontWeight: '500' },
+  body:    { gap: 12 },
+});
+
+/** Small phase milestone chip */
+function PhaseBadge({ phase, target, current, unit }: { phase: string; target: number; current?: number; unit: string }) {
+  const done = current != null && (unit === '%' ? current <= target : current >= target);
+  return (
+    <View style={[pb.chip, done && pb.done]}>
+      <Text style={pb.phase}>{phase}</Text>
+      <Text style={pb.target}>
+        {unit === '%' ? `≤${target}${unit}` : `≥${target}${unit}`}
+        {current != null ? ` · now ${current}${unit}` : ''}
+      </Text>
+      {done && <Feather name="check" size={10} color="rgba(110,231,183,0.90)" style={{ marginLeft: 4 }} />}
+    </View>
+  );
+}
+
+const pb = StyleSheet.create({
+  chip:   { backgroundColor: 'rgba(152,212,250,0.05)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)', paddingHorizontal: 10, paddingVertical: 6 },
+  done:   { borderColor: 'rgba(110,231,183,0.30)', backgroundColor: 'rgba(110,231,183,0.05)' },
+  phase:  { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 0.4, textTransform: 'uppercase' },
+  target: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.80)', marginTop: 1 },
 });
 
 // ── Main modal ────────────────────────────────────────────────────────────────
@@ -91,37 +138,78 @@ interface Props {
 }
 
 export default function GoalsModal({ visible, onClose, onSaved }: Props) {
-  const [spendBudget,        setSpendBudget]        = useState('');
-  const [workoutDays,        setWorkoutDays]        = useState(0);
-  const [healthyMealDays,    setHealthyMealDays]    = useState(0);
-  const [saving,             setSaving]             = useState(false);
+  // Training
+  const [strengthDays,    setStrengthDays]    = useState(0);
+  const [cardioDays,      setCardioDays]      = useState(0);
+  // Nutrition
+  const [calories,        setCalories]        = useState('');
+  const [protein,         setProtein]         = useState('');
+  // Body metrics
+  const [bodyFatTarget,   setBodyFatTarget]   = useState('');
+  const [muscleTarget,    setMuscleTarget]    = useState('');
+  const [waistTarget,     setWaistTarget]     = useState('');
+  const [waistNow,        setWaistNow]        = useState('');
+  // Spending
+  const [spendBudget,     setSpendBudget]     = useState('');
+  // Persisted state
+  const [waistHistory,    setWaistHistory]    = useState<WaistEntry[]>([]);
+  const [saving,          setSaving]          = useState(false);
 
-  useEffect(() => {
-    if (visible) loadGoals();
-  }, [visible]);
+  useEffect(() => { if (visible) load(); }, [visible]);
 
-  const loadGoals = async () => {
-    const goals = await StorageService.getGoals();
-    if (!goals) return;
-    if (goals.monthlySpendBudget)      setSpendBudget(String(goals.monthlySpendBudget));
-    if (goals.workoutDaysPerWeek)      setWorkoutDays(goals.workoutDaysPerWeek);
-    if (goals.healthyMealDaysPerWeek)  setHealthyMealDays(goals.healthyMealDaysPerWeek);
+  const load = async () => {
+    const g = await StorageService.getGoals();
+    if (!g) return;
+    if (g.strengthDaysPerWeek)   setStrengthDays(g.strengthDaysPerWeek);
+    if (g.cardioDaysPerWeek)     setCardioDays(g.cardioDaysPerWeek);
+    // legacy migration
+    if (!g.strengthDaysPerWeek && g.workoutDaysPerWeek) setStrengthDays(g.workoutDaysPerWeek);
+    if (g.dailyCalorieTarget)    setCalories(String(g.dailyCalorieTarget));
+    if (g.dailyProteinTarget)    setProtein(String(g.dailyProteinTarget));
+    if (g.bodyFatTargetPct)      setBodyFatTarget(String(g.bodyFatTargetPct));
+    if (g.muscleMassTargetKg)    setMuscleTarget(String(g.muscleMassTargetKg));
+    if (g.waistTargetCm)         setWaistTarget(String(g.waistTargetCm));
+    if (g.waistHistory?.length)  setWaistHistory(g.waistHistory);
+    if (g.monthlySpendBudget)    setSpendBudget(String(g.monthlySpendBudget));
+  };
+
+  const handleLogWaist = () => {
+    const val = parseFloat(waistNow);
+    if (isNaN(val) || val < 40 || val > 200) return;
+    const today = new Date().toISOString().split('T')[0];
+    setWaistHistory(prev => {
+      const filtered = prev.filter(e => e.date !== today);
+      return [...filtered, { date: today, cm: val }].sort((a, b) => a.date.localeCompare(b.date));
+    });
+    setWaistNow('');
   };
 
   const handleSave = async () => {
     setSaving(true);
-    const goals: UserGoals = {};
-    const budget = parseFloat(spendBudget.replace(/,/g, ''));
-    if (!isNaN(budget) && budget > 0) goals.monthlySpendBudget = budget;
-    if (workoutDays > 0)    goals.workoutDaysPerWeek     = workoutDays;
-    if (healthyMealDays > 0) goals.healthyMealDaysPerWeek = healthyMealDays;
-    await StorageService.saveGoals(goals);
+    const g: UserGoals = {};
+    if (strengthDays > 0)                        g.strengthDaysPerWeek  = strengthDays;
+    if (cardioDays > 0)                          g.cardioDaysPerWeek    = cardioDays;
+    const cal = parseFloat(calories);
+    if (!isNaN(cal) && cal > 0)                  g.dailyCalorieTarget   = cal;
+    const prot = parseFloat(protein);
+    if (!isNaN(prot) && prot > 0)                g.dailyProteinTarget   = prot;
+    const bf = parseFloat(bodyFatTarget);
+    if (!isNaN(bf) && bf > 0)                    g.bodyFatTargetPct     = bf;
+    const mus = parseFloat(muscleTarget);
+    if (!isNaN(mus) && mus > 0)                  g.muscleMassTargetKg   = mus;
+    const wt = parseFloat(waistTarget);
+    if (!isNaN(wt) && wt > 0)                    g.waistTargetCm        = wt;
+    if (waistHistory.length > 0)                  g.waistHistory         = waistHistory;
+    const bud = parseFloat(spendBudget.replace(/,/g, ''));
+    if (!isNaN(bud) && bud > 0)                  g.monthlySpendBudget   = bud;
+    await StorageService.saveGoals(g);
     setSaving(false);
-    onSaved(goals);
+    onSaved(g);
     onClose();
   };
 
-  const anySet = spendBudget.trim().length > 0 || workoutDays > 0 || healthyMealDays > 0;
+  const latestWaist = waistHistory.length > 0 ? waistHistory[waistHistory.length - 1] : null;
+  const anySet = strengthDays > 0 || cardioDays > 0 || calories || protein || bodyFatTarget || spendBudget;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -130,85 +218,200 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
 
             {/* Header */}
-            <View style={styles.header}>
+            <View style={s.header}>
               <View>
-                <Text style={styles.title}>Monthly Goals</Text>
-                <Text style={styles.subtitle}>Set targets — we'll show your progress</Text>
+                <Text style={s.title}>Your Goals</Text>
+                <Text style={s.subtitle}>Personalised to your recomposition plan</Text>
               </View>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <TouchableOpacity onPress={onClose} style={s.closeBtn} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
                 <Feather name="x" size={18} color="rgba(152,212,250,0.70)" />
               </TouchableOpacity>
             </View>
 
             <ScrollView
               style={{ flex: 1 }}
-              contentContainerStyle={styles.content}
+              contentContainerStyle={s.scroll}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
 
-              {/* ── Spending ── */}
-              <GoalSection icon="credit-card" title="Spending Budget" color="rgba(74,222,128,0.90)">
-                <Text style={styles.fieldLabel}>Total monthly budget (₹)</Text>
-                <View style={styles.inputRow}>
-                  <Text style={styles.rupeeSign}>₹</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={spendBudget}
-                    onChangeText={setSpendBudget}
-                    placeholder="e.g.  15,000"
-                    placeholderTextColor="rgba(152,212,250,0.30)"
-                    keyboardType="numeric"
-                    returnKeyType="done"
-                  />
-                  {spendBudget.length > 0 && (
-                    <TouchableOpacity onPress={() => setSpendBudget('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Feather name="x-circle" size={14} color="rgba(152,212,250,0.40)" />
-                    </TouchableOpacity>
+              {/* ── Training ─────────────────────────────────────── */}
+              <Section icon="activity" title="Training" accent="rgba(110,231,183,0.90)">
+                <View>
+                  <Text style={s.fieldLabel}>Strength sessions / week</Text>
+                  <Text style={s.fieldHint}>Compound lifts — squats, deadlifts, rows, presses</Text>
+                  <DayPicker value={strengthDays} onChange={setStrengthDays} />
+                  {strengthDays > 0 && (
+                    <Text style={s.goalSummary}>
+                      <Text style={s.hi}>{strengthDays}×/week</Text>
+                      {'  ·  '}
+                      <Text style={s.hi}>~{strengthDays * 4} sessions</Text> this month
+                    </Text>
                   )}
                 </View>
-                <Text style={styles.hint}>
-                  We'll track your total spend from bank SMS against this amount
-                </Text>
-              </GoalSection>
+                <View>
+                  <Text style={s.fieldLabel}>Low-intensity cardio / week</Text>
+                  <Text style={s.fieldHint}>Walking, cycling, swimming — not HIIT</Text>
+                  <DayPicker value={cardioDays} onChange={setCardioDays} max={7} />
+                  {cardioDays > 0 && (
+                    <Text style={s.goalSummary}>
+                      <Text style={s.hi}>{cardioDays}×/week</Text>
+                      {'  ·  targets visceral fat reduction'}
+                    </Text>
+                  )}
+                </View>
+              </Section>
 
-              {/* ── Workout ── */}
-              <GoalSection icon="activity" title="Workout" color="rgba(110,231,183,0.90)">
-                <Text style={styles.fieldLabel}>Days per week</Text>
-                <DayPicker value={workoutDays} onChange={setWorkoutDays} />
-                {workoutDays > 0 && (
-                  <Text style={styles.goalSummary}>
-                    Target: <Text style={styles.goalHighlight}>{workoutDays} day{workoutDays !== 1 ? 's' : ''} / week</Text>
-                    {' '}·{' '}
-                    <Text style={styles.goalHighlight}>{workoutDays * 4} days</Text> this month
-                  </Text>
+              {/* ── Nutrition ─────────────────────────────────────── */}
+              <Section icon="coffee" title="Nutrition" accent="rgba(251,191,36,0.90)">
+                <NumericField
+                  label="Daily calorie target"
+                  value={calories}
+                  onChange={setCalories}
+                  placeholder="1400"
+                  unit="kcal"
+                  hint="Slight deficit — 1,350–1,450 kcal recommended for recomposition"
+                />
+                <NumericField
+                  label="Daily protein target"
+                  value={protein}
+                  onChange={setProtein}
+                  placeholder="95"
+                  unit="g"
+                  hint="Non-negotiable for muscle retention — aim 90–100g/day"
+                />
+                {(calories || protein) && (
+                  <View style={s.nutritionNote}>
+                    <Feather name="info" size={11} color="rgba(251,191,36,0.60)" />
+                    <Text style={s.nutritionNoteText}>
+                      Mention your meals and intake in your journal — Claude will track patterns automatically
+                    </Text>
+                  </View>
                 )}
-              </GoalSection>
+              </Section>
 
-              {/* ── Meals ── */}
-              <GoalSection icon="coffee" title="Healthy Eating" color="rgba(251,191,36,0.90)">
-                <Text style={styles.fieldLabel}>Healthy days per week</Text>
-                <DayPicker value={healthyMealDays} onChange={setHealthyMealDays} />
-                {healthyMealDays > 0 && (
-                  <Text style={styles.goalSummary}>
-                    Target: <Text style={styles.goalHighlight}>{healthyMealDays} day{healthyMealDays !== 1 ? 's' : ''} / week</Text>
-                    {' '}eating well
-                  </Text>
-                )}
-              </GoalSection>
+              {/* ── Body metrics ──────────────────────────────────── */}
+              <Section icon="bar-chart-2" title="Body Composition" accent="rgba(196,181,253,0.90)">
+
+                {/* Phase milestones */}
+                <View>
+                  <Text style={s.fieldLabel}>Body fat % milestones</Text>
+                  <View style={s.phases}>
+                    <PhaseBadge phase="Now" target={45.7} current={45.7} unit="%" />
+                    <PhaseBadge phase="Phase 1 · Sep" target={42} unit="%" />
+                    <PhaseBadge phase="Phase 2 · Dec 27" target={35} unit="%" />
+                    <PhaseBadge phase="Phase 3" target={30} unit="%" />
+                  </View>
+                </View>
+
+                <NumericField
+                  label="Current phase target — body fat %"
+                  value={bodyFatTarget}
+                  onChange={setBodyFatTarget}
+                  placeholder="42"
+                  unit="%"
+                  hint="Phase 1 target: ~42%. Phase 2: ~35%. Final: 28–33%."
+                />
+
+                <NumericField
+                  label="Skeletal muscle target"
+                  value={muscleTarget}
+                  onChange={setMuscleTarget}
+                  placeholder="17"
+                  unit="kg"
+                  hint="Currently 16.2 kg. Phase 1 target: 17 kg+"
+                />
+
+                {/* Waist tracking */}
+                <View style={s.waistBlock}>
+                  <Text style={s.fieldLabel}>Waist circumference — weekly log</Text>
+                  <Text style={s.fieldHint}>Best proxy for visceral fat. Measure weekly, same time, same spot.</Text>
+
+                  <View style={s.waistInputRow}>
+                    <View style={[nf.row, { flex: 1 }]}>
+                      <TextInput
+                        style={nf.input}
+                        value={waistNow}
+                        onChangeText={setWaistNow}
+                        placeholder="e.g. 87"
+                        placeholderTextColor="rgba(152,212,250,0.28)"
+                        keyboardType="numeric"
+                        returnKeyType="done"
+                      />
+                      <Text style={nf.unit}>cm</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={handleLogWaist}
+                      style={[s.logBtn, { opacity: waistNow.length > 0 ? 1 : 0.4 }]}
+                      disabled={waistNow.length === 0}
+                    >
+                      <Text style={s.logBtnText}>Log</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <NumericField
+                    label="Waist goal"
+                    value={waistTarget}
+                    onChange={setWaistTarget}
+                    placeholder="80"
+                    unit="cm"
+                  />
+
+                  {/* History strip */}
+                  {waistHistory.length > 0 && (
+                    <View style={s.waistHistory}>
+                      <Text style={s.fieldLabel}>History</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
+                          {waistHistory.slice(-8).map((e, i, arr) => {
+                            const prev = arr[i - 1];
+                            const delta = prev ? e.cm - prev.cm : 0;
+                            const color = delta <= 0 ? 'rgba(110,231,183,0.85)' : 'rgba(252,165,165,0.85)';
+                            return (
+                              <View key={e.date} style={s.waistChip}>
+                                <Text style={s.waistDate}>
+                                  {new Date(e.date + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                </Text>
+                                <Text style={s.waistVal}>{e.cm} cm</Text>
+                                {prev && (
+                                  <Text style={[s.waistDelta, { color }]}>
+                                    {delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1)}
+                                  </Text>
+                                )}
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              </Section>
+
+              {/* ── Spending ──────────────────────────────────────── */}
+              <Section icon="credit-card" title="Monthly Spending Budget" accent="rgba(74,222,128,0.90)">
+                <NumericField
+                  label="Total budget"
+                  value={spendBudget}
+                  onChange={setSpendBudget}
+                  placeholder="15,000"
+                  unit="₹"
+                  hint="Tracked automatically from bank SMS on Android"
+                />
+              </Section>
 
             </ScrollView>
 
             {/* Save */}
-            <View style={styles.footer}>
+            <View style={s.footer}>
               <TouchableOpacity
-                style={[styles.saveBtn, !anySet && styles.saveBtnDisabled]}
+                style={[s.saveBtn, !anySet && s.saveBtnOff]}
                 onPress={handleSave}
-                disabled={saving || !anySet}
+                disabled={saving}
                 activeOpacity={0.85}
               >
                 <Feather name="check" size={16} color={anySet ? '#fff' : 'rgba(224,242,254,0.30)'} />
-                <Text style={[styles.saveBtnText, !anySet && styles.saveBtnTextDisabled]}>
+                <Text style={[s.saveBtnText, !anySet && { color: 'rgba(224,242,254,0.30)' }]}>
                   {saving ? 'Saving…' : 'Save Goals'}
                 </Text>
               </TouchableOpacity>
@@ -221,47 +424,36 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12,
-  },
+const s = StyleSheet.create({
+  header:   { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 },
   title:    { fontSize: 22, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.95)' },
   subtitle: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', marginTop: 3 },
-  closeBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: 'rgba(152,212,250,0.08)',
-    borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)',
-    alignItems: 'center', justifyContent: 'center',
-  },
+  closeBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(152,212,250,0.08)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)', alignItems: 'center', justifyContent: 'center' },
 
-  content: { paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
+  scroll:      { paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
+  fieldLabel:  { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 0.4, textTransform: 'uppercase' },
+  fieldHint:   { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.38)', lineHeight: 15, marginTop: 2 },
+  goalSummary: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', marginTop: 8 },
+  hi:          { color: 'rgba(224,242,254,0.85)', fontWeight: '500' },
 
-  fieldLabel: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', letterSpacing: 0.4, marginTop: 4 },
+  phases: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
 
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(152,212,250,0.06)',
-    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.18)',
-    paddingHorizontal: 14, paddingVertical: 10, marginTop: 8,
-  },
-  rupeeSign: { fontSize: 16, color: 'rgba(152,212,250,0.60)', fontFamily: 'GillSans-Light' },
-  input: {
-    flex: 1, fontSize: 18, fontFamily: 'Baskerville',
-    color: 'rgba(224,242,254,0.95)', padding: 0,
-  },
-  hint: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', marginTop: 6, lineHeight: 14 },
+  nutritionNote:     { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: 'rgba(251,191,36,0.05)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(251,191,36,0.14)', padding: 10 },
+  nutritionNoteText: { flex: 1, fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(251,191,36,0.70)', lineHeight: 16 },
 
-  goalSummary:   { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', marginTop: 10 },
-  goalHighlight: { color: 'rgba(224,242,254,0.85)', fontWeight: '500' },
+  waistBlock:    { gap: 10 },
+  waistInputRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  logBtn:        { backgroundColor: 'rgba(9,41,173,0.50)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.30)', paddingHorizontal: 14, paddingVertical: 11 },
+  logBtnText:    { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.90)' },
 
-  footer: { paddingHorizontal: 20, paddingVertical: 16 },
-  saveBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#0929AD', borderRadius: 16, paddingVertical: 15,
-    borderWidth: 1, borderColor: 'rgba(152,212,250,0.25)',
-  },
-  saveBtnDisabled: { backgroundColor: 'rgba(9,41,173,0.20)', borderColor: 'rgba(152,212,250,0.10)' },
-  saveBtnText:        { fontSize: 15, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.95)', fontWeight: '500' },
-  saveBtnTextDisabled:{ color: 'rgba(224,242,254,0.30)' },
+  waistHistory: { gap: 6, marginTop: 4 },
+  waistChip:    { backgroundColor: 'rgba(152,212,250,0.05)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)', paddingHorizontal: 10, paddingVertical: 7, alignItems: 'center', minWidth: 72 },
+  waistDate:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)' },
+  waistVal:     { fontSize: 14, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.90)', marginTop: 1 },
+  waistDelta:   { fontSize: 10, fontFamily: 'GillSans-Light', marginTop: 1 },
+
+  footer:      { paddingHorizontal: 20, paddingVertical: 16 },
+  saveBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#0929AD', borderRadius: 16, paddingVertical: 15, borderWidth: 1, borderColor: 'rgba(152,212,250,0.25)' },
+  saveBtnOff:  { backgroundColor: 'rgba(9,41,173,0.20)', borderColor: 'rgba(152,212,250,0.10)' },
+  saveBtnText: { fontSize: 15, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.95)', fontWeight: '500' },
 });
