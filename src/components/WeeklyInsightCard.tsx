@@ -180,17 +180,52 @@ function CategoryLevelDots({ level }: { level: 'low' | 'medium' | 'high' }) {
 }
 
 function SpendCategoryList({ categories }: { categories: SpendCategory[] }) {
+  const fromSMS = categories.some(c => c.source === 'sms');
+  const maxAmount = fromSMS
+    ? Math.max(...categories.map(c => c.amount ?? 0), 1)
+    : 1;
+
   return (
     <View style={{ gap: 7, marginTop: 8 }}>
-      {categories.map(cat => (
-        <View key={cat.name} style={infoStyles.catRow}>
-          <View style={infoStyles.catHeader}>
-            <Text style={infoStyles.catName}>{cat.name}</Text>
-            <CategoryLevelDots level={cat.level} />
-          </View>
-          <Text style={infoStyles.catSummary}>{cat.summary}</Text>
+      {fromSMS && (
+        <View style={infoStyles.smsTag}>
+          <Feather name="message-square" size={9} color="rgba(110,231,183,0.80)" />
+          <Text style={infoStyles.smsTagText}>auto-tracked from bank SMS</Text>
         </View>
-      ))}
+      )}
+      {categories.map(cat => {
+        const hasAmount = cat.source === 'sms' && cat.amount != null;
+        const barWidth  = hasAmount ? (cat.amount! / maxAmount) : 0;
+        return (
+          <View key={cat.name} style={infoStyles.catRow}>
+            <View style={infoStyles.catHeader}>
+              <Text style={infoStyles.catName}>{cat.name}</Text>
+              {hasAmount ? (
+                <Text style={[infoStyles.catAmount, { color: LEVEL_COLOR[cat.level] }]}>
+                  {cat.amount! >= 100_000
+                    ? `₹${(cat.amount! / 100_000).toFixed(1)}L`
+                    : cat.amount! >= 1_000
+                      ? `₹${(cat.amount! / 1_000).toFixed(1)}k`
+                      : `₹${Math.round(cat.amount!)}`}
+                </Text>
+              ) : (
+                <CategoryLevelDots level={cat.level} />
+              )}
+            </View>
+            {/* Spend bar for SMS data */}
+            {hasAmount && (
+              <View style={infoStyles.spendTrack}>
+                <View style={[infoStyles.spendBar, {
+                  flex: barWidth,
+                  backgroundColor: LEVEL_COLOR[cat.level].replace('0.90)', '0.45)').replace('0.95)', '0.45)'),
+                }]} />
+                <View style={{ flex: 1 - barWidth }} />
+              </View>
+            )}
+            <Text style={infoStyles.catSummary}>{cat.summary}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -279,10 +314,16 @@ const infoStyles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8,
     gap: 3,
   },
-  catHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  catName:    { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.85)', fontWeight: '500' },
-  catSummary: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', lineHeight: 16 },
-  levelDot:   { width: 7, height: 7, borderRadius: 4 },
+  catHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  catName:     { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.85)', fontWeight: '500' },
+  catSummary:  { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', lineHeight: 16 },
+  catAmount:   { fontSize: 13, fontFamily: 'Baskerville', fontWeight: '500' },
+  levelDot:    { width: 7, height: 7, borderRadius: 4 },
+  spendTrack:  { height: 4, borderRadius: 2, flexDirection: 'row', overflow: 'hidden',
+                 backgroundColor: 'rgba(152,212,250,0.07)', marginTop: 2, marginBottom: 2 },
+  spendBar:    { height: 4, borderRadius: 2 },
+  smsTag:      { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 },
+  smsTagText:  { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(110,231,183,0.65)', letterSpacing: 0.3 },
 
   // Learning
   learningChip: {

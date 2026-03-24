@@ -21,8 +21,8 @@
     },
     {
       "name": "Expo Web",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "web"],
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "19006"],
       "port": 19006
     }
   ]

@@ -17,6 +17,8 @@ module.exports = function withMicrophonePermission(config) {
     const REQUIRED = [
       'android.permission.RECORD_AUDIO',
       'android.permission.MODIFY_AUDIO_SETTINGS',
+      'android.permission.READ_SMS',
+      'android.permission.RECEIVE_SMS',
     ];
 
     for (const perm of REQUIRED) {

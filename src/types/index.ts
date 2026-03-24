@@ -46,6 +46,9 @@ export interface SpendCategory {
   name: string;                                   // e.g. "Food & Dining"
   level: 'low' | 'medium' | 'high';
   summary: string;                                // one-line description
+  amount?: number;                                // actual total in ₹ (from SMS)
+  count?: number;                                 // number of transactions (from SMS)
+  source?: 'sms' | 'ai';                         // data origin
 }
 
 export interface WeeklyData {

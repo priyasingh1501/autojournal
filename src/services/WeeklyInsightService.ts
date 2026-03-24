@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { DailySummary, WeeklyInsight } from '../types';
 import { StorageService } from './StorageService';
+import { getSMSSpendCategories } from './SMSSpendService';
 
 // ─── Month helpers ────────────────────────────────────────────────────────────
 
@@ -183,6 +184,13 @@ export async function generateWeeklyInsight(
     } catch {
       // malformed JSON — proceed without structured data
     }
+  }
+
+  // Enrich spend categories with real SMS data (Android only; silently empty on iOS/no-permission)
+  const now2 = new Date();
+  const smsCategories = await getSMSSpendCategories(now2.getFullYear(), now2.getMonth() + 1);
+  if (smsCategories.length > 0 && weeklyData) {
+    weeklyData.spendCategories = smsCategories;
   }
 
   const insight: WeeklyInsight = {
