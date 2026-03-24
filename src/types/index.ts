@@ -78,6 +78,12 @@ export interface WeeklyInsight {
 
 export type RecordingStatus = 'idle' | 'monitoring' | 'recording';
 
+export interface UserGoals {
+  monthlySpendBudget?: number;           // total ₹/month e.g. 15000
+  workoutDaysPerWeek?: number;           // 1–7 days per week
+  healthyMealDaysPerWeek?: number;       // 1–7 days per week to eat healthy
+}
+
 // ── Insight Analysis types ────────────────────────────────────────────────────
 
 export interface EmotionEntry {

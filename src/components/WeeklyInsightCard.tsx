@@ -11,9 +11,11 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
-import { WeeklyInsight, WeeklyData, SpendCategory, EmotionCount } from '../types';
+import { WeeklyInsight, WeeklyData, SpendCategory, EmotionCount, UserGoals } from '../types';
 import { generateWeeklyInsight, NOT_ENOUGH_DATA } from '../services/WeeklyInsightService';
+import { StorageService } from '../services/StorageService';
 import { SECTION_LABELS } from './InsightSections';
+import GoalsModal from './GoalsModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -361,10 +363,12 @@ function SectionRow({
   sectionKey,
   body,
   weeklyData,
+  goals,
 }: {
   sectionKey: string;
   body: string;
   weeklyData?: WeeklyData;
+  goals?: UserGoals;
 }) {
   const [expanded, setExpanded] = useState(false);
   const meta    = SECTION_LABELS[sectionKey];
@@ -377,34 +381,97 @@ function SectionRow({
   };
 
   const renderInfographic = () => {
-    if (!weeklyData) return null;
     switch (sectionKey) {
+
       case 'Emotional check-in':
-        return weeklyData.emotionCounts?.length
+        return weeklyData?.emotionCounts?.length
           ? <EmotionBars emotions={weeklyData.emotionCounts} />
           : null;
-      case 'Movement':
-        return weeklyData.movementDays?.length
+
+      case 'Movement': {
+        const grid = weeklyData?.movementDays?.length
           ? <MovementGrid days={weeklyData.movementDays} />
           : null;
+        // Goal: workoutDaysPerWeek → target for the month
+        const activeDays = weeklyData?.movementDays?.filter(Boolean).length ?? 0;
+        const weeksElapsed = weeklyData?.movementDays?.length
+          ? Math.max(1, Math.ceil(weeklyData.movementDays.length / 7))
+          : null;
+        const workoutTarget = goals?.workoutDaysPerWeek && weeksElapsed
+          ? goals.workoutDaysPerWeek * weeksElapsed
+          : null;
+        const workoutBar = workoutTarget
+          ? <GoalProgressBar
+              label="WORKOUT GOAL"
+              current={activeDays}
+              target={workoutTarget}
+              unit="days"
+              color="rgba(110,231,183,0.70)"
+            />
+          : null;
+        return grid || workoutBar ? <>{grid}{workoutBar}</> : null;
+      }
+
       case 'Meditation':
-        return weeklyData.meditationDays?.length
+        return weeklyData?.meditationDays?.length
           ? <MeditationGrid days={weeklyData.meditationDays} />
           : null;
-      case 'Meals':
-        return weeklyData.mealWeeks?.length
+
+      case 'Meals': {
+        const strip = weeklyData?.mealWeeks?.length
           ? <MealWeekStrip weeks={weeklyData.mealWeeks as any} />
           : null;
-      case 'Spending':
-        return weeklyData.spendCategories?.length
+        // Goal: healthyMealDaysPerWeek
+        const goodWeeks  = weeklyData?.mealWeeks?.filter(w => w === 'good').length ?? 0;
+        const totalWeeks = weeklyData?.mealWeeks?.length ?? 0;
+        const mealTarget = goals?.healthyMealDaysPerWeek && totalWeeks > 0
+          ? goals.healthyMealDaysPerWeek * totalWeeks   // healthy days expected
+          : null;
+        // Estimate: "good" week = 7 healthy days, "mixed" = 4, "poor" = 1
+        const estimatedHealthyDays = weeklyData?.mealWeeks
+          ? weeklyData.mealWeeks.reduce((sum, w) =>
+              sum + (w === 'good' ? 7 : w === 'mixed' ? 4 : 1), 0)
+          : 0;
+        const mealBar = mealTarget
+          ? <GoalProgressBar
+              label="HEALTHY EATING GOAL"
+              current={estimatedHealthyDays}
+              target={mealTarget}
+              unit="days"
+              color="rgba(251,191,36,0.70)"
+            />
+          : null;
+        return strip || mealBar ? <>{strip}{mealBar}</> : null;
+      }
+
+      case 'Spending': {
+        const catList = weeklyData?.spendCategories?.length
           ? <SpendCategoryList categories={weeklyData.spendCategories} />
           : null;
+        // Goal: monthlySpendBudget
+        const totalSpend = weeklyData?.spendCategories
+          ?.filter(c => c.source === 'sms' && c.amount != null)
+          .reduce((s, c) => s + (c.amount ?? 0), 0) ?? 0;
+        const spendBar = goals?.monthlySpendBudget && totalSpend > 0
+          ? <GoalProgressBar
+              label="MONTHLY BUDGET"
+              current={totalSpend}
+              target={goals.monthlySpendBudget}
+              unit="₹"
+              color="rgba(74,222,128,0.70)"
+            />
+          : null;
+        return catList || spendBar ? <>{catList}{spendBar}</> : null;
+      }
+
       case 'Recurring thoughts':
-        return weeklyData.recurringTopics?.length
+        return weeklyData?.recurringTopics?.length
           ? <WordCloud topics={weeklyData.recurringTopics} />
           : null;
+
       case 'Learnings':
-        return <LearningCount count={weeklyData.learningCount} />;
+        return <LearningCount count={weeklyData?.learningCount ?? 0} />;
+
       default:
         return null;
     }
@@ -439,6 +506,50 @@ function SectionRow({
   );
 }
 
+// ── Goals progress widgets ────────────────────────────────────────────────────
+
+function GoalProgressBar({
+  label, current, target, unit, color,
+}: {
+  label: string; current: number; target: number; unit: string; color: string;
+}) {
+  const pct     = Math.min(current / target, 1);
+  const over    = current > target;
+  const barColor = over
+    ? 'rgba(252,165,165,0.70)'
+    : pct >= 0.8
+      ? 'rgba(251,191,36,0.70)'
+      : color;
+
+  return (
+    <View style={gpStyles.wrap}>
+      <View style={gpStyles.topRow}>
+        <Text style={gpStyles.label}>{label}</Text>
+        <Text style={[gpStyles.value, over && { color: 'rgba(252,165,165,0.90)' }]}>
+          {unit === '₹'
+            ? `₹${current >= 100000 ? (current/100000).toFixed(1)+'L' : current >= 1000 ? (current/1000).toFixed(1)+'k' : Math.round(current)} / ₹${target >= 100000 ? (target/100000).toFixed(1)+'L' : target >= 1000 ? (target/1000).toFixed(1)+'k' : target}`
+            : `${current} / ${target} ${unit}`}
+        </Text>
+      </View>
+      <View style={gpStyles.track}>
+        <View style={[gpStyles.bar, { flex: pct, backgroundColor: barColor }]} />
+        <View style={{ flex: 1 - pct }} />
+      </View>
+      {over && <Text style={gpStyles.overText}>↑ {Math.round((current / target - 1) * 100)}% over target</Text>}
+    </View>
+  );
+}
+
+const gpStyles = StyleSheet.create({
+  wrap:     { marginTop: 8, gap: 5 },
+  topRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  label:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 0.3 },
+  value:    { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.80)' },
+  track:    { height: 5, borderRadius: 3, flexDirection: 'row', overflow: 'hidden', backgroundColor: 'rgba(152,212,250,0.08)' },
+  bar:      { height: 5, borderRadius: 3 },
+  overText: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(252,165,165,0.75)' },
+});
+
 // ── Main card ─────────────────────────────────────────────────────────────────
 
 export default function WeeklyInsightCard() {
@@ -447,11 +558,16 @@ export default function WeeklyInsightCard() {
   const [notEnoughData, setNotEnoughData] = useState(false);
   const [error,         setError]         = useState<string | null>(null);
   const [refreshing,    setRefreshing]    = useState(false);
+  const [goals,         setGoals]         = useState<UserGoals | null>(null);
+  const [showGoals,     setShowGoals]     = useState(false);
 
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
 
-  useEffect(() => { loadInsight(false); }, []);
+  useEffect(() => {
+    loadInsight(false);
+    StorageService.getGoals().then(g => setGoals(g));
+  }, []);
 
   useEffect(() => {
     if (loading) {
@@ -500,17 +616,32 @@ export default function WeeklyInsightCard() {
           <Text style={styles.heading}>Monthly insights</Text>
           <Text style={styles.headingSub}>{monthLabel}</Text>
         </View>
-        <TouchableOpacity
-          onPress={() => loadInsight(true)}
-          disabled={refreshing || loading}
-          style={styles.refreshBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          {refreshing
-            ? <ActivityIndicator size="small" color="rgba(152,212,250,0.85)" />
-            : <Feather name="refresh-cw" size={13} color="rgba(152,212,250,0.65)" />}
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={() => setShowGoals(true)}
+            style={[styles.refreshBtn, { borderColor: goals ? 'rgba(74,222,128,0.35)' : 'rgba(152,212,250,0.18)' }]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="target" size={13} color={goals ? 'rgba(74,222,128,0.80)' : 'rgba(152,212,250,0.55)'} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => loadInsight(true)}
+            disabled={refreshing || loading}
+            style={styles.refreshBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            {refreshing
+              ? <ActivityIndicator size="small" color="rgba(152,212,250,0.85)" />
+              : <Feather name="refresh-cw" size={13} color="rgba(152,212,250,0.65)" />}
+          </TouchableOpacity>
+        </View>
       </View>
+
+      <GoalsModal
+        visible={showGoals}
+        onClose={() => setShowGoals(false)}
+        onSaved={g => setGoals(g)}
+      />
 
       {/* ── Loading skeleton ── */}
       {loading && (
@@ -555,6 +686,7 @@ export default function WeeklyInsightCard() {
                 sectionKey={s.key}
                 body={s.body}
                 weeklyData={insight.weeklyData}
+                goals={goals ?? undefined}
               />
             ))}
           </View>

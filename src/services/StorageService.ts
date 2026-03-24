@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   TranscriptEntry, DailySummary, AppSettings, PendingClip, WeeklyInsight,
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
+  UserGoals,
 } from '../types';
 
 const KEYS = {
@@ -15,6 +16,7 @@ const KEYS = {
   PATTERN_ANALYSIS_PREFIX: 'insight_patterns_',
   PERSONALITY_ANALYSIS: 'insight_personality',
   GROWTH_TIPS_ANALYSIS: 'insight_growthtips',
+  USER_GOALS: 'user_goals',
 };
 
 function todayKey(): string {
@@ -210,5 +212,14 @@ export const StorageService = {
   },
   async saveGrowthTipsAnalysis(analysis: GrowthTipsAnalysis): Promise<void> {
     await AsyncStorage.setItem(KEYS.GROWTH_TIPS_ANALYSIS, JSON.stringify(analysis));
+  },
+
+  // ── Goals ──────────────────────────────────────────────────────────────────
+  async getGoals(): Promise<UserGoals | null> {
+    const json = await AsyncStorage.getItem(KEYS.USER_GOALS);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveGoals(goals: UserGoals): Promise<void> {
+    await AsyncStorage.setItem(KEYS.USER_GOALS, JSON.stringify(goals));
   },
 };
