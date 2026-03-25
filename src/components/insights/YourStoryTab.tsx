@@ -89,7 +89,7 @@ function RecurringCast({ cast }: { cast: YourStoryAnalysis['recurringCast'] }) {
   return (
     <View style={rc.section}>
       <Text style={rc.label}>RECURRING CAST</Text>
-      <Text style={rc.sub}>People, relationships, tensions that keep appearing — unnamed</Text>
+      <Text style={rc.sub}>People, relationships, tensions that keep appearing in my entries — unnamed</Text>
       <View style={rc.list}>
         {cast.map((c, i) => (
           <View key={i} style={rc.row}>

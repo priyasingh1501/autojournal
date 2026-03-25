@@ -146,7 +146,7 @@ function EnneagramCard({
   return (
     <View style={eg.card}>
       <Text style={eg.headline}>Enneagram Hypothesis</Text>
-      <Text style={eg.sub}>Based on patterns in your entries — unconfirmed. Does this feel true?</Text>
+      <Text style={eg.sub}>Based on patterns in my entries — unconfirmed. Does this feel true?</Text>
 
       {enneagram.types.map(t => (
         <View key={t} style={eg.typeRow}>

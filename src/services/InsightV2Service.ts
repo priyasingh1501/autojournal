@@ -63,13 +63,13 @@ async function callClaude(system: string, user: string, apiKey: string, maxToken
 
 const WHO_SYSTEM = `You are an insightful psychologist and writer. You have read someone's private journal entries.
 
-Your task: write a 3–4 sentence character portrait that synthesizes Big Five and Enneagram. It should read like the opening of a character study — specific, observational, not generic.
+Your task: write a 3–4 sentence character portrait that synthesizes Big Five and Enneagram. Write in FIRST PERSON as the journal writer ("I", "my", "me") — as if the insight is the person's own realisation about themselves. It should read like the opening of a character study — specific, observational, not generic.
 
 Then output EXACTLY this line by itself:
 ===JSON===
 Then output ONLY raw JSON — no markdown, no code fences, no backticks, no trailing commas:
 {
-  "narrative": "3–4 sentence portrait — specific, not generic",
+  "narrative": "3–4 sentence portrait in first person — e.g. 'I show up as someone who...'",
   "bigFive": {
     "openness":          { "score": 72, "direction": "stable" },
     "conscientiousness": { "score": 58, "direction": "rising" },
@@ -78,21 +78,21 @@ Then output ONLY raw JSON — no markdown, no code fences, no backticks, no trai
     "neuroticism":       { "score": 61, "direction": "rising" }
   },
   "bigFiveNarratives": {
-    "openness":          "One sentence — an observation about this person's curiosity, not a definition",
-    "conscientiousness": "One sentence about their relationship with order/follow-through",
-    "extraversion":      "One sentence about how they draw energy",
-    "agreeableness":     "One sentence about how they relate to people",
-    "neuroticism":       "One sentence about their emotional variability — honest, not clinical"
+    "openness":          "First person — e.g. 'My curiosity runs wide but...'",
+    "conscientiousness": "First person observation about the writer's relationship with order/follow-through",
+    "extraversion":      "First person — how I draw energy",
+    "agreeableness":     "First person — how I relate to people",
+    "neuroticism":       "First person — honest, not clinical, about emotional variability"
   },
   "enneagram": {
     "types": [4, 5],
     "typeSummaries": {
-      "4": "How Type 4 might manifest for this specific person",
-      "5": "How Type 5 might manifest for this specific person"
+      "4": "How Type 4 might manifest for me specifically",
+      "5": "How Type 5 might manifest for me specifically"
     },
-    "coreFear": "Extrapolated from entries — stated tentatively",
-    "coreDesire": "Extrapolated from entries — stated tentatively",
-    "growthDirection": "Where their entries suggest they are being pulled — concrete, not vague"
+    "coreFear": "First person — e.g. 'My core fear seems to be...'",
+    "coreDesire": "First person — stated tentatively",
+    "growthDirection": "First person — where my entries suggest I am being pulled"
   },
   "sourceEntries": ["YYYY-MM-DD"]
 }
@@ -139,7 +139,7 @@ export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAre
 
 const VALUES_SYSTEM = `You are a perceptive analyst reading someone's private journal entries.
 
-Your task: map what this person actually cares about — not what they say they care about, but what their attention, language, and emotional charge reveal.
+Your task: map what the writer actually cares about — not what they say they care about, but what their attention, language, and emotional charge reveal. Write all text in FIRST PERSON ("I", "my", "me") as if the insight is the person's own realisation.
 
 Output a framing sentence, then ===JSON===, then only raw JSON:
 {
@@ -153,13 +153,13 @@ Output a framing sentence, then ===JSON===, then only raw JSON:
   ],
   "divergence": [
     {
-      "stated": "what they say they want",
-      "actual": "what they actually live",
-      "observation": "One or two pointed sentences. 'You write about X as something you want. You write about Y as something you're actually living.' This is the most important insight. Make it specific."
+      "stated": "what I say I want",
+      "actual": "what I actually live",
+      "observation": "First person: 'I write about X as something I want. I write about Y as something I'm actually living.' This is the most important insight. Make it specific and pointed."
     }
   ],
   "motivationPulse": "meaning",
-  "motivationRationale": "One sentence about what language pattern surfaced this — specific",
+  "motivationRationale": "First person, one sentence — e.g. 'My language keeps circling questions of...'",
   "sourceEntries": ["YYYY-MM-DD"]
 }
 
@@ -202,7 +202,7 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
 
 // ── Tab 3: How You Think ────────────────────────────────────────────────────────
 
-const THINK_SYSTEM = `You are a cognitive analyst reading someone's private journal entries. You are mapping how they think, not what they think about.
+const THINK_SYSTEM = `You are a cognitive analyst reading someone's private journal entries. You are mapping how the writer thinks, not what they think about. Write all observations in FIRST PERSON ("I", "my") as if the writer is seeing this about themselves.
 
 Four dimensions to assess. Each is a spectrum — score 0=fully left pole, 100=fully right pole.
 
@@ -214,7 +214,7 @@ Output a framing sentence, then ===JSON===, then only raw JSON:
       "leftLabel": "Systems",
       "rightLabel": "Stories",
       "score": 35,
-      "observation": "One sentence. Not a label — an observation specific to this person and what you saw in the entries.",
+      "observation": "First person, one sentence — e.g. 'I reach for frameworks first...' — specific to what you saw in the entries, not a generic definition.",
       "sourceEntries": ["YYYY-MM-DD"]
     },
     {
@@ -285,24 +285,24 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
 
 const STORY_SYSTEM = `You are a narrative analyst reading someone's private journal entries across time.
 
-Your task: identify the story arc of their life right now — the phase they are in, the characters (unnamed) that keep appearing, and the deeper arc pattern of how they make meaning.
+Your task: identify the story arc of the writer's life right now. Write everything in FIRST PERSON ("I", "my", "me") — as if the writer is narrating their own life. The chapter narrative especially should feel like the opening of a memoir, not a third-person analysis.
 
 Output a framing sentence, then ===JSON===, then only raw JSON:
 {
   "currentChapter": {
     "title": "2–3 word chapter title — evocative, like a book chapter name. e.g. 'The Clearing', 'Building the Frame', 'After the Storm'",
     "dateRange": "Month Year – present, or Month–Month Year",
-    "narrative": "2–3 sentences written like the opening of a book chapter. Present tense. Specific. Atmospheric but grounded."
+    "narrative": "2–3 sentences in FIRST PERSON, present tense — like the opening of a memoir. e.g. 'Something has been set down. Not resolved — set down...'"
   },
   "recurringCast": [
     {
-      "archetype": "A relationship or figure described without naming — e.g. 'A relationship where you hold back' or 'A version of yourself you are grieving' or 'A project that carries more weight than it should'",
+      "archetype": "First person — e.g. 'A relationship where I hold back' or 'A version of myself I am grieving' or 'A project that carries more weight than it should'",
       "frequency": 7
     }
   ],
   "arcPattern": {
     "type": "Seeker",
-    "description": "2–3 sentences explaining what this arc type means for how THIS person makes meaning, based on what you read"
+    "description": "First person, 2–3 sentences — e.g. 'I make meaning through inquiry. I am at home in questions...'"
   },
   "sourceEntries": ["YYYY-MM-DD"]
 }

@@ -130,7 +130,7 @@ export default function HowYouThinkTab({ data, onJump }: Props) {
       <View style={s.notice}>
         <Feather name="eye" size={12} color="rgba(152,212,250,0.45)" />
         <Text style={s.noticeText}>
-          These sliders are inferred from your writing — not self-reported. They're a mirror, not a test. Tap any card to see which entries informed it.
+          These sliders are inferred from my writing — not self-reported. A mirror, not a test. Tap any card to see which entries informed it.
         </Text>
       </View>
 

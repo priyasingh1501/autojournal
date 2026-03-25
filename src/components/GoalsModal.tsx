@@ -220,8 +220,8 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
             {/* Header */}
             <View style={s.header}>
               <View>
-                <Text style={s.title}>Your Goals</Text>
-                <Text style={s.subtitle}>Personalised to your recomposition plan</Text>
+                <Text style={s.title}>My Goals</Text>
+                <Text style={s.subtitle}>Personalised to my recomposition plan</Text>
               </View>
               <TouchableOpacity onPress={onClose} style={s.closeBtn} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
                 <Feather name="x" size={18} color="rgba(152,212,250,0.70)" />
@@ -284,7 +284,7 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
                   <View style={s.nutritionNote}>
                     <Feather name="info" size={11} color="rgba(251,191,36,0.60)" />
                     <Text style={s.nutritionNoteText}>
-                      Mention your meals and intake in your journal — Claude will track patterns automatically
+                      Mention meals and intake in journal entries — Claude will track patterns automatically
                     </Text>
                   </View>
                 )}

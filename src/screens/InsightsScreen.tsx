@@ -28,10 +28,10 @@ import YourStoryTab          from '../components/insights/YourStoryTab';
 type TabKey = 'you' | 'values' | 'thinking' | 'story';
 
 const TABS: { key: TabKey; label: string; icon: string; full: string; sub: string }[] = [
-  { key: 'you',      label: 'You',      icon: 'user',    full: 'Who You Are',         sub: 'Big Five · Enneagram' },
-  { key: 'values',   label: 'Values',   icon: 'heart',   full: 'What You Care About', sub: 'Values · Motivation' },
-  { key: 'thinking', label: 'Thinking', icon: 'cpu',     full: 'How You Think',       sub: 'Cognitive styles' },
-  { key: 'story',    label: 'Story',    icon: 'book',    full: 'Your Story',          sub: 'Chapter · Arc' },
+  { key: 'you',      label: 'Me',       icon: 'user',    full: 'Who I Am',            sub: 'Big Five · Enneagram' },
+  { key: 'values',   label: 'Values',   icon: 'heart',   full: 'What I Care About',   sub: 'Values · Motivation' },
+  { key: 'thinking', label: 'Thinking', icon: 'cpu',     full: 'How I Think',         sub: 'Cognitive styles' },
+  { key: 'story',    label: 'Story',    icon: 'book',    full: 'My Story',            sub: 'Chapter · Arc' },
 ];
 
 // ── Empty / error states ───────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ export default function InsightsScreen() {
         {isLoading && (
           <View style={s.loadingRow}>
             <ActivityIndicator size="small" color="rgba(152,212,250,0.60)" />
-            <Text style={s.loadingText}>Claude is reading your entries…</Text>
+            <Text style={s.loadingText}>Claude is reading my entries…</Text>
           </View>
         )}
 
