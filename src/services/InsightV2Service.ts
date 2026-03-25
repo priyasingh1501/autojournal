@@ -38,39 +38,71 @@ async function buildContext(days: number): Promise<{ text: string; dates: string
   return { text, dates: summaries.map(s => s.date) };
 }
 
-// Summaries + one raw voice note sampled per week (last 4 weeks).
-// Raw notes reveal thinking style in a way cleaned-up summaries can't —
-// actual word choice, how ideas connect, whether they close loops or spiral.
+// Summaries + sampled raw notes (voice AND written) — one of each per week.
+//
+// Why both modalities?
+// Voice = unguarded thought: structure preference, whether ideas land or spiral,
+//   filler words and restarts are signal.
+// Written = committed thought: intentional word choice, deliberate scope,
+//   editing happened mid-sentence even if invisible.
+// The CONTRAST between them is itself a cognitive insight.
+//
+// Which dimension each source is best for:
+//   Systems vs Stories      → voice (unguarded structure preference)
+//   Resolves vs Sits With   → voice (do thoughts actually land?)
+//   Zoomed In vs Out        → written (intentional scope selection)
+//   Internal vs External    → written (deliberate vs reactive self-reference)
 async function buildThinkingContext(): Promise<{ text: string; dates: string[] }> {
-  const allDates   = await StorageService.getSummaryDates();
-  const recent     = allDates.slice(0, 30);
-  const summaries  = await StorageService.getSummariesForDateRange(recent);
+  const allDates  = await StorageService.getSummaryDates();
+  const recent    = allDates.slice(0, 30);
+  const summaries = await StorageService.getSummariesForDateRange(recent);
   if (summaries.length < 3) throw new Error(NOT_ENOUGH_DATA);
 
   const summaryText = summaries
     .map(s => `[${s.date}]\n${s.insightText ?? s.summary}`)
     .join('\n\n');
 
-  // Sample 1 clip per weekly chunk — first date in that week that has transcripts
-  const RAW_CAP   = 450;  // chars per clip — enough for thought patterns, not overwhelming
-  const rawBlocks: string[] = [];
+  const CAP   = 450; // chars per clip
+  const WEEKS = 4;
+  const voiceBlocks:   string[] = [];
+  const writtenBlocks: string[] = [];
 
-  for (let week = 0; week < 4; week++) {
-    const chunk = recent.slice(week * 7, week * 7 + 7);
+  for (let w = 0; w < WEEKS; w++) {
+    const chunk = recent.slice(w * 7, w * 7 + 7);
+    let foundVoice   = false;
+    let foundWritten = false;
+
     for (const date of chunk) {
+      if (foundVoice && foundWritten) break;
       const clips = await StorageService.getTranscriptsForDate(date);
-      if (clips.length > 0) {
-        const txt = clips[0].text.trim();
-        const capped = txt.length > RAW_CAP ? txt.slice(0, RAW_CAP) + '…' : txt;
-        rawBlocks.push(`[RAW VOICE NOTE · ${date}]\n${capped}`);
-        break; // one sample per week
+
+      for (const clip of clips) {
+        const isVoice   = !clip.kind || clip.kind === 'voice';
+        const isWritten = clip.kind === 'manual';
+        const txt    = clip.text.trim();
+        const capped = txt.length > CAP ? txt.slice(0, CAP) + '…' : txt;
+
+        if (isVoice && !foundVoice) {
+          voiceBlocks.push(`[VOICE NOTE · ${date}]\n${capped}`);
+          foundVoice = true;
+        } else if (isWritten && !foundWritten) {
+          writtenBlocks.push(`[WRITTEN NOTE · ${date}]\n${capped}`);
+          foundWritten = true;
+        }
+        if (foundVoice && foundWritten) break;
       }
     }
   }
 
-  const rawSection = rawBlocks.length > 0
-    ? `\n\n${'─'.repeat(40)}\nRAW VOICE NOTES — unedited, direct from recording.\nFiller words and false starts are intentional signal, not noise.\n${'─'.repeat(40)}\n\n${rawBlocks.join('\n\n')}`
-    : '';
+  const sep = '─'.repeat(44);
+  let rawSection = '';
+
+  if (voiceBlocks.length > 0) {
+    rawSection += `\n\n${sep}\nVOICE NOTES — unedited, stream-of-consciousness.\nFiller words, false starts, unfinished sentences: all signal.\n${sep}\n\n${voiceBlocks.join('\n\n')}`;
+  }
+  if (writtenBlocks.length > 0) {
+    rawSection += `\n\n${sep}\nWRITTEN NOTES — typed, more considered.\nWord choice is intentional. Structure (or lack of it) is deliberate.\n${sep}\n\n${writtenBlocks.join('\n\n')}`;
+  }
 
   return { text: summaryText + rawSection, dates: summaries.map(s => s.date) };
 }
@@ -241,9 +273,12 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
 
 const THINK_SYSTEM = `You are a cognitive analyst reading someone's private journal entries. You are mapping HOW the writer thinks — not what they think about. Write all observations in FIRST PERSON ("I", "my") as if the writer is seeing this about themselves.
 
-You have two types of input:
-- PROCESSED SUMMARIES: cleaned-up, structured — useful for pattern frequency over time
-- RAW VOICE NOTES: unedited, direct from recording — filler words, false starts, and tangents are intentional signal, not noise. These are the primary evidence for cognitive style. Pay close attention to: how ideas connect (or don't), whether the person closes thoughts or spirals, whether they reach for structures or stories, whether they reference themselves or look outward.
+You have three types of input:
+- PROCESSED SUMMARIES: cleaned-up, structured — good for frequency of themes over time, not for thinking style
+- VOICE NOTES: unedited, stream-of-consciousness — primary evidence for Systems vs Stories and Resolves vs Sits With. Filler words, false starts, and abandoned sentences are signal, not noise. How do ideas connect? Does the thought land, or spiral?
+- WRITTEN NOTES: typed, more considered — primary evidence for Zoomed In vs Out and Internal vs External. Word choice is intentional. Sentence structure is deliberate. What scope did they choose? Do they reference themselves or look outward?
+
+The contrast between voice and written is itself a cognitive insight. Someone structured in writing but scattered verbally is externalising thought to clarify it. Someone consistent across both modalities is different. Note any gap between the two.
 
 Four dimensions to assess. Each is a spectrum — score 0=fully left pole, 100=fully right pole.
 
@@ -306,7 +341,7 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
   const { text, dates } = await buildThinkingContext();
   const raw = await callClaude(
     THINK_SYSTEM,
-    `Here are my journal entries (processed summaries + raw voice note samples):\n\n${text}\n\nPlease map how I think. Weight the raw voice notes heavily — they show my actual thinking patterns, not the cleaned-up version.`,
+    `Here are my journal entries — processed summaries, raw voice notes, and written notes:\n\n${text}\n\nPlease map how I think. Use voice notes for Systems vs Stories and Resolves vs Sits With. Use written notes for Zoomed In vs Out and Internal vs External. Note any meaningful gap between how I think out loud vs how I write.`,
     settings.anthropicApiKey,
     1100,
   );
