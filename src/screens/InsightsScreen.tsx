@@ -28,11 +28,12 @@ import YourStoryTab          from '../components/insights/YourStoryTab';
 
 type TabKey = 'you' | 'values' | 'thinking' | 'story';
 
+// Ordered by update frequency — most dynamic first
 const TABS: { key: TabKey; label: string; icon: string; full: string; sub: string }[] = [
-  { key: 'you',      label: 'Me',       icon: 'user',    full: 'Who I Am',            sub: 'Big Five · Enneagram' },
-  { key: 'values',   label: 'Values',   icon: 'heart',   full: 'What I Care About',   sub: 'Values · Motivation' },
-  { key: 'thinking', label: 'Thinking', icon: 'cpu',     full: 'How I Think',         sub: 'Cognitive styles' },
-  { key: 'story',    label: 'Story',    icon: 'book',    full: 'My Story',            sub: 'Chapter · Arc' },
+  { key: 'values',   label: 'Values',   icon: 'heart',   full: 'What I Care About',   sub: 'Values · Motivation'  }, // 10 entries / 14d
+  { key: 'you',      label: 'Me',       icon: 'user',    full: 'Who I Am',            sub: 'Big Five · Enneagram' }, // 20 entries / 30d
+  { key: 'thinking', label: 'Thinking', icon: 'cpu',     full: 'How I Think',         sub: 'Cognitive styles'     }, // 25 entries / 30d
+  { key: 'story',    label: 'Story',    icon: 'book',    full: 'My Story',            sub: 'Chapter · Arc'        }, // 30 entries / 30d
 ];
 
 // ── Empty / error states ───────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ const es = StyleSheet.create({
 
 export default function InsightsScreen() {
   const navigation = useNavigation<any>();
-  const [activeTab, setActiveTab] = useState<TabKey>('you');
+  const [activeTab, setActiveTab] = useState<TabKey>('values');
   const scrollRef = useRef<ScrollView>(null);
 
   const [currentEntryCount, setCurrentEntryCount] = useState(0);
