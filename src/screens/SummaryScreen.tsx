@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   View,
@@ -70,6 +70,66 @@ function toPlainText(md: string) {
     .replace(/\n{2,}/g, ' ')
     .trim();
 }
+
+// ── stale entries banner ──────────────────────────────────────────────────────
+
+function StaleBanner({
+  item,
+  onRegenerate,
+  generating,
+}: {
+  item: DailySummary;
+  onRegenerate: () => void;
+  generating: boolean;
+}) {
+  const [newCount, setNewCount] = useState(0);
+
+  useEffect(() => {
+    StorageService.getTranscriptsForDate(item.date).then(transcripts => {
+      const newer = transcripts.filter(t => t.timestamp > item.createdAt).length;
+      setNewCount(newer);
+    }).catch(() => {});
+  }, [item.date, item.createdAt]);
+
+  if (newCount === 0) return null;
+
+  return (
+    <View style={sb.wrap}>
+      <Feather name="clock" size={11} color="rgba(152,212,250,0.55)" />
+      <Text style={sb.text}>
+        {newCount} new entr{newCount === 1 ? 'y' : 'ies'} since this summary
+      </Text>
+      <TouchableOpacity
+        onPress={onRegenerate}
+        disabled={generating}
+        style={[sb.btn, generating && { opacity: 0.5 }]}
+        activeOpacity={0.75}
+      >
+        <Text style={sb.btnText}>{generating ? 'Regenerating…' : 'Regenerate'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const sb = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 9,
+    backgroundColor: 'rgba(9,41,173,0.14)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(152,212,250,0.10)',
+  },
+  text: {
+    flex: 1, fontSize: 11, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.65)',
+  },
+  btn: {
+    paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: 'rgba(9,41,173,0.40)',
+    borderRadius: 8, borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.28)',
+  },
+  btnText: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.90)' },
+});
 
 // ── main component ────────────────────────────────────────────────────────────
 export default function SummaryScreen() {
@@ -252,6 +312,12 @@ export default function SummaryScreen() {
           </View>
         </View>
       )}
+
+      <StaleBanner
+        item={item}
+        onRegenerate={() => handleGenerate(item.date)}
+        generating={generatingDate === item.date}
+      />
 
       <ScrollView
         style={styles.cardScrollView}

@@ -144,6 +144,8 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
   // Nutrition
   const [calories,        setCalories]        = useState('');
   const [protein,         setProtein]         = useState('');
+  const [carbs,           setCarbs]           = useState('');
+  const [fat,             setFat]             = useState('');
   // Body metrics
   const [bodyFatTarget,   setBodyFatTarget]   = useState('');
   const [muscleTarget,    setMuscleTarget]    = useState('');
@@ -157,6 +159,14 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
 
   useEffect(() => { if (visible) load(); }, [visible]);
 
+  // Auto-populate carbs & fat from suggestion whenever calorie/protein/BF inputs change
+  useEffect(() => {
+    if (!suggestedMacros) return;
+    // Only overwrite if the user hasn't manually edited these fields
+    setCarbs(v => v === '' || v === String(suggestedMacros!.carbsGrams) ? String(suggestedMacros!.carbsGrams) : v);
+    setFat(v  => v === '' || v === String(suggestedMacros!.fatGrams)   ? String(suggestedMacros!.fatGrams)   : v);
+  }, [calories, protein, bodyFatTarget]);
+
   const load = async () => {
     const g = await StorageService.getGoals();
     if (!g) return;
@@ -166,6 +176,8 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
     if (!g.strengthDaysPerWeek && g.workoutDaysPerWeek) setStrengthDays(g.workoutDaysPerWeek);
     if (g.dailyCalorieTarget)    setCalories(String(g.dailyCalorieTarget));
     if (g.dailyProteinTarget)    setProtein(String(g.dailyProteinTarget));
+    if (g.dailyCarbsTarget)      setCarbs(String(g.dailyCarbsTarget));
+    if (g.dailyFatTarget)        setFat(String(g.dailyFatTarget));
     if (g.bodyFatTargetPct)      setBodyFatTarget(String(g.bodyFatTargetPct));
     if (g.muscleMassTargetKg)    setMuscleTarget(String(g.muscleMassTargetKg));
     if (g.waistTargetCm)         setWaistTarget(String(g.waistTargetCm));
@@ -193,6 +205,10 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
     if (!isNaN(cal) && cal > 0)                  g.dailyCalorieTarget   = cal;
     const prot = parseFloat(protein);
     if (!isNaN(prot) && prot > 0)                g.dailyProteinTarget   = prot;
+    const crb = parseFloat(carbs);
+    if (!isNaN(crb) && crb > 0)                  g.dailyCarbsTarget     = crb;
+    const ft = parseFloat(fat);
+    if (!isNaN(ft) && ft > 0)                    g.dailyFatTarget       = ft;
     const bf = parseFloat(bodyFatTarget);
     if (!isNaN(bf) && bf > 0)                    g.bodyFatTargetPct     = bf;
     const mus = parseFloat(muscleTarget);
@@ -210,6 +226,33 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
 
   const latestWaist = waistHistory.length > 0 ? waistHistory[waistHistory.length - 1] : null;
   const anySet = strengthDays > 0 || cardioDays > 0 || calories || protein || bodyFatTarget || spendBudget;
+
+  // ── Macro suggestion ──────────────────────────────────────────────────────
+  const suggestedMacros = (() => {
+    const cal  = parseFloat(calories);
+    const prot = parseFloat(protein);
+    if (isNaN(cal) || cal <= 0 || isNaN(prot) || prot <= 0) return null;
+
+    const protKcal = prot * 4;
+    if (protKcal >= cal) return null; // protein alone exceeds budget
+
+    // Fat: 30% if still in early cut (BF target > 38%), otherwise 27%
+    const bfTarget = parseFloat(bodyFatTarget);
+    const fatPct   = (!isNaN(bfTarget) && bfTarget > 38) ? 0.30 : 0.27;
+    const fatKcal  = Math.round(cal * fatPct);
+    const fatGrams = Math.round(fatKcal / 9);
+
+    const carbsKcal  = Math.max(0, cal - protKcal - fatKcal);
+    const carbsGrams = Math.round(carbsKcal / 4);
+
+    return {
+      carbsGrams,
+      fatGrams,
+      protPct:  Math.round((protKcal / cal) * 100),
+      fatPct:   Math.round((fatKcal  / cal) * 100),
+      carbsPct: Math.round((carbsKcal / cal) * 100),
+    };
+  })();
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -280,6 +323,21 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
                   unit="g"
                   hint="Non-negotiable for muscle retention — aim 90–100g/day"
                 />
+                <NumericField
+                  label="Daily carbs target"
+                  value={carbs}
+                  onChange={setCarbs}
+                  placeholder={suggestedMacros ? String(suggestedMacros.carbsGrams) : '150'}
+                  unit="g"
+                />
+                <NumericField
+                  label="Daily fat target"
+                  value={fat}
+                  onChange={setFat}
+                  placeholder={suggestedMacros ? String(suggestedMacros.fatGrams) : '45'}
+                  unit="g"
+                />
+
                 {(calories || protein) && (
                   <View style={s.nutritionNote}>
                     <Feather name="info" size={11} color="rgba(251,191,36,0.60)" />
@@ -440,6 +498,7 @@ const s = StyleSheet.create({
 
   nutritionNote:     { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: 'rgba(251,191,36,0.05)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(251,191,36,0.14)', padding: 10 },
   nutritionNoteText: { flex: 1, fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(251,191,36,0.70)', lineHeight: 16 },
+
 
   waistBlock:    { gap: 10 },
   waistInputRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },

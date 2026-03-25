@@ -51,25 +51,38 @@ export interface SpendCategory {
   source?: 'sms' | 'ai';                         // data origin
 }
 
-export interface WeeklyData {
+export interface DayMacros {
+  date: string;             // YYYY-MM-DD
+  calories?: number | null; // estimated kcal
+  protein?: number | null;  // grams
+  carbs?: number | null;    // grams
+  fat?: number | null;      // grams
+  mealSummary?: string | null; // brief description of what was eaten
+}
+
+export interface MonthlyData {
   moodScore: number;                              // 1–5 (1=very hard, 5=great)
   movementDays: boolean[];                        // one bool per day of the month so far
   mealQuality: 'good' | 'mixed' | 'poor';        // overall fallback
   spendLevel: 'none' | 'low' | 'medium' | 'high'; // overall fallback
   learningCount: number;                          // distinct things learned
   spendCategories?: SpendCategory[];              // per-category spend breakdown
-  mealWeeks?: ('good' | 'mixed' | 'poor')[];     // one entry per week of the month
+  mealWeeks?: ('good' | 'mixed' | 'poor')[];     // legacy — one entry per week of the month
+  mealDays?: ('good' | 'mixed' | 'poor' | null)[]; // per-day meal quality vs goals; null = no data
+  lastMealDate?: string;                          // YYYY-MM-DD of the most recent day meals were recorded
+  lastMealSummary?: string;                       // what was eaten that day (1-2 sentences)
+  mealMacrosByDay?: DayMacros[];                  // per-day macro estimates from journal entries
   meditationDays?: boolean[];                     // one bool per day of the month so far
   emotionCounts?: EmotionCount[];                 // emotions ranked by how many entries reflected them
   recurringTopics?: { word: string; count: number }[]; // word cloud data, sorted by count desc
 }
 
-export interface WeeklyInsight {
+export interface MonthlyInsight {
   weekKey: string;        // e.g. "2026-W12"
   weekStart: string;      // YYYY-MM-DD Monday
   weekEnd: string;        // YYYY-MM-DD Sunday
   insightText: string;    // Claude-generated flowing prose
-  weeklyData?: WeeklyData; // structured signals for infographics
+  weeklyData?: MonthlyData; // structured signals for infographics
   daysActive: number;     // days with at least one entry
   totalEntries: number;   // sum of all entries across the week
   daysSummarised: number; // days with a DailySummary
@@ -94,6 +107,8 @@ export interface UserGoals {
   // ── Nutrition ────────────────────────────────────────────────
   dailyCalorieTarget?: number;           // kcal/day e.g. 1400
   dailyProteinTarget?: number;           // grams/day e.g. 95
+  dailyCarbsTarget?: number;             // grams/day — computed from recomp split
+  dailyFatTarget?: number;               // grams/day — computed from recomp split
 
   // ── Body composition milestones ──────────────────────────────
   bodyFatTargetPct?: number;             // current phase target e.g. 42

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  TranscriptEntry, DailySummary, AppSettings, PendingClip, WeeklyInsight,
+  TranscriptEntry, DailySummary, AppSettings, PendingClip, MonthlyInsight,
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
   UserGoals,
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis, HowYouThinkAnalysis, YourStoryAnalysis,
@@ -156,24 +156,24 @@ export const StorageService = {
     return results.filter(Boolean) as DailySummary[];
   },
 
-  async getWeeklyInsight(weekKey: string): Promise<WeeklyInsight | null> {
+  async getLegacyInsight(weekKey: string): Promise<MonthlyInsight | null> {
     const json = await AsyncStorage.getItem(KEYS.WEEKLY_INSIGHTS_PREFIX + weekKey);
     return json ? JSON.parse(json) : null;
   },
 
-  async saveWeeklyInsight(insight: WeeklyInsight): Promise<void> {
+  async saveLegacyInsight(insight: MonthlyInsight): Promise<void> {
     await AsyncStorage.setItem(
       KEYS.WEEKLY_INSIGHTS_PREFIX + insight.weekKey,
       JSON.stringify(insight),
     );
   },
 
-  async getMonthlyInsight(monthKey: string): Promise<WeeklyInsight | null> {
+  async getMonthlyInsight(monthKey: string): Promise<MonthlyInsight | null> {
     const json = await AsyncStorage.getItem(KEYS.MONTHLY_INSIGHTS_PREFIX + monthKey);
     return json ? JSON.parse(json) : null;
   },
 
-  async saveMonthlyInsight(insight: WeeklyInsight): Promise<void> {
+  async saveMonthlyInsight(insight: MonthlyInsight): Promise<void> {
     await AsyncStorage.setItem(
       KEYS.MONTHLY_INSIGHTS_PREFIX + insight.weekKey,
       JSON.stringify(insight),

@@ -11,8 +11,8 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
-import { WeeklyInsight, WeeklyData, SpendCategory, EmotionCount, UserGoals } from '../types';
-import { generateWeeklyInsight, NOT_ENOUGH_DATA } from '../services/WeeklyInsightService';
+import { MonthlyInsight, MonthlyData, SpendCategory, EmotionCount, UserGoals, DayMacros } from '../types';
+import { generateMonthlyInsight, NOT_ENOUGH_DATA } from '../services/MonthlyInsightService';
 import { StorageService } from '../services/StorageService';
 import { SECTION_LABELS } from './InsightSections';
 import GoalsModal from './GoalsModal';
@@ -134,7 +134,59 @@ function MeditationGrid({ days }: { days: boolean[] }) {
   );
 }
 
-/** Weekly meal quality strip — W1 W2 W3 W4 coloured circles */
+/** Per-day meal quality grid — same layout as meditation, 3-state colour */
+const MEAL_DAY_STYLE: Record<'good' | 'mixed' | 'poor', object> = {
+  good:  { backgroundColor: 'rgba(110,231,183,0.20)', borderWidth: 1, borderColor: 'rgba(110,231,183,0.65)' },
+  mixed: { backgroundColor: 'rgba(251,191,36,0.18)',  borderWidth: 1, borderColor: 'rgba(251,191,36,0.60)'  },
+  poor:  { backgroundColor: 'rgba(252,165,165,0.20)', borderWidth: 1, borderColor: 'rgba(252,165,165,0.60)' },
+};
+
+function MealDayGrid({ days }: { days: ('good' | 'mixed' | 'poor' | null)[] }) {
+  const rows: ('good' | 'mixed' | 'poor' | null)[][] = [];
+  for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
+  return (
+    <View style={{ gap: 5, marginTop: 7 }}>
+      {rows.map((row, wi) => (
+        <View key={wi} style={infoStyles.gridRow}>
+          <Text style={infoStyles.weekLabel}>W{wi + 1}</Text>
+          {row.map((quality, di) => (
+            <View
+              key={di}
+              style={[infoStyles.gridDot, quality ? MEAL_DAY_STYLE[quality] : infoStyles.gridDotOff]}
+            />
+          ))}
+        </View>
+      ))}
+      {/* Legend */}
+      <View style={mealGridStyles.legend}>
+        {(['good', 'mixed', 'poor'] as const).map(q => (
+          <View key={q} style={mealGridStyles.legendItem}>
+            <View style={[mealGridStyles.legendDot, MEAL_DAY_STYLE[q] as any]} />
+            <Text style={mealGridStyles.legendLabel}>{q}</Text>
+          </View>
+        ))}
+        <View style={mealGridStyles.legendItem}>
+          <View style={[mealGridStyles.legendDot, infoStyles.gridDotOff]} />
+          <Text style={mealGridStyles.legendLabel}>no data</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const mealSectionLabel = StyleSheet.create({
+  label: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', letterSpacing: 0.6, textTransform: 'uppercase' },
+});
+
+const mealGridStyles = StyleSheet.create({
+  legend:      { flexDirection: 'row', gap: 12, marginTop: 5 },
+  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot:   { width: 8, height: 8, borderRadius: 4 },
+  legendLabel: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', textTransform: 'lowercase' },
+});
+
+
+/** Monthly meal quality strip — W1 W2 W3 W4 coloured circles (legacy fallback) */
 const MEAL_WEEK_CFG = {
   good:  { bg: 'rgba(110,231,183,0.18)', border: 'rgba(110,231,183,0.55)', text: 'rgba(110,231,183,0.95)' },
   mixed: { bg: 'rgba(251,191, 36,0.18)', border: 'rgba(251,191, 36,0.55)', text: 'rgba(251,191, 36,0.95)' },
@@ -367,21 +419,124 @@ const dotStyles = StyleSheet.create({
   dotOff: { backgroundColor: 'rgba(152,212,250,0.18)' },
 });
 
+// ── Meal daily macro view ─────────────────────────────────────────────────────
+
+function MacroBar({
+  label, value, target, unit, color,
+}: {
+  label: string; value: number; target?: number | null; unit: string; color: string;
+}) {
+  const pct      = value === 0 ? 0 : target ? Math.min(value / target, 1) : 1;
+  const over     = target ? value > target * 1.1 : false;
+  const barColor = over
+    ? 'rgba(252,165,165,0.80)'
+    : target && pct >= 0.85
+      ? color
+      : target && pct >= 0.5
+        ? 'rgba(251,191,36,0.65)'
+        : color;
+
+  return (
+    <View style={macroStyles.wrap}>
+      <View style={macroStyles.topRow}>
+        <Text style={macroStyles.label}>{label}</Text>
+        <Text style={[macroStyles.value, over && { color: 'rgba(252,165,165,0.90)' }]}>
+          {Math.round(value)}{unit}
+          {target ? ` / ${target}${unit}` : ''}
+        </Text>
+      </View>
+      <View style={macroStyles.track}>
+        <View style={[macroStyles.fill, { flex: pct, backgroundColor: barColor }]} />
+        <View style={{ flex: 1 - pct }} />
+      </View>
+      {over && (
+        <Text style={macroStyles.overText}>
+          ↑ {Math.round((value / target! - 1) * 100)}% over target
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function DailyMacroView({
+  macros, goals,
+}: {
+  macros: DayMacros | undefined; goals: UserGoals | undefined;
+}) {
+
+  return (
+    <View style={macroStyles.card}>
+      <View style={{ gap: 8, marginTop: 4 }}>
+        <MacroBar
+          label="Calories"
+          value={macros?.calories ?? 0}
+          target={goals?.dailyCalorieTarget}
+          unit=" kcal"
+          color="rgba(251,191,36,0.80)"
+        />
+        <MacroBar
+          label="Protein"
+          value={macros?.protein ?? 0}
+          target={goals?.dailyProteinTarget}
+          unit="g"
+          color="rgba(147,197,253,0.85)"
+        />
+        <MacroBar
+          label="Carbs"
+          value={macros?.carbs ?? 0}
+          target={goals?.dailyCarbsTarget}
+          unit="g"
+          color="rgba(110,231,183,0.70)"
+        />
+        <MacroBar
+          label="Fat"
+          value={macros?.fat ?? 0}
+          target={goals?.dailyFatTarget}
+          unit="g"
+          color="rgba(196,181,253,0.70)"
+        />
+      </View>
+    </View>
+  );
+}
+
+const macroStyles = StyleSheet.create({
+  card:      { marginTop: 8, gap: 6 },
+  wrap:      { gap: 4 },
+  topRow:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  label:     { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', textTransform: 'uppercase', letterSpacing: 0.3 },
+  value:     { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.85)' },
+  track:     { height: 5, borderRadius: 3, flexDirection: 'row', overflow: 'hidden', backgroundColor: 'rgba(152,212,250,0.08)' },
+  fill:      { height: 5, borderRadius: 3 },
+  overText:  { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(252,165,165,0.70)' },
+  empty:     { paddingVertical: 10, alignItems: 'center' },
+  emptyText: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.38)', fontStyle: 'italic' },
+});
+
 function SectionRow({
   sectionKey,
   body,
-  weeklyData,
+  monthlyData,
   goals,
 }: {
   sectionKey: string;
   body: string;
-  weeklyData?: WeeklyData;
+  monthlyData?: MonthlyData;
   goals?: UserGoals;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const meta    = SECTION_LABELS[sectionKey];
-  const preview = firstSentence(body);
-  const hasMore = body.trim().length > preview.length + 2;
+  const meta = SECTION_LABELS[sectionKey];
+
+  // For Meals: default body = last recorded meal day's actual summary; fall back to AI text
+  const effectiveBody = (sectionKey === 'Meals' && monthlyData?.lastMealSummary)
+    ? monthlyData.lastMealSummary
+    : body;
+  const datePrefix = (sectionKey === 'Meals' && monthlyData?.lastMealDate)
+    ? new Date(monthlyData.lastMealDate + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' — '
+    : '';
+
+  const preview = firstSentence(effectiveBody);
+  const hasMore = effectiveBody.trim().length > preview.length + 2;
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -392,17 +547,17 @@ function SectionRow({
     switch (sectionKey) {
 
       case 'Emotional check-in':
-        return weeklyData?.emotionCounts?.length
-          ? <EmotionBars emotions={weeklyData.emotionCounts} />
+        return monthlyData?.emotionCounts?.length
+          ? <EmotionBars emotions={monthlyData.emotionCounts} />
           : null;
 
       case 'Movement': {
-        const grid = weeklyData?.movementDays?.length
-          ? <MovementGrid days={weeklyData.movementDays} />
+        const grid = monthlyData?.movementDays?.length
+          ? <MovementGrid days={monthlyData.movementDays} />
           : null;
-        const activeDays    = weeklyData?.movementDays?.filter(Boolean).length ?? 0;
-        const weeksElapsed  = weeklyData?.movementDays?.length
-          ? Math.max(1, Math.ceil(weeklyData.movementDays.length / 7))
+        const activeDays    = monthlyData?.movementDays?.filter(Boolean).length ?? 0;
+        const weeksElapsed  = monthlyData?.movementDays?.length
+          ? Math.max(1, Math.ceil(monthlyData.movementDays.length / 7))
           : 1;
         // Strength goal
         const strengthTarget = (goals?.strengthDaysPerWeek ?? goals?.workoutDaysPerWeek)
@@ -441,46 +596,47 @@ function SectionRow({
       }
 
       case 'Meditation':
-        return weeklyData?.meditationDays?.length
-          ? <MeditationGrid days={weeklyData.meditationDays} />
+        return monthlyData?.meditationDays?.length
+          ? <MeditationGrid days={monthlyData.meditationDays} />
           : null;
 
       case 'Meals': {
-        const strip = weeklyData?.mealWeeks?.length
-          ? <MealWeekStrip weeks={weeklyData.mealWeeks as any} />
-          : null;
-        // Nutrition targets panel — shown when calorie/protein goals are set
-        const hasNutritionGoals = goals?.dailyCalorieTarget || goals?.dailyProteinTarget;
-        const nutritionPanel = hasNutritionGoals
-          ? <View style={mealGoalStyles.panel}>
-              {goals?.dailyCalorieTarget && (
-                <View style={mealGoalStyles.row}>
-                  <Text style={mealGoalStyles.nutriLabel}>Daily calories</Text>
-                  <Text style={mealGoalStyles.nutriTarget}>
-                    {goals.dailyCalorieTarget.toLocaleString()} kcal
-                  </Text>
-                </View>
-              )}
-              {goals?.dailyProteinTarget && (
-                <View style={mealGoalStyles.row}>
-                  <Text style={mealGoalStyles.nutriLabel}>Daily protein</Text>
-                  <Text style={mealGoalStyles.nutriTarget}>
-                    {goals.dailyProteinTarget} g
-                  </Text>
-                </View>
-              )}
-              <Text style={mealGoalStyles.hint}>Journal your meals so Claude can track patterns</Text>
+        const monthlyGrid = monthlyData?.mealDays?.length
+          ? <MealDayGrid days={monthlyData.mealDays} />
+          : monthlyData?.mealWeeks?.length
+            ? <MealWeekStrip weeks={monthlyData.mealWeeks as any} />
+            : null;
+
+        // Last day with macro data — default for daily view
+        const lastMacros = monthlyData?.mealMacrosByDay?.length
+          ? monthlyData.mealMacrosByDay[monthlyData.mealMacrosByDay.length - 1]
+          : undefined;
+
+        const hasAnyMealData = !!(monthlyGrid || lastMacros);
+        if (!hasAnyMealData) return null;
+
+        return (
+          <View style={{ gap: 14, marginTop: 6 }}>
+            <View style={{ gap: 6 }}>
+              <Text style={mealSectionLabel.label}>DAY</Text>
+              <DailyMacroView macros={lastMacros} goals={goals} />
             </View>
-          : null;
-        return strip || nutritionPanel ? <>{strip}{nutritionPanel}</> : null;
+            {monthlyGrid && (
+              <View style={{ gap: 6 }}>
+                <Text style={mealSectionLabel.label}>MONTH</Text>
+                {monthlyGrid}
+              </View>
+            )}
+          </View>
+        );
       }
 
       case 'Spending': {
-        const catList = weeklyData?.spendCategories?.length
-          ? <SpendCategoryList categories={weeklyData.spendCategories} />
+        const catList = monthlyData?.spendCategories?.length
+          ? <SpendCategoryList categories={monthlyData.spendCategories} />
           : null;
         // Goal: monthlySpendBudget
-        const totalSpend = weeklyData?.spendCategories
+        const totalSpend = monthlyData?.spendCategories
           ?.filter(c => c.source === 'sms' && c.amount != null)
           .reduce((s, c) => s + (c.amount ?? 0), 0) ?? 0;
         const spendBar = goals?.monthlySpendBudget && totalSpend > 0
@@ -496,12 +652,12 @@ function SectionRow({
       }
 
       case 'Recurring thoughts':
-        return weeklyData?.recurringTopics?.length
-          ? <WordCloud topics={weeklyData.recurringTopics} />
+        return monthlyData?.recurringTopics?.length
+          ? <WordCloud topics={monthlyData.recurringTopics} />
           : null;
 
       case 'Learnings':
-        return <LearningCount count={weeklyData?.learningCount ?? 0} />;
+        return <LearningCount count={monthlyData?.learningCount ?? 0} />;
 
       default:
         return null;
@@ -531,7 +687,7 @@ function SectionRow({
       {renderInfographic()}
 
       <Text style={[styles.sectionBody, { marginTop: 6 }]}>
-        {expanded ? body : preview}
+        {datePrefix}{expanded ? effectiveBody : preview}
       </Text>
     </TouchableOpacity>
   );
@@ -583,8 +739,8 @@ const gpStyles = StyleSheet.create({
 
 // ── Main card ─────────────────────────────────────────────────────────────────
 
-export default function WeeklyInsightCard() {
-  const [insight,       setInsight]       = useState<WeeklyInsight | null>(null);
+export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: number }) {
+  const [insight,       setInsight]       = useState<MonthlyInsight | null>(null);
   const [loading,       setLoading]       = useState(true);
   const [notEnoughData, setNotEnoughData] = useState(false);
   const [error,         setError]         = useState<string | null>(null);
@@ -598,7 +754,7 @@ export default function WeeklyInsightCard() {
   useEffect(() => {
     loadInsight(false);
     StorageService.getGoals().then(g => setGoals(g));
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     if (loading) {
@@ -621,7 +777,7 @@ export default function WeeklyInsightCard() {
     if (force) setRefreshing(true);
     else setLoading(true);
     try {
-      const result = await generateWeeklyInsight(force);
+      const result = await generateMonthlyInsight(force);
       setInsight(result);
     } catch (e: any) {
       if (e?.message === NOT_ENOUGH_DATA) setNotEnoughData(true);
@@ -716,7 +872,7 @@ export default function WeeklyInsightCard() {
                 key={s.key}
                 sectionKey={s.key}
                 body={s.body}
-                weeklyData={insight.weeklyData}
+                monthlyData={insight.weeklyData}
                 goals={goals ?? undefined}
               />
             ))}

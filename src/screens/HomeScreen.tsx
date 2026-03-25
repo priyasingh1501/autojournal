@@ -18,9 +18,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { audioRecorderService, RecordingStatus } from '../services/AudioRecorderService';
 import { transcribePendingClips, BatchProgress } from '../services/BatchTranscriptionService';
 import { StorageService } from '../services/StorageService';
+import { generateDailySummary } from '../services/SummaryService';
 import { PendingClip } from '../types';
 import ComposeModal from '../components/ComposeModal';
-import WeeklyInsightCard from '../components/WeeklyInsightCard';
+import MonthlyInsightCard from '../components/MonthlyInsightCard';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 
 export default function HomeScreen() {
@@ -29,7 +30,10 @@ export default function HomeScreen() {
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
   const [showCompose, setShowCompose] = useState(false);
+  const [cardRefreshKey, setCardRefreshKey] = useState(0);
   const isTranscribingRef = React.useRef(false);
+  // Holds the pending auto-generate timer so additional notes reset the countdown
+  const autoGenerateTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -126,6 +130,46 @@ export default function HomeScreen() {
       isTranscribingRef.current = false;
       setPendingClips([]);
       setBatchProgress(null);
+      // Refresh the home card so new entries are reflected immediately
+      setCardRefreshKey(k => k + 1);
+      // After each batch, schedule (or debounce) an auto-generate if no summary yet
+      scheduleAutoGenerateIfNeeded();
+    }
+  };
+
+  // Silently generate today's summary 5 minutes after the last note, if no
+  // summary exists yet. Each new note resets the countdown.
+  const scheduleAutoGenerateIfNeeded = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const existingSummary = await StorageService.getSummaryForDate(today);
+      if (existingSummary) return; // already have one — nothing to do
+
+      const todayTranscripts = await StorageService.getTranscriptsForDate(today);
+      if (todayTranscripts.length === 0) return;
+
+      // Clear any previous pending timer (debounce on each new note)
+      if (autoGenerateTimerRef.current) {
+        clearTimeout(autoGenerateTimerRef.current);
+      }
+
+      autoGenerateTimerRef.current = setTimeout(async () => {
+        autoGenerateTimerRef.current = null;
+        try {
+          const summaryCheck = await StorageService.getSummaryForDate(today);
+          if (summaryCheck) return; // user may have manually generated in the meantime
+          const transcripts = await StorageService.getTranscriptsForDate(today);
+          if (transcripts.length > 0) {
+            await generateDailySummary(transcripts, today);
+            // Refresh home card so the new summary's signals appear
+            setCardRefreshKey(k => k + 1);
+          }
+        } catch {
+          // Silent — user can always generate manually from Summaries tab
+        }
+      }, 5 * 60 * 1000); // 5 minutes
+    } catch {
+      // Ignore any storage errors
     }
   };
 
@@ -200,8 +244,8 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Weekly insight card */}
-        <WeeklyInsightCard />
+        {/* Monthly insight card */}
+        <MonthlyInsightCard refreshKey={cardRefreshKey} />
       </ScrollView>
 
       {/* Compose FAB */}
