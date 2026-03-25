@@ -38,6 +38,43 @@ async function buildContext(days: number): Promise<{ text: string; dates: string
   return { text, dates: summaries.map(s => s.date) };
 }
 
+// Summaries + one raw voice note sampled per week (last 4 weeks).
+// Raw notes reveal thinking style in a way cleaned-up summaries can't —
+// actual word choice, how ideas connect, whether they close loops or spiral.
+async function buildThinkingContext(): Promise<{ text: string; dates: string[] }> {
+  const allDates   = await StorageService.getSummaryDates();
+  const recent     = allDates.slice(0, 30);
+  const summaries  = await StorageService.getSummariesForDateRange(recent);
+  if (summaries.length < 3) throw new Error(NOT_ENOUGH_DATA);
+
+  const summaryText = summaries
+    .map(s => `[${s.date}]\n${s.insightText ?? s.summary}`)
+    .join('\n\n');
+
+  // Sample 1 clip per weekly chunk — first date in that week that has transcripts
+  const RAW_CAP   = 450;  // chars per clip — enough for thought patterns, not overwhelming
+  const rawBlocks: string[] = [];
+
+  for (let week = 0; week < 4; week++) {
+    const chunk = recent.slice(week * 7, week * 7 + 7);
+    for (const date of chunk) {
+      const clips = await StorageService.getTranscriptsForDate(date);
+      if (clips.length > 0) {
+        const txt = clips[0].text.trim();
+        const capped = txt.length > RAW_CAP ? txt.slice(0, RAW_CAP) + '…' : txt;
+        rawBlocks.push(`[RAW VOICE NOTE · ${date}]\n${capped}`);
+        break; // one sample per week
+      }
+    }
+  }
+
+  const rawSection = rawBlocks.length > 0
+    ? `\n\n${'─'.repeat(40)}\nRAW VOICE NOTES — unedited, direct from recording.\nFiller words and false starts are intentional signal, not noise.\n${'─'.repeat(40)}\n\n${rawBlocks.join('\n\n')}`
+    : '';
+
+  return { text: summaryText + rawSection, dates: summaries.map(s => s.date) };
+}
+
 async function buildLongContext(): Promise<{ text: string; dates: string[] }> {
   const allDates = await StorageService.getSummaryDates();
   const summaries = await StorageService.getSummariesForDateRange(allDates);
@@ -202,7 +239,11 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
 
 // ── Tab 3: How You Think ────────────────────────────────────────────────────────
 
-const THINK_SYSTEM = `You are a cognitive analyst reading someone's private journal entries. You are mapping how the writer thinks, not what they think about. Write all observations in FIRST PERSON ("I", "my") as if the writer is seeing this about themselves.
+const THINK_SYSTEM = `You are a cognitive analyst reading someone's private journal entries. You are mapping HOW the writer thinks — not what they think about. Write all observations in FIRST PERSON ("I", "my") as if the writer is seeing this about themselves.
+
+You have two types of input:
+- PROCESSED SUMMARIES: cleaned-up, structured — useful for pattern frequency over time
+- RAW VOICE NOTES: unedited, direct from recording — filler words, false starts, and tangents are intentional signal, not noise. These are the primary evidence for cognitive style. Pay close attention to: how ideas connect (or don't), whether the person closes thoughts or spirals, whether they reach for structures or stories, whether they reference themselves or look outward.
 
 Four dimensions to assess. Each is a spectrum — score 0=fully left pole, 100=fully right pole.
 
@@ -262,12 +303,12 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
     const cached = await StorageService.getHowYouThink();
     if (cached && Date.now() - cached.generatedAt < TTL_THINK) return cached;
   }
-  const { text, dates } = await buildContext(30);
+  const { text, dates } = await buildThinkingContext();
   const raw = await callClaude(
     THINK_SYSTEM,
-    `Here are my journal entries:\n\n${text}\n\nPlease map how I think.`,
+    `Here are my journal entries (processed summaries + raw voice note samples):\n\n${text}\n\nPlease map how I think. Weight the raw voice notes heavily — they show my actual thinking patterns, not the cleaned-up version.`,
     settings.anthropicApiKey,
-    1000,
+    1100,
   );
   let parsed: any;
   try { parsed = JSON.parse(extractJson(raw)); }
