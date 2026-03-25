@@ -199,3 +199,91 @@ export interface ConversationMessage {
   text: string;
   timestamp: number;
 }
+
+// ── Insights V2 ───────────────────────────────────────────────────────────────
+
+// Tab 1: Who You Are
+export interface BigFiveTrait {
+  score: number;                               // 0–100
+  direction: 'rising' | 'stable' | 'falling';
+}
+export interface WhoYouAreAnalysis {
+  generatedAt: number;
+  narrative: string;                           // 3–4 sentence portrait
+  bigFive: {
+    openness:          BigFiveTrait;
+    conscientiousness: BigFiveTrait;
+    extraversion:      BigFiveTrait;
+    agreeableness:     BigFiveTrait;
+    neuroticism:       BigFiveTrait;
+  };
+  bigFiveNarratives: Record<string, string>;   // one observation per trait
+  enneagram: {
+    types:        number[];                    // 1–2 candidate type numbers
+    typeSummaries: Record<string, string>;     // per-type short description
+    coreFear:       string;
+    coreDesire:     string;
+    growthDirection: string;
+  };
+  sourceEntries: string[];                     // YYYY-MM-DD dates
+}
+export interface EnneagramResponse {
+  typeId:   number;
+  response: 'confirmed' | 'partly' | 'rejected';
+  date:     string;
+}
+
+// Tab 2: What You Care About
+export interface ValueNode {
+  topic:     string;
+  frequency: number;   // 0–100, drives bubble size
+  intensity: number;   // 0–100, drives brightness / colour saturation
+  valence:   'positive' | 'neutral' | 'negative' | 'mixed';
+}
+export interface WhatYouCareAboutAnalysis {
+  generatedAt: number;
+  values: ValueNode[];
+  divergence: Array<{
+    stated:      string;
+    actual:      string;
+    observation: string;
+  }>;
+  motivationPulse:     'achievement' | 'connection' | 'meaning' | 'safety';
+  motivationRationale: string;
+  sourceEntries: string[];
+}
+
+// Tab 3: How You Think
+export interface CognitiveDimension {
+  name:         string;   // e.g. "Systems vs. Stories"
+  leftLabel:    string;
+  rightLabel:   string;
+  score:        number;   // 0 = fully left, 100 = fully right
+  observation:  string;   // one-line inference — not a label
+  sourceEntries: string[];
+}
+export interface HowYouThinkAnalysis {
+  generatedAt: number;
+  dimensions:  CognitiveDimension[];
+}
+
+// Tab 4: Your Story
+export type ArcType = 'Seeker' | 'Builder' | 'Witness' | 'Transformer' | 'Returner';
+export interface YourStoryAnalysis {
+  generatedAt: number;
+  currentChapter: {
+    title:     string;   // e.g. "The Clearing"
+    dateRange: string;   // e.g. "October–December 2025"
+    narrative: string;   // 2–3 sentences, written like an opening line
+  };
+  recurringCast: Array<{
+    archetype:  string;  // e.g. "A relationship where you hold back"
+    frequency:  number;
+  }>;
+  arcPattern: {
+    type:        ArcType;
+    description: string;
+    history:     Array<{ type: string; dateRange: string }>;
+  };
+  sourceEntries: string[];
+}

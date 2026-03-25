@@ -1,286 +1,284 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Animated, SafeAreaView,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  ActivityIndicator,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { navigationRef } from '../../App';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+
 import {
-  generateEmotionAnalysis,
-  generateThoughtPatternAnalysis,
-  generatePersonalityAnalysis,
-  generateGrowthTips,
+  generateWhoYouAre, generateWhatYouCare,
+  generateHowYouThink, generateYourStory,
   NOT_ENOUGH_DATA,
-} from '../services/InsightAnalysisService';
+} from '../services/InsightV2Service';
+import { StorageService } from '../services/StorageService';
 import {
-  EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
+  WhoYouAreAnalysis, WhatYouCareAboutAnalysis,
+  HowYouThinkAnalysis, YourStoryAnalysis, EnneagramResponse,
 } from '../types';
-import TimeframeSelector from '../components/insights/TimeframeSelector';
-import EmotionTimeline from '../components/insights/EmotionTimeline';
-import ThoughtPatternList from '../components/insights/ThoughtPatternList';
-import PersonalityRadar from '../components/insights/PersonalityRadar';
-import GrowthTipsList from '../components/insights/GrowthTipsList';
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+import WhoYouAreTab          from '../components/insights/WhoYouAreTab';
+import ValuesConstellationTab from '../components/insights/ValuesConstellationTab';
+import HowYouThinkTab        from '../components/insights/HowYouThinkTab';
+import YourStoryTab          from '../components/insights/YourStoryTab';
 
-type TabKey = 'emotions' | 'patterns' | 'personality' | 'growth';
-type Timeframe = 30 | 90 | 180;
+// ── Tab definitions ────────────────────────────────────────────────────────────
 
-const TABS: { key: TabKey; label: string; icon: string; tagline: string }[] = [
-  { key: 'emotions',    label: 'Emotions',    icon: 'heart',        tagline: 'Reveal the emotions behind your thoughts'   },
-  { key: 'patterns',   label: 'Patterns',    icon: 'repeat',       tagline: 'Discover your top thought patterns'         },
-  { key: 'personality',label: 'Personality', icon: 'user',         tagline: 'Mirror for your personality'               },
-  { key: 'growth',     label: 'Growth',      icon: 'trending-up',  tagline: 'Personal growth on autopilot'              },
+type TabKey = 'you' | 'values' | 'thinking' | 'story';
+
+const TABS: { key: TabKey; label: string; icon: string; full: string; sub: string }[] = [
+  { key: 'you',      label: 'You',      icon: 'user',    full: 'Who You Are',         sub: 'Big Five · Enneagram' },
+  { key: 'values',   label: 'Values',   icon: 'heart',   full: 'What You Care About', sub: 'Values · Motivation' },
+  { key: 'thinking', label: 'Thinking', icon: 'cpu',     full: 'How You Think',       sub: 'Cognitive styles' },
+  { key: 'story',    label: 'Story',    icon: 'book',    full: 'Your Story',          sub: 'Chapter · Arc' },
 ];
 
-// ── Skeleton ──────────────────────────────────────────────────────────────────
+// ── Empty / error states ───────────────────────────────────────────────────────
 
-function Skeleton() {
-  const anim = useRef(new Animated.Value(0.35)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(anim, { toValue: 0.80, duration: 900, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0.35, duration: 900, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, []);
-
+function EmptyState({ noData, onGenerate, loading }: {
+  noData: boolean; onGenerate: () => void; loading: boolean;
+}) {
   return (
-    <View style={{ gap: 12, marginTop: 8 }}>
-      {(['100%', '80%', '65%', '90%', '70%'] as const).map((w, i) => (
-        <Animated.View key={i} style={[styles.skeletonLine, { width: w, opacity: anim }]} />
-      ))}
+    <View style={es.wrap}>
+      <Feather name="feather" size={40} color="rgba(152,212,250,0.30)" style={{ marginBottom: 16 }} />
+      {noData ? (
+        <>
+          <Text style={es.title}>Not enough entries yet</Text>
+          <Text style={es.sub}>Journal for at least 3 days and come back.</Text>
+        </>
+      ) : (
+        <>
+          <Text style={es.title}>Ready to generate</Text>
+          <Text style={es.sub}>Claude will read your recent entries and build this portrait.</Text>
+          <TouchableOpacity style={es.btn} onPress={onGenerate} disabled={loading} activeOpacity={0.8}>
+            {loading
+              ? <ActivityIndicator size="small" color="rgba(224,242,254,0.80)" />
+              : <Text style={es.btnText}>Generate now</Text>}
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
 }
 
-// ── Empty / Error ─────────────────────────────────────────────────────────────
+const es = StyleSheet.create({
+  wrap:    { paddingTop: 60, alignItems: 'center', gap: 8 },
+  title:   { fontSize: 18, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.88)' },
+  sub:     { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', textAlign: 'center', lineHeight: 20 },
+  btn:     { marginTop: 16, backgroundColor: '#0929AD', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.25)' },
+  btnText: { fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.95)' },
+});
 
-function EmptyState({ message }: { message: string }) {
-  return (
-    <View style={styles.emptyWrap}>
-      <Feather name="bar-chart-2" size={36} color="rgba(152,212,250,0.25)" />
-      <Text style={styles.emptyText}>{message}</Text>
-    </View>
-  );
-}
-
-// ── Main screen ───────────────────────────────────────────────────────────────
+// ── Main screen ────────────────────────────────────────────────────────────────
 
 export default function InsightsScreen() {
-  const [activeTab,  setActiveTab]  = useState<TabKey>('emotions');
-  const [timeframe,  setTimeframe]  = useState<Timeframe>(30);
+  const navigation = useNavigation<any>();
+  const [activeTab, setActiveTab] = useState<TabKey>('you');
+  const scrollRef = useRef<ScrollView>(null);
 
-  const [emotionData,     setEmotionData]     = useState<EmotionAnalysis | null>(null);
-  const [patternData,     setPatternData]     = useState<ThoughtPatternAnalysis | null>(null);
-  const [personalityData, setPersonalityData] = useState<PersonalityAnalysis | null>(null);
-  const [growthData,      setGrowthData]      = useState<GrowthTipsAnalysis | null>(null);
+  // Per-tab data
+  const [whoData,       setWhoData]       = useState<WhoYouAreAnalysis | null>(null);
+  const [valuesData,    setValuesData]    = useState<WhatYouCareAboutAnalysis | null>(null);
+  const [thinkData,     setThinkData]     = useState<HowYouThinkAnalysis | null>(null);
+  const [storyData,     setStoryData]     = useState<YourStoryAnalysis | null>(null);
+  const [enneagramResp, setEnneagramResp] = useState<EnneagramResponse | null>(null);
 
-  const [loading,  setLoading]  = useState<Record<TabKey, boolean>>({ emotions: false, patterns: false, personality: false, growth: false });
-  const [errors,   setErrors]   = useState<Record<TabKey, string | null>>({ emotions: null, patterns: null, personality: null, growth: null });
-  const [noData,   setNoData]   = useState<Record<TabKey, boolean>>({ emotions: false, patterns: false, personality: false, growth: false });
-  const [growthRefreshing, setGrowthRefreshing] = useState(false);
-
-  const setTabLoading = (tab: TabKey, v: boolean) => setLoading(l => ({ ...l, [tab]: v }));
-  const setTabError   = (tab: TabKey, v: string | null) => setErrors(e => ({ ...e, [tab]: v }));
-  const setTabNoData  = (tab: TabKey, v: boolean) => setNoData(n => ({ ...n, [tab]: v }));
-
-  const jumpToDate = useCallback((date: string) => {
-    navigationRef.current?.navigate('Summary', { jumpToDate: date });
-  }, []);
-
-  const loadTab = useCallback(async (tab: TabKey, tf: Timeframe, force = false) => {
-    setTabLoading(tab, true);
-    setTabError(tab, null);
-    setTabNoData(tab, false);
-    try {
-      switch (tab) {
-        case 'emotions':    setEmotionData(await generateEmotionAnalysis(tf, force));       break;
-        case 'patterns':    setPatternData(await generateThoughtPatternAnalysis(tf, force)); break;
-        case 'personality': setPersonalityData(await generatePersonalityAnalysis(force));   break;
-        case 'growth':      setGrowthData(await generateGrowthTips(force));                  break;
-      }
-    } catch (e: any) {
-      if (e?.message === NOT_ENOUGH_DATA) setTabNoData(tab, true);
-      else setTabError(tab, e?.message ?? 'Something went wrong. Try again.');
-    } finally {
-      setTabLoading(tab, false);
-    }
-  }, []);
+  // Per-tab status
+  const [loading, setLoading] = useState<Partial<Record<TabKey, boolean>>>({});
+  const [error,   setError]   = useState<Partial<Record<TabKey, string>>>({});
+  const [noData,  setNoData]  = useState<Partial<Record<TabKey, boolean>>>({});
 
   useFocusEffect(useCallback(() => {
-    loadTab(activeTab, timeframe);
-  }, [activeTab, timeframe]));
+    tryLoadCached(activeTab);
+    StorageService.getEnneagramResponse().then(r => r && setEnneagramResp(r));
+  }, [activeTab]));
 
-  const handleTabChange = (tab: TabKey) => {
+  // Silently load from cache — no spinner, no auto-generate
+  const tryLoadCached = async (tab: TabKey) => {
+    try {
+      if (tab === 'you'      && !whoData)    { const c = await StorageService.getWhoYouAre();   if (c) setWhoData(c); }
+      if (tab === 'values'   && !valuesData) { const c = await StorageService.getWhatYouCare(); if (c) setValuesData(c); }
+      if (tab === 'thinking' && !thinkData)  { const c = await StorageService.getHowYouThink(); if (c) setThinkData(c); }
+      if (tab === 'story'    && !storyData)  { const c = await StorageService.getYourStory();   if (c) setStoryData(c); }
+    } catch { /* ignore */ }
+  };
+
+  const generate = async (tab: TabKey) => {
+    setLoading(p  => ({ ...p, [tab]: true  }));
+    setError(p    => ({ ...p, [tab]: undefined }));
+    setNoData(p   => ({ ...p, [tab]: false }));
+    try {
+      if (tab === 'you')      setWhoData(await generateWhoYouAre(true));
+      if (tab === 'values')   setValuesData(await generateWhatYouCare(true));
+      if (tab === 'thinking') setThinkData(await generateHowYouThink(true));
+      if (tab === 'story')    setStoryData(await generateYourStory(true));
+    } catch (e: any) {
+      if (e?.message === NOT_ENOUGH_DATA) setNoData(p => ({ ...p, [tab]: true }));
+      else setError(p => ({ ...p, [tab]: e?.message ?? 'Something went wrong.' }));
+    } finally {
+      setLoading(p => ({ ...p, [tab]: false }));
+    }
+  };
+
+  const switchTab = (tab: TabKey) => {
     setActiveTab(tab);
-    const needsData = tab === 'emotions'    ? !emotionData
-                    : tab === 'patterns'    ? !patternData
-                    : tab === 'personality' ? !personalityData
-                    : !growthData;
-    if (needsData) loadTab(tab, timeframe);
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+    // Try cache silently on first visit
+    if (tab === 'you'      && !whoData)    tryLoadCached(tab);
+    if (tab === 'values'   && !valuesData) tryLoadCached(tab);
+    if (tab === 'thinking' && !thinkData)  tryLoadCached(tab);
+    if (tab === 'story'    && !storyData)  tryLoadCached(tab);
   };
 
-  const handleTimeframeChange = (tf: Timeframe) => {
-    setTimeframe(tf);
-    if (activeTab === 'emotions')  setEmotionData(null);
-    if (activeTab === 'patterns')  setPatternData(null);
-    loadTab(activeTab, tf);
+  const handleJump = (date: string) => {
+    navigation.navigate('Summary', { jumpToDate: date });
   };
 
-  const handleRefresh = () => loadTab(activeTab, timeframe, true);
+  const activeTabMeta = TABS.find(t => t.key === activeTab)!;
+  const isLoading  = !!loading[activeTab];
+  const tabError   = error[activeTab];
+  const tabNoData  = !!noData[activeTab];
 
-  const handleGrowthRefresh = async () => {
-    setGrowthRefreshing(true);
-    await loadTab('growth', timeframe, true);
-    setGrowthRefreshing(false);
-  };
-
-  const currentTab = TABS.find(t => t.key === activeTab)!;
-  const isLoading = loading[activeTab];
-  const hasError  = errors[activeTab];
-  const hasNoData = noData[activeTab];
-  const hasData   = activeTab === 'emotions'    ? !!emotionData
-                  : activeTab === 'patterns'    ? !!patternData
-                  : activeTab === 'personality' ? !!personalityData
-                  : !!growthData;
+  const hasData = (tab: TabKey) =>
+    tab === 'you' ? !!whoData : tab === 'values' ? !!valuesData :
+    tab === 'thinking' ? !!thinkData : !!storyData;
 
   return (
-    <LinearGradient colors={['#02060E', '#041628', '#02060E']} style={{ flex: 1 }}>
-      <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={s.container} edges={['top']}>
 
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Insights</Text>
+      {/* Header */}
+      <View style={s.header}>
+        <View>
+          <Text style={s.headerTitle}>Insights</Text>
+          <Text style={s.headerSub}>{activeTabMeta.full}</Text>
+        </View>
+        {hasData(activeTab) && (
           <TouchableOpacity
-            style={styles.refreshBtn}
-            onPress={handleRefresh}
+            onPress={() => generate(activeTab)}
             disabled={isLoading}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={s.refreshBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             {isLoading
-              ? <ActivityIndicator size="small" color="rgba(152,212,250,0.85)" />
-              : <Feather name="refresh-cw" size={14} color="rgba(152,212,250,0.65)" />}
+              ? <ActivityIndicator size="small" color="rgba(152,212,250,0.65)" />
+              : <Feather name="refresh-cw" size={15} color="rgba(152,212,250,0.65)" />}
           </TouchableOpacity>
-        </View>
+        )}
+      </View>
 
-        {/* Tab pills */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.tabScroll}
-          contentContainerStyle={styles.tabRow}
-        >
-          {TABS.map(t => (
+      {/* Pill tabs */}
+      <ScrollView
+        horizontal showsHorizontalScrollIndicator={false}
+        style={s.tabBar} contentContainerStyle={s.tabBarContent}
+      >
+        {TABS.map(t => {
+          const active = t.key === activeTab;
+          return (
             <TouchableOpacity
               key={t.key}
-              style={[styles.tabPill, activeTab === t.key && styles.tabPillActive]}
-              onPress={() => handleTabChange(t.key)}
-              activeOpacity={0.75}
+              onPress={() => switchTab(t.key)}
+              style={[s.tab, active && s.tabActive]}
+              activeOpacity={0.7}
             >
               <Feather
-                name={t.icon as any}
-                size={13}
-                color={activeTab === t.key ? 'rgba(224,242,254,0.95)' : 'rgba(152,212,250,0.50)'}
+                name={t.icon as any} size={13}
+                color={active ? 'rgba(224,242,254,0.95)' : 'rgba(152,212,250,0.45)'}
               />
-              <Text style={[styles.tabLabel, activeTab === t.key && styles.tabLabelActive]}>
-                {t.label}
-              </Text>
+              <Text style={[s.tabLabel, active && s.tabLabelActive]}>{t.label}</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          );
+        })}
+      </ScrollView>
 
-        {/* Content */}
-        <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.contentInner}
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.tagline}>{currentTab.tagline}</Text>
+      <Text style={s.tabSub}>{activeTabMeta.sub}</Text>
 
-          {/* Timeframe (emotions + patterns only) */}
-          {(activeTab === 'emotions' || activeTab === 'patterns') && (
-            <TimeframeSelector selected={timeframe} onChange={handleTimeframeChange} />
-          )}
+      {/* Content */}
+      <ScrollView
+        ref={scrollRef}
+        style={s.content}
+        contentContainerStyle={s.contentPad}
+        showsVerticalScrollIndicator={false}
+      >
+        {isLoading && (
+          <View style={s.loadingRow}>
+            <ActivityIndicator size="small" color="rgba(152,212,250,0.60)" />
+            <Text style={s.loadingText}>Claude is reading your entries…</Text>
+          </View>
+        )}
 
-          {isLoading && <Skeleton />}
-          {!isLoading && hasNoData && (
-            <EmptyState message="Keep journaling — this insight appears once you have at least 3 daily summaries." />
-          )}
-          {!isLoading && hasError && !hasNoData && <EmptyState message={hasError} />}
-          {!isLoading && hasData && !hasError && (
-            <>
-              {activeTab === 'emotions'    && emotionData     && <EmotionTimeline    data={emotionData}     onJumpToDate={jumpToDate} />}
-              {activeTab === 'patterns'    && patternData     && <ThoughtPatternList data={patternData}     onJumpToDate={jumpToDate} />}
-              {activeTab === 'personality' && personalityData && <PersonalityRadar   data={personalityData} />}
-              {activeTab === 'growth'      && growthData      && (
-                <GrowthTipsList
-                  data={growthData}
-                  onRefresh={handleGrowthRefresh}
-                  refreshing={growthRefreshing}
-                />
-              )}
-            </>
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+        {tabError && !isLoading && (
+          <View style={s.errorRow}>
+            <Text style={s.errorText}>{tabError}</Text>
+            <TouchableOpacity onPress={() => generate(activeTab)} style={s.retryBtn}>
+              <Text style={s.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {!isLoading && !tabError && (
+          <>
+            {activeTab === 'you' && (
+              whoData
+                ? <WhoYouAreTab
+                    data={whoData}
+                    enneagramResponse={enneagramResp}
+                    onEnneagramRespond={setEnneagramResp}
+                    onJump={handleJump}
+                  />
+                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('you')} />
+            )}
+            {activeTab === 'values' && (
+              valuesData
+                ? <ValuesConstellationTab data={valuesData} onJump={handleJump} />
+                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('values')} />
+            )}
+            {activeTab === 'thinking' && (
+              thinkData
+                ? <HowYouThinkTab data={thinkData} onJump={handleJump} />
+                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('thinking')} />
+            )}
+            {activeTab === 'story' && (
+              storyData
+                ? <YourStoryTab data={storyData} onJump={handleJump} />
+                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('story')} />
+            )}
+          </>
+        )}
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles ─────────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
+const s = StyleSheet.create({
+  container:      { flex: 1, backgroundColor: '#02060E' },
 
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 26, fontFamily: 'Baskerville', fontWeight: '500',
-    color: 'rgba(224,242,254,0.95)',
-  },
-  refreshBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: 'rgba(6,26,55,0.55)',
-    borderWidth: 1, borderColor: 'rgba(152,212,250,0.18)',
-    alignItems: 'center', justifyContent: 'center',
-  },
+  header:         { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  headerTitle:    { fontSize: 26, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.95)' },
+  headerSub:      { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', marginTop: 2 },
+  refreshBtn:     { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(152,212,250,0.08)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)', alignItems: 'center', justifyContent: 'center', marginTop: 4 },
 
-  tabScroll: { maxHeight: 52 },
-  tabRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, paddingBottom: 12 },
-  tabPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 16, paddingVertical: 9,
-    borderRadius: 22, borderWidth: 1,
-    borderColor: 'rgba(152,212,250,0.15)',
-    backgroundColor: 'rgba(152,212,250,0.05)',
-  },
-  tabPillActive: {
-    backgroundColor: 'rgba(152,212,250,0.16)',
-    borderColor: 'rgba(152,212,250,0.45)',
-  },
-  tabLabel: { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)' },
+  tabBar:         { flexGrow: 0, marginBottom: 0 },
+  tabBarContent:  { paddingHorizontal: 20, gap: 8, paddingBottom: 4 },
+  tab:            { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(152,212,250,0.05)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)' },
+  tabActive:      { backgroundColor: 'rgba(9,41,173,0.40)', borderColor: 'rgba(152,212,250,0.35)' },
+  tabLabel:       { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)' },
   tabLabelActive: { color: 'rgba(224,242,254,0.95)' },
 
-  content: { flex: 1 },
-  contentInner: { paddingHorizontal: 20, paddingBottom: 40 },
+  tabSub:         { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.38)', paddingHorizontal: 20, paddingTop: 4, paddingBottom: 10, letterSpacing: 0.2 },
 
-  tagline: {
-    fontSize: 13, fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.55)', marginBottom: 18, fontStyle: 'italic',
-  },
+  content:        { flex: 1 },
+  contentPad:     { paddingHorizontal: 20, paddingTop: 4 },
 
-  skeletonLine: { height: 14, backgroundColor: 'rgba(9,41,173,0.10)', borderRadius: 7 },
-  emptyWrap: { alignItems: 'center', paddingVertical: 48, gap: 16 },
-  emptyText: {
-    fontSize: 14, color: 'rgba(152,212,250,0.55)', fontFamily: 'GillSans-Light',
-    textAlign: 'center', lineHeight: 22, maxWidth: 280,
-  },
+  loadingRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 40, justifyContent: 'center' },
+  loadingText:    { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', fontStyle: 'italic' },
+
+  errorRow:       { alignItems: 'center', gap: 10, paddingVertical: 32 },
+  errorText:      { fontSize: 13, color: '#e63946', textAlign: 'center', fontFamily: 'GillSans-Light' },
+  retryBtn:       { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 12, backgroundColor: 'rgba(233,69,96,0.12)', borderWidth: 1, borderColor: 'rgba(233,69,96,0.30)' },
+  retryText:      { fontSize: 13, color: '#e94560', fontFamily: 'GillSans-Light' },
 });

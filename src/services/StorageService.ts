@@ -3,6 +3,8 @@ import {
   TranscriptEntry, DailySummary, AppSettings, PendingClip, WeeklyInsight,
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
   UserGoals,
+  WhoYouAreAnalysis, WhatYouCareAboutAnalysis, HowYouThinkAnalysis, YourStoryAnalysis,
+  EnneagramResponse,
 } from '../types';
 
 const KEYS = {
@@ -17,6 +19,13 @@ const KEYS = {
   PERSONALITY_ANALYSIS: 'insight_personality',
   GROWTH_TIPS_ANALYSIS: 'insight_growthtips',
   USER_GOALS: 'user_goals',
+  // V2 insights
+  WHO_YOU_ARE: 'insightv2_who',
+  WHAT_YOU_CARE: 'insightv2_values',
+  HOW_YOU_THINK: 'insightv2_thinking',
+  YOUR_STORY:    'insightv2_story',
+  ENNEAGRAM_RESP:'insightv2_enneagram_response',
+  ARC_HISTORY:   'insightv2_arc_history',
 };
 
 function todayKey(): string {
@@ -221,5 +230,54 @@ export const StorageService = {
   },
   async saveGoals(goals: UserGoals): Promise<void> {
     await AsyncStorage.setItem(KEYS.USER_GOALS, JSON.stringify(goals));
+  },
+
+  // ── Insights V2 ────────────────────────────────────────────────────────────
+  async getWhoYouAre(): Promise<WhoYouAreAnalysis | null> {
+    const json = await AsyncStorage.getItem(KEYS.WHO_YOU_ARE);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveWhoYouAre(a: WhoYouAreAnalysis): Promise<void> {
+    await AsyncStorage.setItem(KEYS.WHO_YOU_ARE, JSON.stringify(a));
+  },
+
+  async getWhatYouCare(): Promise<WhatYouCareAboutAnalysis | null> {
+    const json = await AsyncStorage.getItem(KEYS.WHAT_YOU_CARE);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveWhatYouCare(a: WhatYouCareAboutAnalysis): Promise<void> {
+    await AsyncStorage.setItem(KEYS.WHAT_YOU_CARE, JSON.stringify(a));
+  },
+
+  async getHowYouThink(): Promise<HowYouThinkAnalysis | null> {
+    const json = await AsyncStorage.getItem(KEYS.HOW_YOU_THINK);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveHowYouThink(a: HowYouThinkAnalysis): Promise<void> {
+    await AsyncStorage.setItem(KEYS.HOW_YOU_THINK, JSON.stringify(a));
+  },
+
+  async getYourStory(): Promise<YourStoryAnalysis | null> {
+    const json = await AsyncStorage.getItem(KEYS.YOUR_STORY);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveYourStory(a: YourStoryAnalysis): Promise<void> {
+    await AsyncStorage.setItem(KEYS.YOUR_STORY, JSON.stringify(a));
+  },
+
+  async getEnneagramResponse(): Promise<EnneagramResponse | null> {
+    const json = await AsyncStorage.getItem(KEYS.ENNEAGRAM_RESP);
+    return json ? JSON.parse(json) : null;
+  },
+  async saveEnneagramResponse(r: EnneagramResponse): Promise<void> {
+    await AsyncStorage.setItem(KEYS.ENNEAGRAM_RESP, JSON.stringify(r));
+  },
+
+  async getArcHistory(): Promise<Array<{ type: string; dateRange: string }>> {
+    const json = await AsyncStorage.getItem(KEYS.ARC_HISTORY);
+    return json ? JSON.parse(json) : [];
+  },
+  async saveArcHistory(history: Array<{ type: string; dateRange: string }>): Promise<void> {
+    await AsyncStorage.setItem(KEYS.ARC_HISTORY, JSON.stringify(history));
   },
 };
