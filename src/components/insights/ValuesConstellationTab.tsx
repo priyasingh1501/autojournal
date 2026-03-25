@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Dimensions,
+  View, Text, StyleSheet, TouchableOpacity,
   LayoutAnimation, UIManager, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -10,55 +10,32 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const { width: SCREEN_W } = Dimensions.get('window');
-const CONTAINER_W = SCREEN_W - 48;
-const CONTAINER_H = 260;
+// ── Colour helpers ─────────────────────────────────────────────────────────────
 
-// ── Deterministic scatter hash ────────────────────────────────────────────────
-
-function hash(s: string, seed = 0): number {
-  let h = 5381 + seed;
-  for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) & 0x7fffffff;
-  return h;
-}
-
-function getBubblePos(topic: string, radius: number): { x: number; y: number } {
-  const pad = radius + 6;
-  const x = (hash(topic, 0) % (CONTAINER_W - pad * 2)) + pad;
-  const y = (hash(topic, 7) % (CONTAINER_H - pad * 2)) + pad;
-  return { x, y };
-}
-
-// ── Colour per valence ─────────────────────────────────────────────────────────
-
-function bubbleColor(valence: ValueNode['valence'], intensity: number): string {
-  // Dark fill: base colour at very low opacity so bubbles stay near-black;
-  // intensity shifts from near-invisible (0.04) to a still-dark (0.18)
-  const a = 0.04 + (intensity / 100) * 0.14;
+function accentColor(valence: ValueNode['valence']): string {
   switch (valence) {
-    case 'positive': return `rgba(94,234,212,${a.toFixed(2)})`;
-    case 'negative': return `rgba(236,72,153,${a.toFixed(2)})`;
-    case 'mixed':    return `rgba(251,191,36,${a.toFixed(2)})`;
-    default:         return `rgba(147,197,253,${a.toFixed(2)})`;
+    case 'positive': return '94,234,212';
+    case 'negative': return '236,72,153';
+    case 'mixed':    return '251,191,36';
+    default:         return '147,197,253';
   }
 }
 
-function bubbleBorder(valence: ValueNode['valence']): string {
-  switch (valence) {
-    case 'positive': return 'rgba(94,234,212,0.70)';
-    case 'negative': return 'rgba(236,72,153,0.70)';
-    case 'mixed':    return 'rgba(251,191,36,0.70)';
-    default:         return 'rgba(147,197,253,0.55)';
-  }
+function tagFill(valence: ValueNode['valence'], intensity: number): string {
+  const rgb = accentColor(valence);
+  const a   = (0.04 + (intensity / 100) * 0.10).toFixed(2);
+  return `rgba(${rgb},${a})`;
 }
 
-function textColor(valence: ValueNode['valence']): string {
-  switch (valence) {
-    case 'positive': return 'rgba(94,234,212,0.95)';
-    case 'negative': return 'rgba(249,168,212,0.95)';
-    case 'mixed':    return 'rgba(253,224,71,0.95)';
-    default:         return 'rgba(224,242,254,0.85)';
-  }
+function tagBorder(valence: ValueNode['valence'], intensity: number): string {
+  const rgb = accentColor(valence);
+  const a   = (0.25 + (intensity / 100) * 0.55).toFixed(2);
+  return `rgba(${rgb},${a})`;
+}
+
+function tagText(valence: ValueNode['valence']): string {
+  const rgb = accentColor(valence);
+  return `rgba(${rgb},0.95)`;
 }
 
 // ── Source expand ─────────────────────────────────────────────────────────────
@@ -95,53 +72,49 @@ const src = StyleSheet.create({
   chipText: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.70)' },
 });
 
-// ── Constellation ─────────────────────────────────────────────────────────────
+// ── Tag cloud ──────────────────────────────────────────────────────────────────
 
-function Constellation({ values }: { values: ValueNode[] }) {
+function TagCloud({ values }: { values: ValueNode[] }) {
   const [selected, setSelected] = useState<string | null>(null);
 
+  // Sort largest → smallest so big tags anchor top-left in the wrap
+  const sorted = [...values].sort((a, b) => b.frequency - a.frequency);
+  const sel    = selected ? values.find(v => v.topic === selected) : null;
+
+  function onPress(topic: string) {
+    LayoutAnimation.easeInEaseOut();
+    setSelected(prev => prev === topic ? null : topic);
+  }
+
   return (
-    <View>
-      {/* Legend */}
-      <View style={cs.legend}>
-        {(['positive', 'neutral', 'mixed', 'negative'] as const).map(v => (
-          <View key={v} style={cs.legendItem}>
-            <View style={[cs.legendDot, { backgroundColor: bubbleColor(v, 70) }]} />
-            <Text style={cs.legendLabel}>{v}</Text>
-          </View>
-        ))}
-        <Text style={cs.legendHint}>size = frequency · brightness = emotional charge</Text>
+    <View style={tc.wrap}>
+      {/* Key */}
+      <View style={tc.keyRow}>
+        <Text style={tc.keyHint}>larger = written about more  ·  brighter border = more emotional charge</Text>
       </View>
 
-      {/* Bubble field */}
-      <View style={[cs.field, { width: CONTAINER_W, height: CONTAINER_H }]}>
-        {values.map(v => {
-          const radius = (v.frequency / 100) * 36 + 18; // 18–54
-          const { x, y } = getBubblePos(v.topic, radius);
-          const isSelected = selected === v.topic;
+      {/* Tag cloud */}
+      <View style={tc.cloud}>
+        {sorted.map(v => {
+          const freq   = v.frequency / 100;                        // 0–1
+          const isSel  = selected === v.topic;
+          const fSize  = Math.round(11 + freq * 8);               // 11–19 px
+          const padH   = Math.round(9  + freq * 8);               // 9–17 px
+          const padV   = Math.round(5  + freq * 5);               // 5–10 px
           return (
             <TouchableOpacity
               key={v.topic}
-              onPress={() => setSelected(isSelected ? null : v.topic)}
-              style={[cs.bubble, {
-                width:  radius * 2,
-                height: radius * 2,
-                borderRadius: radius,
-                left:   x - radius,
-                top:    y - radius,
-                backgroundColor: bubbleColor(v.valence, v.intensity),
-                borderColor: bubbleBorder(v.valence),
-                borderWidth: isSelected ? 2 : 1,
-                zIndex: isSelected ? 10 : 1,
-                transform: [{ scale: isSelected ? 1.08 : 1 }],
+              onPress={() => onPress(v.topic)}
+              activeOpacity={0.75}
+              style={[tc.tag, {
+                paddingHorizontal: padH,
+                paddingVertical:   padV,
+                backgroundColor:   tagFill(v.valence, v.intensity),
+                borderColor:       tagBorder(v.valence, isSel ? Math.min(v.intensity + 30, 100) : v.intensity),
+                borderWidth:       isSel ? 1.5 : 1,
               }]}
-              activeOpacity={0.8}
             >
-              <Text
-                style={[cs.bubbleText, { color: textColor(v.valence), fontSize: radius > 36 ? 12 : 9 }]}
-                numberOfLines={2}
-                adjustsFontSizeToFit
-              >
+              <Text style={[tc.tagText, { fontSize: fSize, color: tagText(v.valence) }]}>
                 {v.topic}
               </Text>
             </TouchableOpacity>
@@ -149,34 +122,60 @@ function Constellation({ values }: { values: ValueNode[] }) {
         })}
       </View>
 
-      {/* Selected tooltip */}
-      {selected && (() => {
-        const v = values.find(x => x.topic === selected)!;
-        return (
-          <View style={cs.tooltip}>
-            <Text style={[cs.tooltipTopic, { color: textColor(v.valence) }]}>{v.topic}</Text>
-            <Text style={cs.tooltipMeta}>
-              Frequency {v.frequency} · Charge {v.intensity} · {v.valence}
-            </Text>
+      {/* Detail card — appears below cloud on tap */}
+      {sel && (
+        <View style={[tc.detail, { borderColor: tagBorder(sel.valence, sel.intensity) }]}>
+          <View style={tc.detailTop}>
+            <Text style={[tc.detailTopic, { color: tagText(sel.valence) }]}>{sel.topic}</Text>
+            <View style={[tc.valencePill, { borderColor: tagBorder(sel.valence, 60) }]}>
+              <Text style={[tc.valenceText, { color: tagText(sel.valence) }]}>{sel.valence}</Text>
+            </View>
           </View>
-        );
-      })()}
+          {/* Frequency bar */}
+          <View style={tc.barRow}>
+            <Text style={tc.barLabel}>how often I write about this</Text>
+            <View style={tc.track}>
+              <View style={[tc.fill, {
+                width: `${sel.frequency}%` as any,
+                backgroundColor: `rgba(${accentColor(sel.valence)},0.60)`,
+              }]} />
+            </View>
+          </View>
+          {/* Intensity bar */}
+          <View style={tc.barRow}>
+            <Text style={tc.barLabel}>emotional charge when I do</Text>
+            <View style={tc.track}>
+              <View style={[tc.fill, {
+                width: `${sel.intensity}%` as any,
+                backgroundColor: `rgba(${accentColor(sel.valence)},0.45)`,
+              }]} />
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
-const cs = StyleSheet.create({
-  legend:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 10, alignItems: 'center' },
-  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot:   { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)' },
-  legendHint:  { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.30)', lineHeight: 13, flex: 1, textAlign: 'right' },
-  field:       { position: 'relative', backgroundColor: 'rgba(152,212,250,0.03)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(152,212,250,0.10)', overflow: 'hidden' },
-  bubble:      { position: 'absolute', alignItems: 'center', justifyContent: 'center', padding: 4 },
-  bubbleText:  { fontFamily: 'GillSans-Light', textAlign: 'center', lineHeight: 13 },
-  tooltip:     { marginTop: 8, backgroundColor: 'rgba(152,212,250,0.05)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.14)', padding: 10, gap: 2 },
-  tooltipTopic:{ fontSize: 14, fontFamily: 'Baskerville', fontWeight: '500' },
-  tooltipMeta: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)' },
+const tc = StyleSheet.create({
+  wrap:        { gap: 12 },
+  keyRow:      { },
+  keyHint:     { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)', lineHeight: 15 },
+
+  cloud:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tag:         { borderRadius: 20, borderWidth: 1 },
+  tagText:     { fontFamily: 'GillSans-Light', lineHeight: undefined },
+
+  detail:      { marginTop: 4, borderRadius: 14, borderWidth: 1, backgroundColor: 'rgba(152,212,250,0.04)', padding: 14, gap: 10 },
+  detailTop:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  detailTopic: { fontSize: 17, fontFamily: 'Baskerville', fontWeight: '500', flex: 1 },
+  valencePill: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
+  valenceText: { fontSize: 10, fontFamily: 'GillSans-Light', letterSpacing: 0.3 },
+
+  barRow:      { gap: 4 },
+  barLabel:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', textTransform: 'uppercase', letterSpacing: 0.3 },
+  track:       { height: 4, backgroundColor: 'rgba(152,212,250,0.08)', borderRadius: 2, overflow: 'hidden' },
+  fill:        { height: '100%', borderRadius: 2 },
 });
 
 // ── Divergence flag ───────────────────────────────────────────────────────────
@@ -265,8 +264,8 @@ interface Props {
 export default function ValuesConstellationTab({ data, onJump }: Props) {
   return (
     <View style={s.root}>
-      <Text style={s.sectionLabel}>VALUES CONSTELLATION</Text>
-      <Constellation values={data.values} />
+      <Text style={s.sectionLabel}>WHAT I WRITE ABOUT</Text>
+      <TagCloud values={data.values} />
 
       {data.divergence.length > 0 && (
         <View style={s.section}>
