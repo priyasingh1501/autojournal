@@ -32,7 +32,9 @@ function getBubblePos(topic: string, radius: number): { x: number; y: number } {
 // ── Colour per valence ─────────────────────────────────────────────────────────
 
 function bubbleColor(valence: ValueNode['valence'], intensity: number): string {
-  const a = 0.20 + (intensity / 100) * 0.65;
+  // Dark fill: base colour at very low opacity so bubbles stay near-black;
+  // intensity shifts from near-invisible (0.04) to a still-dark (0.18)
+  const a = 0.04 + (intensity / 100) * 0.14;
   switch (valence) {
     case 'positive': return `rgba(94,234,212,${a.toFixed(2)})`;
     case 'negative': return `rgba(236,72,153,${a.toFixed(2)})`;
@@ -43,10 +45,10 @@ function bubbleColor(valence: ValueNode['valence'], intensity: number): string {
 
 function bubbleBorder(valence: ValueNode['valence']): string {
   switch (valence) {
-    case 'positive': return 'rgba(94,234,212,0.40)';
-    case 'negative': return 'rgba(236,72,153,0.40)';
-    case 'mixed':    return 'rgba(251,191,36,0.40)';
-    default:         return 'rgba(147,197,253,0.30)';
+    case 'positive': return 'rgba(94,234,212,0.70)';
+    case 'negative': return 'rgba(236,72,153,0.70)';
+    case 'mixed':    return 'rgba(251,191,36,0.70)';
+    default:         return 'rgba(147,197,253,0.55)';
   }
 }
 
@@ -55,7 +57,7 @@ function textColor(valence: ValueNode['valence']): string {
     case 'positive': return 'rgba(94,234,212,0.95)';
     case 'negative': return 'rgba(249,168,212,0.95)';
     case 'mixed':    return 'rgba(253,224,71,0.95)';
-    default:         return 'rgba(224,242,254,0.80)';
+    default:         return 'rgba(224,242,254,0.85)';
   }
 }
 
