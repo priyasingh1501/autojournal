@@ -186,10 +186,19 @@ function DivergenceFlag({ stated, actual, observation }: { stated: string; actua
         <Feather name="alert-circle" size={13} color="rgba(251,191,36,0.80)" />
         <Text style={df.label}>Values gap</Text>
       </View>
-      <View style={df.tags}>
-        <View style={df.tag}><Text style={df.tagText}>says: {stated}</Text></View>
-        <Feather name="arrow-right" size={12} color="rgba(152,212,250,0.30)" />
-        <View style={[df.tag, df.tagActual]}><Text style={[df.tagText, df.tagTextActual]}>lives: {actual}</Text></View>
+      {/* Stacked layout — no overflow on narrow screens */}
+      <View style={df.stack}>
+        <View style={df.tag}>
+          <Text style={df.tagMeta}>says</Text>
+          <Text style={df.tagText} numberOfLines={2}>{stated}</Text>
+        </View>
+        <View style={df.arrow}>
+          <Feather name="arrow-down" size={12} color="rgba(152,212,250,0.30)" />
+        </View>
+        <View style={[df.tag, df.tagActual]}>
+          <Text style={df.tagMeta}>lives</Text>
+          <Text style={[df.tagText, df.tagTextActual]} numberOfLines={2}>{actual}</Text>
+        </View>
       </View>
       <Text style={df.obs}>{observation}</Text>
     </View>
@@ -197,14 +206,16 @@ function DivergenceFlag({ stated, actual, observation }: { stated: string; actua
 }
 
 const df = StyleSheet.create({
-  card:         { backgroundColor: 'rgba(251,191,36,0.05)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(251,191,36,0.20)', padding: 14, gap: 8 },
+  card:         { backgroundColor: 'rgba(251,191,36,0.05)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(251,191,36,0.20)', padding: 14, gap: 10 },
   iconRow:      { flexDirection: 'row', alignItems: 'center', gap: 7 },
   label:        { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(251,191,36,0.75)', letterSpacing: 0.2 },
-  tags:         { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tag:          { backgroundColor: 'rgba(152,212,250,0.06)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)', paddingHorizontal: 10, paddingVertical: 5 },
+  stack:        { gap: 2 },
+  arrow:        { alignItems: 'center', paddingVertical: 2 },
+  tag:          { backgroundColor: 'rgba(152,212,250,0.06)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)', paddingHorizontal: 12, paddingVertical: 8 },
   tagActual:    { backgroundColor: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.25)' },
-  tagText:      { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.75)' },
-  tagTextActual:{ color: 'rgba(251,191,36,0.85)' },
+  tagMeta:      { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
+  tagText:      { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.85)' },
+  tagTextActual:{ color: 'rgba(251,191,36,0.90)' },
   obs:          { fontSize: 13, fontFamily: 'Baskerville', fontStyle: 'italic', color: 'rgba(224,242,254,0.80)', lineHeight: 20 },
 });
 
