@@ -10,8 +10,9 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   generateWhoYouAre, generateWhatYouCare,
   generateHowYouThink, generateYourStory,
-  NOT_ENOUGH_DATA,
+  NOT_ENOUGH_DATA, FRESHNESS,
 } from '../services/InsightV2Service';
+import InsightFreshnessBadge from '../components/insights/InsightFreshnessBadge';
 import { StorageService } from '../services/StorageService';
 import {
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis,
@@ -77,6 +78,8 @@ export default function InsightsScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>('you');
   const scrollRef = useRef<ScrollView>(null);
 
+  const [currentEntryCount, setCurrentEntryCount] = useState(0);
+
   // Per-tab data
   const [whoData,       setWhoData]       = useState<WhoYouAreAnalysis | null>(null);
   const [valuesData,    setValuesData]    = useState<WhatYouCareAboutAnalysis | null>(null);
@@ -92,6 +95,7 @@ export default function InsightsScreen() {
   useFocusEffect(useCallback(() => {
     tryLoadCached(activeTab);
     StorageService.getEnneagramResponse().then(r => r && setEnneagramResp(r));
+    StorageService.getSummaryDates().then(d => setCurrentEntryCount(d.length));
   }, [activeTab]));
 
   // Silently load from cache — no spinner, no auto-generate
@@ -220,27 +224,67 @@ export default function InsightsScreen() {
           <>
             {activeTab === 'you' && (
               whoData
-                ? <WhoYouAreTab
-                    data={whoData}
-                    enneagramResponse={enneagramResp}
-                    onEnneagramRespond={setEnneagramResp}
-                    onJump={handleJump}
-                  />
+                ? <>
+                    <InsightFreshnessBadge
+                      config={FRESHNESS.you}
+                      generatedAt={whoData.generatedAt}
+                      entryCountAtGeneration={whoData.entryCountAtGeneration ?? 0}
+                      currentEntryCount={currentEntryCount}
+                      onRefresh={() => generate('you')}
+                      refreshing={!!loading['you']}
+                    />
+                    <WhoYouAreTab
+                      data={whoData}
+                      enneagramResponse={enneagramResp}
+                      onEnneagramRespond={setEnneagramResp}
+                      onJump={handleJump}
+                    />
+                  </>
                 : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('you')} />
             )}
             {activeTab === 'values' && (
               valuesData
-                ? <ValuesConstellationTab data={valuesData} onJump={handleJump} />
+                ? <>
+                    <InsightFreshnessBadge
+                      config={FRESHNESS.values}
+                      generatedAt={valuesData.generatedAt}
+                      entryCountAtGeneration={valuesData.entryCountAtGeneration ?? 0}
+                      currentEntryCount={currentEntryCount}
+                      onRefresh={() => generate('values')}
+                      refreshing={!!loading['values']}
+                    />
+                    <ValuesConstellationTab data={valuesData} onJump={handleJump} />
+                  </>
                 : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('values')} />
             )}
             {activeTab === 'thinking' && (
               thinkData
-                ? <HowYouThinkTab data={thinkData} onJump={handleJump} />
+                ? <>
+                    <InsightFreshnessBadge
+                      config={FRESHNESS.thinking}
+                      generatedAt={thinkData.generatedAt}
+                      entryCountAtGeneration={thinkData.entryCountAtGeneration ?? 0}
+                      currentEntryCount={currentEntryCount}
+                      onRefresh={() => generate('thinking')}
+                      refreshing={!!loading['thinking']}
+                    />
+                    <HowYouThinkTab data={thinkData} onJump={handleJump} />
+                  </>
                 : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('thinking')} />
             )}
             {activeTab === 'story' && (
               storyData
-                ? <YourStoryTab data={storyData} onJump={handleJump} />
+                ? <>
+                    <InsightFreshnessBadge
+                      config={FRESHNESS.story}
+                      generatedAt={storyData.generatedAt}
+                      entryCountAtGeneration={storyData.entryCountAtGeneration ?? 0}
+                      currentEntryCount={currentEntryCount}
+                      onRefresh={() => generate('story')}
+                      refreshing={!!loading['story']}
+                    />
+                    <YourStoryTab data={storyData} onJump={handleJump} />
+                  </>
                 : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('story')} />
             )}
           </>

@@ -8,11 +8,60 @@ import {
 export const NOT_ENOUGH_DATA = 'NOT_ENOUGH_DATA';
 const SENTINEL = '===JSON===';
 
-// Cache TTLs
-const TTL_WHO   = 48 * 3_600_000;  // 48h
-const TTL_VALUES = 24 * 3_600_000; // 24h
-const TTL_THINK  = 7 * 86_400_000; // 7 days
-const TTL_STORY  = 7 * 86_400_000; // 7 days
+// ── Staleness config per tab ────────────────────────────────────────────────
+// Each tab is stale when EITHER condition is met (whichever comes first).
+// Using entry count rather than pure time means heavy journalers get fresher
+// insights automatically; light journalers don't go stale just from time passing.
+
+export interface FreshnessConfig {
+  windowDays:      number;   // how many days of data to analyse
+  entryThreshold:  number;   // refresh after this many new entries
+  maxAgeDays:      number;   // hard ceiling: refresh after this many days regardless
+  windowLabel:     string;   // human-readable window, e.g. "60 days"
+  rationale:       string;   // shown in UI — why this cadence
+}
+
+export const FRESHNESS: Record<'you' | 'values' | 'thinking' | 'story', FreshnessConfig> = {
+  you: {
+    windowDays:     60,
+    entryThreshold: 20,
+    maxAgeDays:     30,
+    windowLabel:    '60 days',
+    rationale:      'Personality patterns need two months to show direction. Updates after 20 new entries or 30 days.',
+  },
+  values: {
+    windowDays:     30,
+    entryThreshold: 10,
+    maxAgeDays:     14,
+    windowLabel:    '30 days',
+    rationale:      'Values and motivation can shift month to month. Updates after 10 new entries or 14 days.',
+  },
+  thinking: {
+    windowDays:     45,
+    entryThreshold: 25,
+    maxAgeDays:     30,
+    windowLabel:    '45 days',
+    rationale:      'Cognitive style is stable. More entries = more accurate. Updates after 25 new entries or 30 days.',
+  },
+  story: {
+    windowDays:     90,
+    entryThreshold: 30,
+    maxAgeDays:     30,
+    windowLabel:    'All entries',
+    rationale:      'Life arcs unfold over months. Chapter updates after 30 new entries or 30 days.',
+  },
+};
+
+function isStale(
+  cached: { generatedAt: number; entryCountAtGeneration?: number } | null,
+  currentCount: number,
+  cfg: FreshnessConfig,
+): boolean {
+  if (!cached) return true;
+  const ageDays    = (Date.now() - cached.generatedAt) / 86_400_000;
+  const newEntries = currentCount - (cached.entryCountAtGeneration ?? 0);
+  return ageDays >= cfg.maxAgeDays || newEntries >= cfg.entryThreshold;
+}
 
 // ── JSON extraction ────────────────────────────────────────────────────────────
 
@@ -177,11 +226,13 @@ Rules:
 export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAreAnalysis> {
   const settings = await StorageService.getSettings();
   if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured.');
+  const allDates = await StorageService.getSummaryDates();
+  const currentCount = allDates.length;
   if (!forceRefresh) {
     const cached = await StorageService.getWhoYouAre();
-    if (cached && Date.now() - cached.generatedAt < TTL_WHO) return cached;
+    if (!isStale(cached, currentCount, FRESHNESS.you)) return cached!;
   }
-  const { text, dates } = await buildContext(30);
+  const { text, dates } = await buildContext(FRESHNESS.you.windowDays);
   const raw = await callClaude(
     WHO_SYSTEM,
     `Here are my journal entries:\n\n${text}\n\nPlease write my character portrait.`,
@@ -194,6 +245,7 @@ export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAre
 
   const result: WhoYouAreAnalysis = {
     generatedAt: Date.now(),
+    entryCountAtGeneration: currentCount,
     narrative: parsed.narrative ?? '',
     bigFive: parsed.bigFive ?? {},
     bigFiveNarratives: parsed.bigFiveNarratives ?? {},
@@ -242,11 +294,13 @@ Rules:
 export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYouCareAboutAnalysis> {
   const settings = await StorageService.getSettings();
   if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured.');
+  const allDates = await StorageService.getSummaryDates();
+  const currentCount = allDates.length;
   if (!forceRefresh) {
     const cached = await StorageService.getWhatYouCare();
-    if (cached && Date.now() - cached.generatedAt < TTL_VALUES) return cached;
+    if (!isStale(cached, currentCount, FRESHNESS.values)) return cached!;
   }
-  const { text, dates } = await buildContext(30);
+  const { text, dates } = await buildContext(FRESHNESS.values.windowDays);
   const raw = await callClaude(
     VALUES_SYSTEM,
     `Here are my journal entries:\n\n${text}\n\nPlease map what I actually care about.`,
@@ -259,6 +313,7 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
 
   const result: WhatYouCareAboutAnalysis = {
     generatedAt: Date.now(),
+    entryCountAtGeneration: currentCount,
     values: parsed.values ?? [],
     divergence: parsed.divergence ?? [],
     motivationPulse: parsed.motivationPulse ?? 'meaning',
@@ -334,9 +389,11 @@ Rules:
 export async function generateHowYouThink(forceRefresh = false): Promise<HowYouThinkAnalysis> {
   const settings = await StorageService.getSettings();
   if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured.');
+  const allDates = await StorageService.getSummaryDates();
+  const currentCount = allDates.length;
   if (!forceRefresh) {
     const cached = await StorageService.getHowYouThink();
-    if (cached && Date.now() - cached.generatedAt < TTL_THINK) return cached;
+    if (!isStale(cached, currentCount, FRESHNESS.thinking)) return cached!;
   }
   const { text, dates } = await buildThinkingContext();
   const raw = await callClaude(
@@ -351,6 +408,7 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
 
   const result: HowYouThinkAnalysis = {
     generatedAt: Date.now(),
+    entryCountAtGeneration: currentCount,
     dimensions: parsed.dimensions ?? [],
   };
   await StorageService.saveHowYouThink(result);
@@ -400,9 +458,11 @@ Rules:
 export async function generateYourStory(forceRefresh = false): Promise<YourStoryAnalysis> {
   const settings = await StorageService.getSettings();
   if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured.');
+  const allDates = await StorageService.getSummaryDates();
+  const currentCount = allDates.length;
   if (!forceRefresh) {
     const cached = await StorageService.getYourStory();
-    if (cached && Date.now() - cached.generatedAt < TTL_STORY) return cached;
+    if (!isStale(cached, currentCount, FRESHNESS.story)) return cached!;
   }
   const { text, dates } = await buildLongContext();
   const arcHistory = await StorageService.getArcHistory();
@@ -429,6 +489,7 @@ export async function generateYourStory(forceRefresh = false): Promise<YourStory
 
   const result: YourStoryAnalysis = {
     generatedAt: Date.now(),
+    entryCountAtGeneration: currentCount,
     currentChapter: parsed.currentChapter ?? { title: '', dateRange: '', narrative: '' },
     recurringCast: parsed.recurringCast ?? [],
     arcPattern: {

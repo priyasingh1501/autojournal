@@ -209,6 +209,7 @@ export interface BigFiveTrait {
 }
 export interface WhoYouAreAnalysis {
   generatedAt: number;
+  entryCountAtGeneration: number;
   narrative: string;                           // 3–4 sentence portrait
   bigFive: {
     openness:          BigFiveTrait;
@@ -242,6 +243,7 @@ export interface ValueNode {
 }
 export interface WhatYouCareAboutAnalysis {
   generatedAt: number;
+  entryCountAtGeneration: number;
   values: ValueNode[];
   divergence: Array<{
     stated:      string;
@@ -264,6 +266,7 @@ export interface CognitiveDimension {
 }
 export interface HowYouThinkAnalysis {
   generatedAt: number;
+  entryCountAtGeneration: number;
   dimensions:  CognitiveDimension[];
 }
 
@@ -271,6 +274,7 @@ export interface HowYouThinkAnalysis {
 export type ArcType = 'Seeker' | 'Builder' | 'Witness' | 'Transformer' | 'Returner';
 export interface YourStoryAnalysis {
   generatedAt: number;
+  entryCountAtGeneration: number;
   currentChapter: {
     title:     string;   // e.g. "The Clearing"
     dateRange: string;   // e.g. "October–December 2025"
