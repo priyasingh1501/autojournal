@@ -14,7 +14,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 function accentColor(valence: ValueNode['valence']): string {
   switch (valence) {
-    case 'positive': return '94,234,212';
+    case 'positive': return '22,163,74';
     case 'negative': return '236,72,153';
     case 'mixed':    return '251,191,36';
     default:         return '147,197,253';
