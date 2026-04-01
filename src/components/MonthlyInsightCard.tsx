@@ -14,6 +14,7 @@ import {
 import { MonthlyInsight, MonthlyData, SpendCategory, EmotionCount, UserGoals, DayMacros } from '../types';
 import { generateMonthlyInsight, NOT_ENOUGH_DATA } from '../services/MonthlyInsightService';
 import { StorageService } from '../services/StorageService';
+import { getSMSSpendCategories } from '../services/SMSSpendService';
 import { SECTION_LABELS } from './InsightSections';
 import GoalsModal from './GoalsModal';
 
@@ -632,23 +633,25 @@ function SectionRow({
       }
 
       case 'Spending': {
-        const catList = monthlyData?.spendCategories?.length
-          ? <SpendCategoryList categories={monthlyData.spendCategories} />
-          : null;
-        // Goal: monthlySpendBudget
-        const totalSpend = monthlyData?.spendCategories
-          ?.filter(c => c.source === 'sms' && c.amount != null)
-          .reduce((s, c) => s + (c.amount ?? 0), 0) ?? 0;
-        const spendBar = goals?.monthlySpendBudget && totalSpend > 0
+        // Use live SMS data; fall back to stored monthly data
+        const cats = liveSpendCats.length
+          ? liveSpendCats
+          : (monthlyData?.spendCategories ?? []);
+        const total = liveSpendCats.length
+          ? liveSpendTotal
+          : (monthlyData?.spendCategories?.reduce((s, c) => s + (c.amount ?? 0), 0) ?? 0);
+
+        const budgetBar = goals?.monthlySpendBudget && total > 0
           ? <GoalProgressBar
-              label="MONTHLY BUDGET"
-              current={totalSpend}
+              label="SPENT THIS MONTH"
+              current={total}
               target={goals.monthlySpendBudget}
               unit="₹"
               color="rgba(74,222,128,0.70)"
             />
           : null;
-        return catList || spendBar ? <>{catList}{spendBar}</> : null;
+        const catList = cats.length ? <SpendCategoryList categories={cats} /> : null;
+        return budgetBar || catList ? <>{budgetBar}{catList}</> : null;
       }
 
       case 'Recurring thoughts':
@@ -740,13 +743,15 @@ const gpStyles = StyleSheet.create({
 // ── Main card ─────────────────────────────────────────────────────────────────
 
 export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: number }) {
-  const [insight,       setInsight]       = useState<MonthlyInsight | null>(null);
-  const [loading,       setLoading]       = useState(true);
-  const [notEnoughData, setNotEnoughData] = useState(false);
-  const [error,         setError]         = useState<string | null>(null);
-  const [refreshing,    setRefreshing]    = useState(false);
-  const [goals,         setGoals]         = useState<UserGoals | null>(null);
-  const [showGoals,     setShowGoals]     = useState(false);
+  const [insight,           setInsight]           = useState<MonthlyInsight | null>(null);
+  const [loading,           setLoading]           = useState(true);
+  const [notEnoughData,     setNotEnoughData]     = useState(false);
+  const [error,             setError]             = useState<string | null>(null);
+  const [refreshing,        setRefreshing]        = useState(false);
+  const [goals,             setGoals]             = useState<UserGoals | null>(null);
+  const [showGoals,         setShowGoals]         = useState(false);
+  const [liveSpendTotal,    setLiveSpendTotal]    = useState<number>(0);
+  const [liveSpendCats,     setLiveSpendCats]     = useState<SpendCategory[]>([]);
 
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
@@ -754,6 +759,16 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   useEffect(() => {
     loadInsight(false);
     StorageService.getGoals().then(g => setGoals(g));
+    // Load live SMS spend for current month independently of monthly insight
+    if (Platform.OS === 'android') {
+      const now = new Date();
+      getSMSSpendCategories(now.getFullYear(), now.getMonth() + 1)
+        .then(cats => {
+          setLiveSpendCats(cats);
+          setLiveSpendTotal(cats.reduce((s, c) => s + (c.amount ?? 0), 0));
+        })
+        .catch(() => {});
+    }
   }, [refreshKey]);
 
   useEffect(() => {
