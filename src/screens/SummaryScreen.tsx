@@ -22,6 +22,7 @@ import Markdown from 'react-native-markdown-display';
 import { renderInsightSections } from '../components/InsightSections';
 import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
+import { generateIfNeeded } from '../services/AutoSummaryService';
 import { DailySummary } from '../types';
 import TalkScreen from './TalkScreen';
 import ChatScreen from './ChatScreen';
@@ -148,15 +149,20 @@ export default function SummaryScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      const yesterday = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
+      // Load immediately, then also try to auto-generate any missing summaries
+      // and reload so they appear without the user having to navigate away and back
       loadSummaries().then(() => {
         const jumpToDate: string | undefined = route?.params?.jumpToDate;
         if (jumpToDate) {
           const idx = summariesRef.current.findIndex(s => s.date === jumpToDate);
-          if (idx !== -1) {
-            scrollToIndex(idx, false);
-          }
+          if (idx !== -1) scrollToIndex(idx, false);
         }
       });
+      // Catch-up generation: generate yesterday's summary if missing, then reload
+      generateIfNeeded(yesterday).then(generated => {
+        if (generated) loadSummaries();
+      }).catch(() => {});
     }, [route?.params?.jumpToDate])
   );
 
