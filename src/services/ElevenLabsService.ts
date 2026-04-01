@@ -53,18 +53,9 @@ export async function synthesizeSpeech(
     throw new Error(`ElevenLabs TTS error: ${err}`);
   }
 
-  // Decode response as base64 and write to a temp file
-  const blob = await res.blob();
-  const reader = new FileReader();
-  const base64 = await new Promise<string>((resolve, reject) => {
-    reader.onload = () => {
-      const result = reader.result as string;
-      // result = "data:audio/mpeg;base64,AAAA..."
-      resolve(result.split(',')[1]);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+  // Write audio bytes directly to a temp file via ArrayBuffer (FileReader is browser-only)
+  const arrayBuffer = await res.arrayBuffer();
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
 
   const dir = FileSystem.cacheDirectory;
   if (!dir) throw new Error('Cache directory unavailable');
