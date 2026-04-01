@@ -100,7 +100,7 @@ function parseAmount(body: string): number | null {
 
 // ── Debit detection ───────────────────────────────────────────────────────────
 
-const DEBIT_KEYWORDS  = ['debited', 'spent', 'paid', 'payment', 'deducted', 'withdrawn', 'purchase', 'transaction'];
+const DEBIT_KEYWORDS  = ['debited', 'spent', 'paid', 'payment', 'deducted', 'withdrawn', 'purchase', 'transaction', 'used for', 'used at'];
 const CREDIT_KEYWORDS = ['credited', 'received', 'refund', 'cashback', 'reversal', 'transferred to you'];
 
 function isDebit(body: string): boolean {
