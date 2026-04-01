@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Platform,
   ImageBackground,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -48,6 +49,17 @@ export default function HomeScreen() {
     }, [])
   );
 
+
+  // Sync widget state whenever the app comes to foreground (not just on screen focus).
+  // This catches the "tap widget to stop" case where HomeScreen is already focused
+  // so useFocusEffect doesn't re-fire.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') syncWidgetMonitoringIntent();
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     audioRecorderService.setCallbacks({
