@@ -23,7 +23,7 @@ import { PendingClip } from '../types';
 import ComposeModal from '../components/ComposeModal';
 import MonthlyInsightCard from '../components/MonthlyInsightCard';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
-import { requestSMSPermission, getRecentTransactions, SMSTransaction } from '../services/SMSSpendService';
+import { getRecentTransactions, SMSTransaction } from '../services/SMSSpendService';
 
 export default function HomeScreen() {
   const [status, setStatus] = useState<RecordingStatus>('idle');
@@ -47,13 +47,6 @@ export default function HomeScreen() {
     }, [])
   );
 
-  // Request SMS permission once on first launch (Android only)
-  useEffect(() => {
-    if (Platform.OS === 'android') {
-      const timer = setTimeout(() => requestSMSPermission(), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, []);
 
   useEffect(() => {
     audioRecorderService.setCallbacks({
