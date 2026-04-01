@@ -7,7 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StorageService } from '../services/StorageService';
-import { UserGoals, WaistEntry } from '../types';
+import { UserGoals } from '../types';
 
 // ── Reusable sub-components ───────────────────────────────────────────────────
 
@@ -107,28 +107,6 @@ const sec = StyleSheet.create({
   body:    { gap: 12 },
 });
 
-/** Small phase milestone chip */
-function PhaseBadge({ phase, target, current, unit }: { phase: string; target: number; current?: number; unit: string }) {
-  const done = current != null && (unit === '%' ? current <= target : current >= target);
-  return (
-    <View style={[pb.chip, done && pb.done]}>
-      <Text style={pb.phase}>{phase}</Text>
-      <Text style={pb.target}>
-        {unit === '%' ? `≤${target}${unit}` : `≥${target}${unit}`}
-        {current != null ? ` · now ${current}${unit}` : ''}
-      </Text>
-      {done && <Feather name="check" size={10} color="rgba(110,231,183,0.90)" style={{ marginLeft: 4 }} />}
-    </View>
-  );
-}
-
-const pb = StyleSheet.create({
-  chip:   { backgroundColor: 'rgba(152,212,250,0.05)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)', paddingHorizontal: 10, paddingVertical: 6 },
-  done:   { borderColor: 'rgba(110,231,183,0.30)', backgroundColor: 'rgba(110,231,183,0.05)' },
-  phase:  { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 0.4, textTransform: 'uppercase' },
-  target: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.80)', marginTop: 1 },
-});
-
 // ── Main modal ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -146,26 +124,19 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
   const [protein,         setProtein]         = useState('');
   const [carbs,           setCarbs]           = useState('');
   const [fat,             setFat]             = useState('');
-  // Body metrics
-  const [bodyFatTarget,   setBodyFatTarget]   = useState('');
-  const [muscleTarget,    setMuscleTarget]    = useState('');
-  const [waistTarget,     setWaistTarget]     = useState('');
-  const [waistNow,        setWaistNow]        = useState('');
   // Spending
   const [spendBudget,     setSpendBudget]     = useState('');
-  // Persisted state
-  const [waistHistory,    setWaistHistory]    = useState<WaistEntry[]>([]);
   const [saving,          setSaving]          = useState(false);
 
   useEffect(() => { if (visible) load(); }, [visible]);
 
-  // Auto-populate carbs & fat from suggestion whenever calorie/protein/BF inputs change
+  // Auto-populate carbs & fat from suggestion whenever calorie/protein inputs change
   useEffect(() => {
     if (!suggestedMacros) return;
     // Only overwrite if the user hasn't manually edited these fields
     setCarbs(v => v === '' || v === String(suggestedMacros!.carbsGrams) ? String(suggestedMacros!.carbsGrams) : v);
     setFat(v  => v === '' || v === String(suggestedMacros!.fatGrams)   ? String(suggestedMacros!.fatGrams)   : v);
-  }, [calories, protein, bodyFatTarget]);
+  }, [calories, protein]);
 
   const load = async () => {
     const g = await StorageService.getGoals();
@@ -178,22 +149,7 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
     if (g.dailyProteinTarget)    setProtein(String(g.dailyProteinTarget));
     if (g.dailyCarbsTarget)      setCarbs(String(g.dailyCarbsTarget));
     if (g.dailyFatTarget)        setFat(String(g.dailyFatTarget));
-    if (g.bodyFatTargetPct)      setBodyFatTarget(String(g.bodyFatTargetPct));
-    if (g.muscleMassTargetKg)    setMuscleTarget(String(g.muscleMassTargetKg));
-    if (g.waistTargetCm)         setWaistTarget(String(g.waistTargetCm));
-    if (g.waistHistory?.length)  setWaistHistory(g.waistHistory);
     if (g.monthlySpendBudget)    setSpendBudget(String(g.monthlySpendBudget));
-  };
-
-  const handleLogWaist = () => {
-    const val = parseFloat(waistNow);
-    if (isNaN(val) || val < 40 || val > 200) return;
-    const today = new Date().toISOString().split('T')[0];
-    setWaistHistory(prev => {
-      const filtered = prev.filter(e => e.date !== today);
-      return [...filtered, { date: today, cm: val }].sort((a, b) => a.date.localeCompare(b.date));
-    });
-    setWaistNow('');
   };
 
   const handleSave = async () => {
@@ -209,13 +165,6 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
     if (!isNaN(crb) && crb > 0)                  g.dailyCarbsTarget     = crb;
     const ft = parseFloat(fat);
     if (!isNaN(ft) && ft > 0)                    g.dailyFatTarget       = ft;
-    const bf = parseFloat(bodyFatTarget);
-    if (!isNaN(bf) && bf > 0)                    g.bodyFatTargetPct     = bf;
-    const mus = parseFloat(muscleTarget);
-    if (!isNaN(mus) && mus > 0)                  g.muscleMassTargetKg   = mus;
-    const wt = parseFloat(waistTarget);
-    if (!isNaN(wt) && wt > 0)                    g.waistTargetCm        = wt;
-    if (waistHistory.length > 0)                  g.waistHistory         = waistHistory;
     const bud = parseFloat(spendBudget.replace(/,/g, ''));
     if (!isNaN(bud) && bud > 0)                  g.monthlySpendBudget   = bud;
     await StorageService.saveGoals(g);
@@ -224,8 +173,7 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
     onClose();
   };
 
-  const latestWaist = waistHistory.length > 0 ? waistHistory[waistHistory.length - 1] : null;
-  const anySet = strengthDays > 0 || cardioDays > 0 || calories || protein || bodyFatTarget || spendBudget;
+  const anySet = strengthDays > 0 || cardioDays > 0 || !!calories || !!protein || !!spendBudget;
 
   // ── Macro suggestion ──────────────────────────────────────────────────────
   const suggestedMacros = (() => {
@@ -234,14 +182,10 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
     if (isNaN(cal) || cal <= 0 || isNaN(prot) || prot <= 0) return null;
 
     const protKcal = prot * 4;
-    if (protKcal >= cal) return null; // protein alone exceeds budget
+    if (protKcal >= cal) return null;
 
-    // Fat: 30% if still in early cut (BF target > 38%), otherwise 27%
-    const bfTarget = parseFloat(bodyFatTarget);
-    const fatPct   = (!isNaN(bfTarget) && bfTarget > 38) ? 0.30 : 0.27;
-    const fatKcal  = Math.round(cal * fatPct);
+    const fatKcal  = Math.round(cal * 0.28);
     const fatGrams = Math.round(fatKcal / 9);
-
     const carbsKcal  = Math.max(0, cal - protKcal - fatKcal);
     const carbsGrams = Math.round(carbsKcal / 4);
 
@@ -348,104 +292,6 @@ export default function GoalsModal({ visible, onClose, onSaved }: Props) {
                 )}
               </Section>
 
-              {/* ── Body metrics ──────────────────────────────────── */}
-              <Section icon="bar-chart-2" title="Body Composition" accent="rgba(196,181,253,0.90)">
-
-                {/* Phase milestones */}
-                <View>
-                  <Text style={s.fieldLabel}>Body fat % milestones</Text>
-                  <View style={s.phases}>
-                    <PhaseBadge phase="Now" target={45.7} current={45.7} unit="%" />
-                    <PhaseBadge phase="Phase 1 · Sep" target={42} unit="%" />
-                    <PhaseBadge phase="Phase 2 · Dec 27" target={35} unit="%" />
-                    <PhaseBadge phase="Phase 3" target={30} unit="%" />
-                  </View>
-                </View>
-
-                <NumericField
-                  label="Current phase target — body fat %"
-                  value={bodyFatTarget}
-                  onChange={setBodyFatTarget}
-                  placeholder="42"
-                  unit="%"
-                  hint="Phase 1 target: ~42%. Phase 2: ~35%. Final: 28–33%."
-                />
-
-                <NumericField
-                  label="Skeletal muscle target"
-                  value={muscleTarget}
-                  onChange={setMuscleTarget}
-                  placeholder="17"
-                  unit="kg"
-                  hint="Currently 16.2 kg. Phase 1 target: 17 kg+"
-                />
-
-                {/* Waist tracking */}
-                <View style={s.waistBlock}>
-                  <Text style={s.fieldLabel}>Waist circumference — weekly log</Text>
-                  <Text style={s.fieldHint}>Best proxy for visceral fat. Measure weekly, same time, same spot.</Text>
-
-                  <View style={s.waistInputRow}>
-                    <View style={[nf.row, { flex: 1 }]}>
-                      <TextInput
-                        style={nf.input}
-                        value={waistNow}
-                        onChangeText={setWaistNow}
-                        placeholder="e.g. 87"
-                        placeholderTextColor="rgba(152,212,250,0.28)"
-                        keyboardType="numeric"
-                        returnKeyType="done"
-                      />
-                      <Text style={nf.unit}>cm</Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={handleLogWaist}
-                      style={[s.logBtn, { opacity: waistNow.length > 0 ? 1 : 0.4 }]}
-                      disabled={waistNow.length === 0}
-                    >
-                      <Text style={s.logBtnText}>Log</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <NumericField
-                    label="Waist goal"
-                    value={waistTarget}
-                    onChange={setWaistTarget}
-                    placeholder="80"
-                    unit="cm"
-                  />
-
-                  {/* History strip */}
-                  {waistHistory.length > 0 && (
-                    <View style={s.waistHistory}>
-                      <Text style={s.fieldLabel}>History</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                        <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
-                          {waistHistory.slice(-8).map((e, i, arr) => {
-                            const prev = arr[i - 1];
-                            const delta = prev ? e.cm - prev.cm : 0;
-                            const color = delta <= 0 ? 'rgba(110,231,183,0.85)' : 'rgba(252,165,165,0.85)';
-                            return (
-                              <View key={e.date} style={s.waistChip}>
-                                <Text style={s.waistDate}>
-                                  {new Date(e.date + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                                </Text>
-                                <Text style={s.waistVal}>{e.cm} cm</Text>
-                                {prev && (
-                                  <Text style={[s.waistDelta, { color }]}>
-                                    {delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1)}
-                                  </Text>
-                                )}
-                              </View>
-                            );
-                          })}
-                        </View>
-                      </ScrollView>
-                    </View>
-                  )}
-                </View>
-              </Section>
-
               {/* ── Spending ──────────────────────────────────────── */}
               <Section icon="credit-card" title="Monthly Spending Budget" accent="rgba(74,222,128,0.90)">
                 <NumericField
@@ -494,22 +340,9 @@ const s = StyleSheet.create({
   goalSummary: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', marginTop: 8 },
   hi:          { color: 'rgba(224,242,254,0.85)', fontWeight: '500' },
 
-  phases: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
-
   nutritionNote:     { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: 'rgba(251,191,36,0.05)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(251,191,36,0.14)', padding: 10 },
   nutritionNoteText: { flex: 1, fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(251,191,36,0.70)', lineHeight: 16 },
 
-
-  waistBlock:    { gap: 10 },
-  waistInputRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  logBtn:        { backgroundColor: 'rgba(9,41,173,0.50)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.30)', paddingHorizontal: 14, paddingVertical: 11 },
-  logBtnText:    { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.90)' },
-
-  waistHistory: { gap: 6, marginTop: 4 },
-  waistChip:    { backgroundColor: 'rgba(152,212,250,0.05)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)', paddingHorizontal: 10, paddingVertical: 7, alignItems: 'center', minWidth: 72 },
-  waistDate:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)' },
-  waistVal:     { fontSize: 14, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.90)', marginTop: 1 },
-  waistDelta:   { fontSize: 10, fontFamily: 'GillSans-Light', marginTop: 1 },
 
   footer:      { paddingHorizontal: 20, paddingVertical: 16 },
   saveBtn:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#0929AD', borderRadius: 16, paddingVertical: 15, borderWidth: 1, borderColor: 'rgba(152,212,250,0.25)' },
