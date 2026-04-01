@@ -95,8 +95,9 @@ function Ring({ delay, active }: { delay: number; active: boolean }) {
 
 /** Play a local audio URI and resolve when playback finishes.
  *  Callback is passed directly to createAsync to avoid a race where
- *  a short clip finishes before setOnPlaybackStatusUpdate is called. */
-function playSoundAndWait(uri: string): Promise<void> {
+ *  a short clip finishes before setOnPlaybackStatusUpdate is called.
+ *  onSound is called with the Sound object so the caller can stop it externally. */
+function playSoundAndWait(uri: string, onSound?: (s: Audio.Sound) => void): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     Audio.Sound.createAsync(
       { uri },
@@ -104,13 +105,12 @@ function playSoundAndWait(uri: string): Promise<void> {
       (status) => {
         if (!status.isLoaded) return;
         if (status.didJustFinish) {
-          // sound ref captured via closure below
           soundRef?.unloadAsync().catch(() => {});
           resolve();
         }
       },
     )
-      .then(({ sound }) => { soundRef = sound; })
+      .then(({ sound }) => { soundRef = sound; onSound?.(sound); })
       .catch(reject);
     let soundRef: Audio.Sound | undefined;
   });
@@ -130,6 +130,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
   const activeRef       = useRef(true);
   const messagesRef     = useRef<ConversationMessage[]>([]);
   const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeSoundRef  = useRef<Audio.Sound | null>(null);
 
   // Cached settings — loaded once at boot to avoid per-turn storage reads
   const cachedAnthropicKey  = useRef<string>('');
@@ -207,6 +208,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
             }
           },
         );
+        activeSoundRef.current = sound;
       } catch {
         // ElevenLabs failed — fall through to expo-speech
         if (!activeRef.current) return;
@@ -330,7 +332,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
         if (!activeRef.current) return;
         try {
           const audioUri = await uriPromise;
-          if (activeRef.current) await playSoundAndWait(audioUri);
+          if (activeRef.current) await playSoundAndWait(audioUri, s => { activeSoundRef.current = s; });
         } catch { /* skip any sentence whose synthesis failed */ }
       }
 
@@ -423,7 +425,12 @@ export default function TalkScreen({ summary, onClose }: Props) {
 
   // ── Button tap ─────────────────────────────────────────────────────────
   const handleEndCall = async () => {
+    // Mark inactive immediately so all in-flight async callbacks exit early
+    activeRef.current = false;
     Speech.stop();
+    activeSoundRef.current?.stopAsync().catch(() => {});
+    activeSoundRef.current?.unloadAsync().catch(() => {});
+    activeSoundRef.current = null;
     clearSilenceTimer();
     recordingRef.current?.stopAndUnloadAsync().catch(() => {});
 
