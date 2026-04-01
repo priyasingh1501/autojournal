@@ -196,6 +196,78 @@ export interface SMSTransaction {
   category: string;
   date: string; // YYYY-MM-DD
   body: string;
+  merchant: string;
+}
+
+// Extract a short merchant/payee hint from SMS body
+function extractMerchant(body: string): string {
+  const lower = body.toLowerCase();
+  // "paid to MERCHANT" / "at MERCHANT" / "to VPA merchant@upi"
+  const patterns = [
+    /paid\s+(?:to|at)\s+([A-Za-z0-9& ]{2,24})/i,
+    /(?:to|at)\s+([A-Za-z0-9& ]{2,24})\s+(?:via|on|for)/i,
+    /(?:transaction|txn|debit).*?(?:at|to)\s+([A-Za-z0-9& ]{2,24})/i,
+  ];
+  for (const re of patterns) {
+    const m = body.match(re);
+    if (m) return m[1].trim();
+  }
+  // Fall back to category keyword that matched
+  for (const [, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    for (const kw of keywords) {
+      if (lower.includes(kw)) return kw.charAt(0).toUpperCase() + kw.slice(1);
+    }
+  }
+  return 'Bank debit';
+}
+
+/**
+ * Returns individual debit transactions from the last `days` days, most recent first.
+ * Max 30 results. Returns [] on iOS or if permission denied.
+ */
+export async function getRecentTransactions(days = 7): Promise<SMSTransaction[]> {
+  if (Platform.OS !== 'android') return [];
+
+  let SmsAndroid: any;
+  try {
+    SmsAndroid = require('react-native-get-sms-android').default;
+  } catch {
+    return [];
+  }
+
+  const granted = await requestSMSPermission();
+  if (!granted) return [];
+
+  const endMs   = Date.now();
+  const startMs = endMs - days * 86_400_000;
+
+  const messages: any[] = await new Promise((resolve) => {
+    SmsAndroid.list(
+      JSON.stringify({ box: 'inbox', minDate: startMs, maxDate: endMs, maxCount: 200 }),
+      () => resolve([]),
+      (_count: number, smsList: string) => {
+        try { resolve(JSON.parse(smsList)); } catch { resolve([]); }
+      },
+    );
+  });
+
+  return messages
+    .filter(msg => isFromBank(msg.address ?? '') && isDebit(msg.body ?? ''))
+    .reduce<SMSTransaction[]>((acc, msg) => {
+      const amount = parseAmount(msg.body ?? '');
+      if (!amount) return acc;
+      const dateMs = parseInt(msg.date ?? '0', 10);
+      acc.push({
+        amount,
+        category: categorise(msg.body ?? ''),
+        date: new Date(dateMs || Date.now()).toISOString().split('T')[0],
+        body: msg.body ?? '',
+        merchant: extractMerchant(msg.body ?? ''),
+      });
+      return acc;
+    }, [])
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 30);
 }
 
 /**
