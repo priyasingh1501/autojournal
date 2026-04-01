@@ -7,8 +7,7 @@ dist/
 web-build/
 
 # Native builds
-android/
-ios/
+# android/ and ios/ are committed so EAS Build can find gradlew/Podfile
 
 # Environment & secrets
 .env
