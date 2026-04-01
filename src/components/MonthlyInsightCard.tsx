@@ -100,17 +100,38 @@ function EmotionBars({ emotions }: { emotions: EmotionCount[] }) {
 }
 
 /** Monthly movement grid — rows of 7 dots, labelled W1 W2 … */
+function getMonthMeta() {
+  const now = new Date();
+  return {
+    todayIndex:   now.getDate() - 1,  // 0-based day index
+    daysInMonth:  new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(),
+  };
+}
+
 function MovementGrid({ days }: { days: boolean[] }) {
+  const { todayIndex, daysInMonth } = getMonthMeta();
+  const full = Array.from({ length: daysInMonth }, (_, i) => days[i] ?? false);
   const rows: boolean[][] = [];
-  for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
+  for (let i = 0; i < full.length; i += 7) rows.push(full.slice(i, i + 7));
   return (
     <View style={{ gap: 5, marginTop: 7 }}>
       {rows.map((row, wi) => (
         <View key={wi} style={infoStyles.gridRow}>
           <Text style={infoStyles.weekLabel}>W{wi + 1}</Text>
-          {row.map((active, di) => (
-            <View key={di} style={[infoStyles.gridDot, active ? infoStyles.gridDotOn : infoStyles.gridDotOff]} />
-          ))}
+          {row.map((active, di) => {
+            const idx = wi * 7 + di;
+            const isToday  = idx === todayIndex;
+            const isFuture = idx > todayIndex;
+            const dotStyle = isToday ? infoStyles.gridDotToday
+              : isFuture ? infoStyles.gridDotFuture
+              : active    ? infoStyles.gridDotOn
+              : infoStyles.gridDotOff;
+            return (
+              <View key={di} style={[infoStyles.gridDot, dotStyle]}>
+                {isToday && <Text style={infoStyles.todayStar}>★</Text>}
+              </View>
+            );
+          })}
         </View>
       ))}
     </View>
@@ -119,16 +140,29 @@ function MovementGrid({ days }: { days: boolean[] }) {
 
 /** Monthly meditation grid — same layout as movement, purple accent */
 function MeditationGrid({ days }: { days: boolean[] }) {
+  const { todayIndex, daysInMonth } = getMonthMeta();
+  const full = Array.from({ length: daysInMonth }, (_, i) => days[i] ?? false);
   const rows: boolean[][] = [];
-  for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
+  for (let i = 0; i < full.length; i += 7) rows.push(full.slice(i, i + 7));
   return (
     <View style={{ gap: 5, marginTop: 7 }}>
       {rows.map((row, wi) => (
         <View key={wi} style={infoStyles.gridRow}>
           <Text style={infoStyles.weekLabel}>W{wi + 1}</Text>
-          {row.map((active, di) => (
-            <View key={di} style={[infoStyles.gridDot, active ? infoStyles.meditationDotOn : infoStyles.gridDotOff]} />
-          ))}
+          {row.map((active, di) => {
+            const idx = wi * 7 + di;
+            const isToday  = idx === todayIndex;
+            const isFuture = idx > todayIndex;
+            const dotStyle = isToday ? infoStyles.gridDotToday
+              : isFuture ? infoStyles.gridDotFuture
+              : active   ? infoStyles.meditationDotOn
+              : infoStyles.gridDotOff;
+            return (
+              <View key={di} style={[infoStyles.gridDot, dotStyle]}>
+                {isToday && <Text style={infoStyles.todayStar}>★</Text>}
+              </View>
+            );
+          })}
         </View>
       ))}
     </View>
@@ -143,19 +177,30 @@ const MEAL_DAY_STYLE: Record<'good' | 'mixed' | 'poor', object> = {
 };
 
 function MealDayGrid({ days }: { days: ('good' | 'mixed' | 'poor' | null)[] }) {
+  const { todayIndex, daysInMonth } = getMonthMeta();
+  const full: ('good' | 'mixed' | 'poor' | null)[] =
+    Array.from({ length: daysInMonth }, (_, i) => days[i] ?? null);
   const rows: ('good' | 'mixed' | 'poor' | null)[][] = [];
-  for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
+  for (let i = 0; i < full.length; i += 7) rows.push(full.slice(i, i + 7));
   return (
     <View style={{ gap: 5, marginTop: 7 }}>
       {rows.map((row, wi) => (
         <View key={wi} style={infoStyles.gridRow}>
           <Text style={infoStyles.weekLabel}>W{wi + 1}</Text>
-          {row.map((quality, di) => (
-            <View
-              key={di}
-              style={[infoStyles.gridDot, quality ? MEAL_DAY_STYLE[quality] : infoStyles.gridDotOff]}
-            />
-          ))}
+          {row.map((quality, di) => {
+            const idx = wi * 7 + di;
+            const isToday  = idx === todayIndex;
+            const isFuture = idx > todayIndex;
+            const dotStyle = isToday ? infoStyles.gridDotToday
+              : isFuture  ? infoStyles.gridDotFuture
+              : quality   ? MEAL_DAY_STYLE[quality]
+              : infoStyles.gridDotOff;
+            return (
+              <View key={di} style={[infoStyles.gridDot, dotStyle]}>
+                {isToday && <Text style={infoStyles.todayStar}>★</Text>}
+              </View>
+            );
+          })}
         </View>
       ))}
       {/* Legend */}
@@ -357,9 +402,12 @@ const infoStyles = StyleSheet.create({
   // Movement grid
   gridRow:   { flexDirection: 'row', alignItems: 'center', gap: 5 },
   weekLabel: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', width: 18 },
-  gridDot:   { width: 14, height: 14, borderRadius: 7 },
+  gridDot:   { width: 14, height: 14, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
   gridDotOn:        { backgroundColor: 'rgba(110,231,183,0.22)', borderWidth: 1, borderColor: 'rgba(110,231,183,0.55)' },
   gridDotOff:       { backgroundColor: 'rgba(152,212,250,0.05)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)' },
+  gridDotFuture:    { backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(152,212,250,0.06)' },
+  gridDotToday:     { backgroundColor: 'rgba(250,204,21,0.15)',  borderWidth: 1, borderColor: 'rgba(250,204,21,0.55)' },
+  todayStar:        { fontSize: 7, color: 'rgba(250,204,21,0.95)', lineHeight: 9 },
   meditationDotOn:  { backgroundColor: 'rgba(196,181,253,0.22)', borderWidth: 1, borderColor: 'rgba(196,181,253,0.60)' },
 
   // Meal weeks
