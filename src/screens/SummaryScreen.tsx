@@ -86,7 +86,8 @@ function StaleBanner({
 
   useEffect(() => {
     StorageService.getTranscriptsForDate(item.date).then(transcripts => {
-      const newer = transcripts.filter(t => t.timestamp > item.createdAt).length;
+      const createdAt = item.createdAt ?? 0;
+      const newer = transcripts.filter(t => t.timestamp > createdAt).length;
       setNewCount(newer);
     }).catch(() => {});
   }, [item.date, item.createdAt]);
