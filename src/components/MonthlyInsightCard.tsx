@@ -14,7 +14,8 @@ import {
 import { MonthlyInsight, MonthlyData, SpendCategory, EmotionCount, UserGoals, DayMacros } from '../types';
 import { generateMonthlyInsight, NOT_ENOUGH_DATA } from '../services/MonthlyInsightService';
 import { StorageService } from '../services/StorageService';
-import { getSMSSpendCategories } from '../services/SMSSpendService';
+// SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
+// import { getSMSSpendCategories } from '../services/SMSSpendService';
 import { SECTION_LABELS } from './InsightSections';
 import GoalsModal from './GoalsModal';
 
@@ -681,13 +682,9 @@ function SectionRow({
       }
 
       case 'Spending': {
-        // Use live SMS data; fall back to stored monthly data
-        const cats = liveSpendCats.length
-          ? liveSpendCats
-          : (monthlyData?.spendCategories ?? []);
-        const total = liveSpendCats.length
-          ? liveSpendTotal
-          : (monthlyData?.spendCategories?.reduce((s, c) => s + (c.amount ?? 0), 0) ?? 0);
+        // SMS live data disabled — use stored monthly insight data only
+        const cats = monthlyData?.spendCategories ?? [];
+        const total = cats.reduce((s, c) => s + (c.amount ?? 0), 0);
 
         const budgetBar = goals?.monthlySpendBudget && total > 0
           ? <GoalProgressBar
@@ -798,8 +795,9 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   const [refreshing,        setRefreshing]        = useState(false);
   const [goals,             setGoals]             = useState<UserGoals | null>(null);
   const [showGoals,         setShowGoals]         = useState(false);
-  const [liveSpendTotal,    setLiveSpendTotal]    = useState<number>(0);
-  const [liveSpendCats,     setLiveSpendCats]     = useState<SpendCategory[]>([]);
+  // SMS spend tracking disabled
+  // const [liveSpendTotal,    setLiveSpendTotal]    = useState<number>(0);
+  // const [liveSpendCats,     setLiveSpendCats]     = useState<SpendCategory[]>([]);
 
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
@@ -807,16 +805,16 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   useEffect(() => {
     loadInsight(false);
     StorageService.getGoals().then(g => setGoals(g));
-    // Load live SMS spend for current month independently of monthly insight
-    if (Platform.OS === 'android') {
-      const now = new Date();
-      getSMSSpendCategories(now.getFullYear(), now.getMonth() + 1)
-        .then(cats => {
-          setLiveSpendCats(cats);
-          setLiveSpendTotal(cats.reduce((s, c) => s + (c.amount ?? 0), 0));
-        })
-        .catch(() => {});
-    }
+    // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
+    // if (Platform.OS === 'android') {
+    //   const now = new Date();
+    //   getSMSSpendCategories(now.getFullYear(), now.getMonth() + 1)
+    //     .then(cats => {
+    //       setLiveSpendCats(cats);
+    //       setLiveSpendTotal(cats.reduce((s, c) => s + (c.amount ?? 0), 0));
+    //     })
+    //     .catch(() => {});
+    // }
   }, [refreshKey]);
 
   useEffect(() => {

@@ -23,7 +23,8 @@ import { PendingClip } from '../types';
 import ComposeModal from '../components/ComposeModal';
 import MonthlyInsightCard from '../components/MonthlyInsightCard';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
-import { syncSMSTransactionsToNotes } from '../services/SMSSpendService';
+// SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
+// import { syncSMSTransactionsToNotes } from '../services/SMSSpendService';
 
 export default function HomeScreen() {
   const [status, setStatus] = useState<RecordingStatus>('idle');
@@ -40,9 +41,10 @@ export default function HomeScreen() {
     useCallback(() => {
       loadData();
       syncWidgetMonitoringIntent();
-      if (Platform.OS === 'android') {
-        syncSMSTransactionsToNotes().catch(() => {});
-      }
+      // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
+      // if (Platform.OS === 'android') {
+      //   syncSMSTransactionsToNotes().catch(() => {});
+      // }
     }, [])
   );
 

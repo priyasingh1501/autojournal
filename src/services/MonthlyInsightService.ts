@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { DailySummary, MonthlyInsight } from '../types';
 import { StorageService } from './StorageService';
-import { getSMSSpendCategories } from './SMSSpendService';
+// SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
+// import { getSMSSpendCategories } from './SMSSpendService';
 
 // ─── Month helpers ────────────────────────────────────────────────────────────
 
@@ -193,12 +194,12 @@ export async function generateMonthlyInsight(
     }
   }
 
-  // Enrich spend categories with real SMS data (Android only; silently empty on iOS/no-permission)
-  const now2 = new Date();
-  const smsCategories = await getSMSSpendCategories(now2.getFullYear(), now2.getMonth() + 1);
-  if (smsCategories.length > 0 && monthlyData) {
-    monthlyData.spendCategories = smsCategories;
-  }
+  // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
+  // const now2 = new Date();
+  // const smsCategories = await getSMSSpendCategories(now2.getFullYear(), now2.getMonth() + 1);
+  // if (smsCategories.length > 0 && monthlyData) {
+  //   monthlyData.spendCategories = smsCategories;
+  // }
 
   const insight: MonthlyInsight = {
     weekKey:        monthKey,      // reused field — now stores month key e.g. "2026-03"
