@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   View,
@@ -183,7 +183,7 @@ export default function SummaryScreen() {
   // ── generate / download ──────────────────────────────────────────────────
   const today = new Date().toISOString().split('T')[0];
 
-  const handleGenerate = async (date: string) => {
+  const handleGenerate = useCallback(async (date: string) => {
     if (generatingDate) return;
     setGeneratingDate(date);
     try {
@@ -197,15 +197,17 @@ export default function SummaryScreen() {
         const filtered = prev.filter(s => s.date !== date);
         const next = [result, ...filtered].sort((a, b) => b.date.localeCompare(a.date));
         summariesRef.current = next;
+        // Scroll to the regenerated card's new position
+        const newIdx = next.findIndex(s => s.date === date);
+        if (newIdx !== -1) setTimeout(() => scrollToIndex(newIdx), 50);
         return next;
       });
-      scrollToIndex(0);
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Error', err?.message ?? 'Something went wrong. Please try again.');
     } finally {
       setGeneratingDate(null);
     }
-  };
+  }, [generatingDate]);
 
   const handleDownload = async (item: DailySummary) => {
     try {
@@ -374,7 +376,7 @@ export default function SummaryScreen() {
         {renderCardContent(item)}
       </View>
     </View>
-  ), [containerHeight, generatingDate]);
+  ), [containerHeight, generatingDate, handleGenerate]);
 
   const todaySummary = summaries.find(s => s.date === today);
   const isGeneratingToday = generatingDate === today;
