@@ -23,7 +23,7 @@ import { PendingClip } from '../types';
 import ComposeModal from '../components/ComposeModal';
 import MonthlyInsightCard from '../components/MonthlyInsightCard';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
-import { getRecentTransactions, SMSTransaction } from '../services/SMSSpendService';
+import { syncSMSTransactionsToNotes } from '../services/SMSSpendService';
 
 export default function HomeScreen() {
   const [status, setStatus] = useState<RecordingStatus>('idle');
@@ -32,7 +32,6 @@ export default function HomeScreen() {
   const [pulseAnim] = useState(new Animated.Value(1));
   const [showCompose, setShowCompose] = useState(false);
   const [cardRefreshKey, setCardRefreshKey] = useState(0);
-  const [recentSpends, setRecentSpends] = useState<SMSTransaction[]>([]);
   const isTranscribingRef = React.useRef(false);
   // Holds the pending auto-generate timer so additional notes reset the countdown
   const autoGenerateTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,7 +41,7 @@ export default function HomeScreen() {
       loadData();
       syncWidgetMonitoringIntent();
       if (Platform.OS === 'android') {
-        getRecentTransactions(7).then(setRecentSpends).catch(() => {});
+        syncSMSTransactionsToNotes().catch(() => {});
       }
     }, [])
   );
@@ -250,24 +249,6 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Recent spend feed (Android — SMS tracked) */}
-        {recentSpends.length > 0 && (
-          <View style={styles.spendFeed}>
-            <Text style={styles.spendFeedTitle}>Recent Spends</Text>
-            {recentSpends.map((tx, i) => (
-              <View key={i} style={styles.spendRow}>
-                <View style={styles.spendLeft}>
-                  <Text style={styles.spendMerchant} numberOfLines={1}>{tx.merchant}</Text>
-                  <Text style={styles.spendCategory}>{tx.category} · {tx.date}</Text>
-                </View>
-                <Text style={styles.spendAmount}>
-                  ₹{tx.amount >= 1000 ? `${(tx.amount / 1000).toFixed(1)}k` : Math.round(tx.amount)}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-
         {/* Monthly insight card */}
         <MonthlyInsightCard refreshKey={cardRefreshKey} />
       </ScrollView>
@@ -404,51 +385,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(152, 212, 250, 0.18)',
   },
   discardButtonText: { color: 'rgba(152, 212, 250, 0.70)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
-
-  // ── Spend feed ────────────────────────────────────────────────────────────
-  spendFeed: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    backgroundColor: 'rgba(110,231,183,0.06)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(110,231,183,0.15)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  spendFeedTitle: {
-    fontSize: 11,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(110,231,183,0.6)',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: 10,
-  },
-  spendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 7,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(110,231,183,0.08)',
-  },
-  spendLeft: { flex: 1, marginRight: 12 },
-  spendMerchant: {
-    fontSize: 14,
-    fontFamily: 'GillSans',
-    color: 'rgba(224,242,254,0.9)',
-  },
-  spendCategory: {
-    fontSize: 11,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.55)',
-    marginTop: 2,
-  },
-  spendAmount: {
-    fontSize: 15,
-    fontFamily: 'Baskerville',
-    color: 'rgba(110,231,183,0.85)',
-  },
 
   // ── Scroll area ───────────────────────────────────────────────────────────
   scrollArea: { flex: 1 },

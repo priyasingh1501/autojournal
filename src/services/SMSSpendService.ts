@@ -8,7 +8,8 @@
  */
 
 import { Platform, PermissionsAndroid, Alert, Linking } from 'react-native';
-import { SpendCategory } from '../types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SpendCategory, TranscriptEntry } from '../types';
 
 // ── Category keyword map (Indian bank/UPI SMS) ────────────────────────────────
 
@@ -342,4 +343,88 @@ export async function getSMSSpendCategories(
       count,
       source:  'sms' as const,
     }));
+}
+
+const SMS_SYNCED_KEY = 'sms_synced_ids';
+
+/**
+ * Reads recent bank SMS and saves each new debit transaction as a note
+ * for the correct day, so it appears in the transcript list and gets
+ * included in the daily summary. Skips transactions already saved.
+ * Returns the number of new notes added.
+ */
+export async function syncSMSTransactionsToNotes(): Promise<number> {
+  if (Platform.OS !== 'android') return 0;
+
+  let SmsAndroid: any;
+  try {
+    SmsAndroid = require('react-native-get-sms-android').default;
+  } catch {
+    return 0;
+  }
+
+  const granted = await requestSMSPermission();
+  if (!granted) return 0;
+
+  // Read last 30 days to catch anything missed
+  const endMs   = Date.now();
+  const startMs = endMs - 30 * 86_400_000;
+
+  const messages: any[] = await new Promise((resolve) => {
+    SmsAndroid.list(
+      JSON.stringify({ box: 'inbox', minDate: startMs, maxDate: endMs, maxCount: 500 }),
+      () => resolve([]),
+      (_count: number, smsList: string) => {
+        try { resolve(JSON.parse(smsList)); } catch { resolve([]); }
+      },
+    );
+  });
+
+  const debits = messages.filter(
+    msg => isFromBank(msg.address ?? '') && isDebit(msg.body ?? ''),
+  );
+
+  // Load already-synced SMS IDs to avoid duplicate notes
+  const syncedRaw = await AsyncStorage.getItem(SMS_SYNCED_KEY);
+  const synced: Set<string> = new Set(syncedRaw ? JSON.parse(syncedRaw) : []);
+
+  const TRANSCRIPTS_PREFIX = 'transcripts_';
+  let added = 0;
+
+  for (const msg of debits) {
+    const msgId: string = msg._id?.toString() ?? `${msg.date}_${msg.address}`;
+    if (synced.has(msgId)) continue;
+
+    const amount = parseAmount(msg.body ?? '');
+    if (!amount) continue;
+
+    const category = categorise(msg.body ?? '');
+    const merchant = extractMerchant(msg.body ?? '');
+    const dateMs   = parseInt(msg.date ?? '0', 10) || Date.now();
+    const date     = new Date(dateMs).toISOString().split('T')[0];
+
+    const note: TranscriptEntry = {
+      id:        `sms_${msgId}`,
+      timestamp: dateMs,
+      duration:  0,
+      kind:      'manual',
+      text:      `Spent ${formatAmount(amount)} at ${merchant} (${category})`,
+    };
+
+    const key = TRANSCRIPTS_PREFIX + date;
+    const existing = await AsyncStorage.getItem(key);
+    const entries: TranscriptEntry[] = existing ? JSON.parse(existing) : [];
+
+    // Skip if a note with this id already exists
+    if (!entries.some(e => e.id === note.id)) {
+      entries.push(note);
+      await AsyncStorage.setItem(key, JSON.stringify(entries));
+      added++;
+    }
+
+    synced.add(msgId);
+  }
+
+  await AsyncStorage.setItem(SMS_SYNCED_KEY, JSON.stringify([...synced]));
+  return added;
 }
