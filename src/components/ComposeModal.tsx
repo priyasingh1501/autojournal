@@ -104,31 +104,35 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
   };
 
   const launchPicker = async (source: 'camera' | 'library') => {
-    let result: ImagePicker.ImagePickerResult;
-    const options: ImagePicker.ImagePickerOptions = {
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      allowsEditing: false,
-    };
+    try {
+      const options: ImagePicker.ImagePickerOptions = {
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.85,
+        allowsEditing: false,
+      };
 
-    if (source === 'camera') {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Camera access is required to take photos.');
-        return;
+      let result: ImagePicker.ImagePickerResult;
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Camera access is required to take photos.');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync(options);
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Photo library access is required to pick photos.');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync(options);
       }
-      result = await ImagePicker.launchCameraAsync(options);
-    } else {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Photo library access is required to pick photos.');
-        return;
-      }
-      result = await ImagePicker.launchImageLibraryAsync(options);
-    }
 
-    if (!result.canceled && result.assets.length > 0) {
-      setPhotoUri(result.assets[0].uri);
+      if (!result.canceled && result.assets.length > 0) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (e: any) {
+      Alert.alert('Could not open picker', e?.message ?? 'Please try again.');
     }
   };
 

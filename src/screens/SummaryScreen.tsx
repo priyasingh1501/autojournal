@@ -87,7 +87,10 @@ function StaleBanner({
 
   useEffect(() => {
     StorageService.getTranscriptsForDate(item.date).then(transcripts => {
-      const createdAt = item.createdAt ?? 0;
+      // If createdAt is missing (old summary), fall back to the latest transcript
+      // timestamp so we don't falsely flag all entries as newer
+      const createdAt = item.createdAt
+        ?? Math.max(...transcripts.map(t => t.timestamp), 0);
       const newer = transcripts.filter(t => t.timestamp > createdAt).length;
       setNewCount(newer);
     }).catch(() => {});

@@ -68,9 +68,10 @@ function Ring({ delay, active }: { delay: number; active: boolean }) {
       loop.current.start();
     } else {
       loop.current?.stop();
+      loop.current = null;
       anim.setValue(0);
     }
-    return () => { loop.current?.stop(); };
+    return () => { loop.current?.stop(); loop.current = null; };
   }, [active]);
 
   const scale   = anim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
@@ -94,10 +95,11 @@ function Ring({ delay, active }: { delay: number; active: boolean }) {
 }
 
 /** Play a local audio URI and resolve when playback finishes.
- *  Callback is passed directly to createAsync to avoid a race where
- *  a short clip finishes before setOnPlaybackStatusUpdate is called.
+ *  soundRef is declared BEFORE createAsync so the status callback always
+ *  has a valid reference even if the clip finishes before .then() fires.
  *  onSound is called with the Sound object so the caller can stop it externally. */
 function playSoundAndWait(uri: string, onSound?: (s: Audio.Sound) => void): Promise<void> {
+  let soundRef: Audio.Sound | undefined;   // declared first — no race with status callback
   return new Promise<void>((resolve, reject) => {
     Audio.Sound.createAsync(
       { uri },
@@ -112,7 +114,6 @@ function playSoundAndWait(uri: string, onSound?: (s: Audio.Sound) => void): Prom
     )
       .then(({ sound }) => { soundRef = sound; onSound?.(sound); })
       .catch(reject);
-    let soundRef: Audio.Sound | undefined;
   });
 }
 
@@ -260,6 +261,8 @@ export default function TalkScreen({ summary, onClose }: Props) {
       recordingRef.current = recording;
       if (activeRef.current) setConvState('listening');
     } catch (e: any) {
+      // Restore audio mode so playback still works if recording setup fails
+      Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => {});
       setError(e?.message ?? 'Could not start listening.');
       setConvState('error');
     }
