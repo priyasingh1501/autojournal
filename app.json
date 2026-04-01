@@ -38,7 +38,9 @@
         "WAKE_LOCK",
         "CAMERA",
         "READ_MEDIA_IMAGES",
-        "READ_EXTERNAL_STORAGE"
+        "READ_EXTERNAL_STORAGE",
+        "READ_SMS",
+        "RECEIVE_SMS"
       ]
     },
     "plugins": [
