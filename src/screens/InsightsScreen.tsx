@@ -93,10 +93,15 @@ export default function InsightsScreen() {
   const [error,   setError]   = useState<Partial<Record<TabKey, string>>>({});
   const [noData,  setNoData]  = useState<Partial<Record<TabKey, boolean>>>({});
 
+  // Load enneagram + entry count once on first focus (not on every tab switch).
+  const bootstrappedRef = React.useRef(false);
   useFocusEffect(useCallback(() => {
     tryLoadCached(activeTab);
-    StorageService.getEnneagramResponse().then(r => r && setEnneagramResp(r));
-    StorageService.getSummaryDates().then(d => setCurrentEntryCount(d.length));
+    if (!bootstrappedRef.current) {
+      bootstrappedRef.current = true;
+      StorageService.getEnneagramResponse().then(r => r && setEnneagramResp(r));
+      StorageService.getSummaryDates().then(d => setCurrentEntryCount(d.length));
+    }
   }, [activeTab]));
 
   // Silently load from cache — no spinner, no auto-generate

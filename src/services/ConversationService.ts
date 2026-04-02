@@ -106,7 +106,7 @@ export async function sendMessage(
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 180,
+    max_tokens: 360,
     system: getSystemPrompt(mindId),
     messages: buildMessages(summary, history, userText),
   });
@@ -142,7 +142,7 @@ export async function getOpeningMessage(
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 100,
+    max_tokens: 180,
     system: getSystemPrompt(mindId),
     messages: [
       {
@@ -244,10 +244,22 @@ function buildMessages(summary: DailySummary, history: ConversationMessage[], us
   ];
 }
 
+// ── Distress-aware system prompt additions (call mode) ────────────────────────
+
+const CALL_DISTRESS_ADDITIONS: Record<number, string> = {
+  2: `\n\nCALL WELLBEING GUIDANCE: You're noticing the person may be carrying something heavy. At a natural pause — not interrupting, not immediately — gently name what you're sensing: "I'm noticing something — you sound a little heavy today. Is that right?" Keep it short and open. Give them full control of where it goes. If they redirect, follow them; don't hold the door open awkwardly. If they stay with it, slow down and ask: "Do you want to keep going, or just sit here for a minute?" — the option to just be heard without prompts matters.`,
+
+  3: `\n\nCALL CRISIS GUIDANCE: Stop the journaling session. Do not continue reflection prompts. The person may be in acute distress. Your entire response must be: acknowledge what you heard with warmth, then ask exactly: "Are you safe right now?" — nothing else after that. One or two sentences maximum. Calm and steady. The conversation will pause until they respond.`,
+};
+
 /**
  * Fetch the full Claude response, then split into sentences.
  * React Native's fetch doesn't support SSE/streaming bodies, so we get
  * the complete text first and then break it up for parallel TTS synthesis.
+ *
+ * @param distressTier  Optional call-mode distress tier (2 or 3).
+ *                      When set, distress-appropriate instructions are appended
+ *                      to the system prompt for this turn only.
  */
 export async function fetchSentences(
   summary: DailySummary,
@@ -255,13 +267,19 @@ export async function fetchSentences(
   userText: string,
   apiKey: string,
   mindId?: string | null,
+  distressTier?: 2 | 3,
 ): Promise<string[]> {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
+  const baseSystem = getSystemPrompt(mindId);
+  const system = distressTier
+    ? baseSystem + (CALL_DISTRESS_ADDITIONS[distressTier] ?? '')
+    : baseSystem;
+
   const response = await client.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 180,
-    system: getSystemPrompt(mindId),
+    max_tokens: distressTier === 3 ? 80 : 220,
+    system,
     messages: buildMessages(summary, history, userText),
   });
 

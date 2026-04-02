@@ -23,6 +23,13 @@ import { transcribeAudio } from '../services/TranscriptionService';
 import { fetchSentences, getOpeningMessage, generateReflection } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
 import { synthesizeSpeech } from '../services/ElevenLabsService';
+import {
+  analyzeCallTurn,
+  getPendingReentry,
+  clearPendingReentry,
+  queueReentry,
+  DistressTier,
+} from '../services/WellbeingService';
 
 interface Props {
   summary: DailySummary;
@@ -139,6 +146,12 @@ export default function TalkScreen({ summary, onClose }: Props) {
   const cachedElVoiceId     = useRef<string>('');
   const cachedTtsVoiceId    = useRef<string | undefined>(undefined);
 
+  // ── In-call distress tracking ─────────────────────────────────────────
+  const allUserTextsRef   = useRef<string[]>([]); // accumulated utterances
+  const callDistressRef   = useRef<DistressTier>(1); // highest tier seen so far
+  const distressChecking  = useRef(false);           // guard: one check at a time
+  const tier3Delivered    = useRef(false);           // Tier 3 response shown once max
+
   // Avatar pulse for thinking
   const thinkPulse = useRef(new Animated.Value(1)).current;
   const thinkLoop  = useRef<Animated.CompositeAnimation | null>(null);
@@ -210,8 +223,9 @@ export default function TalkScreen({ summary, onClose }: Props) {
           },
         );
         activeSoundRef.current = sound;
-      } catch {
-        // ElevenLabs failed — fall through to expo-speech
+      } catch (elErr: any) {
+        // ElevenLabs failed — log clearly and fall through to expo-speech
+        console.warn('[TalkScreen] ElevenLabs synthesis failed:', elErr?.message ?? elErr);
         if (!activeRef.current) return;
         Speech.speak(text, {
           rate: 0.92,
@@ -290,6 +304,10 @@ export default function TalkScreen({ summary, onClose }: Props) {
       const userText = await transcribeAudio(uri);
       if (!userText.trim()) { if (activeRef.current) startListening(); return; }
 
+      // ── Accumulate user text for longitudinal in-call analysis ────────
+      allUserTextsRef.current.push(userText.trim());
+      const turnCount = allUserTextsRef.current.length;
+
       const userMsg: ConversationMessage = {
         id: `user-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         role: 'user', text: userText.trim(), timestamp: Date.now(),
@@ -297,14 +315,57 @@ export default function TalkScreen({ summary, onClose }: Props) {
       const updated = [...messagesRef.current, userMsg];
       messagesRef.current = updated;
 
+      // ── Run in-call distress check (fire-and-forget, one at a time) ───
+      if (!distressChecking.current && turnCount >= 2) {
+        distressChecking.current = true;
+        analyzeCallTurn(allUserTextsRef.current, turnCount)
+          .then(tier => {
+            if (tier && tier > callDistressRef.current) {
+              callDistressRef.current = tier;
+            }
+          })
+          .catch(() => {})
+          .finally(() => { distressChecking.current = false; });
+      }
+
       const history   = updated.slice(1);   // strip context-seed msg
       const elKey     = cachedElKey.current;
       const elVoiceId = cachedElVoiceId.current;
       const useEL     = !!(elKey && elVoiceId);
       const apiKey    = cachedAnthropicKey.current;
 
+      // Determine distress tier for this turn
+      const currentTier = callDistressRef.current;
+
+      // ── Tier 3: verbal crisis response — one delivery only ────────────
+      if (currentTier === 3 && !tier3Delivered.current) {
+        tier3Delivered.current = true;
+        const crisisText =
+          "I want to stop for a second. What you're sharing sounds really serious " +
+          "and I don't want to move past it. Are you safe right now?";
+        setLastAiText(crisisText);
+        const crisisMsg: ConversationMessage = {
+          id: `ai-${Date.now()}-crisis`,
+          role: 'assistant', text: crisisText, timestamp: Date.now(),
+        };
+        messagesRef.current = [...messagesRef.current, crisisMsg];
+        setError(null);
+        speak(crisisText);
+        return;
+      }
+
       // ── Get full Claude response, split into sentences ────────────────
-      const sentences = await fetchSentences(summary, history.slice(0, -1), userText.trim(), apiKey);
+      const distressTierForTurn: 2 | 3 | undefined =
+        (currentTier === 2 || currentTier === 3) ? currentTier : undefined;
+
+      const sentences = await fetchSentences(
+        summary,
+        history.slice(0, -1),
+        userText.trim(),
+        apiKey,
+        undefined, // mindId not used in calls
+        distressTierForTurn,
+      );
       if (!activeRef.current) return;
 
       const fullText = sentences.join(' ');
@@ -336,7 +397,9 @@ export default function TalkScreen({ summary, onClose }: Props) {
         try {
           const audioUri = await uriPromise;
           if (activeRef.current) await playSoundAndWait(audioUri, s => { activeSoundRef.current = s; });
-        } catch { /* skip any sentence whose synthesis failed */ }
+        } catch (synErr: any) {
+          console.warn('[TalkScreen] ElevenLabs sentence synthesis failed:', synErr?.message ?? synErr);
+        }
       }
 
       if (activeRef.current) startListening();
@@ -411,7 +474,21 @@ export default function TalkScreen({ summary, onClose }: Props) {
         cachedElVoiceId.current    = settings?.elevenLabsVoiceId?.trim() ?? '';
         cachedTtsVoiceId.current   = settings?.ttsVoiceId;
 
-        const opening = await getOpeningMessage(summary, cachedAnthropicKey.current || undefined);
+        // Check for re-entry from a prior Tier 2/3 call
+        const reentry = await getPendingReentry();
+        const today   = new Date().toISOString().split('T')[0];
+        const hasReentry = reentry && reentry.date < today;
+
+        let opening: string;
+        if (hasReentry) {
+          await clearPendingReentry();
+          opening =
+            reentry!.tier === 3
+              ? "Last time we spoke, things felt really hard. I've been thinking about you. How are you today?"
+              : "Last time we spoke, things felt pretty heavy. How are you today?";
+        } else {
+          opening = await getOpeningMessage(summary, cachedAnthropicKey.current || undefined);
+        }
         if (!activeRef.current) return;
         const msg: ConversationMessage = {
           id: `ai-${Date.now()}`, role: 'assistant', text: opening, timestamp: Date.now(),
@@ -436,6 +513,13 @@ export default function TalkScreen({ summary, onClose }: Props) {
     activeSoundRef.current = null;
     clearSilenceTimer();
     recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+
+    // Persist call-level distress event for longitudinal tracking + re-entry
+    const maxTier = callDistressRef.current;
+    if (maxTier >= 2) {
+      const today = new Date().toISOString().split('T')[0];
+      queueReentry(maxTier as DistressTier, today).catch(() => {});
+    }
 
     const userMessages = messagesRef.current.filter(m => m.role === 'user');
     if (userMessages.length > 0 && cachedAnthropicKey.current) {

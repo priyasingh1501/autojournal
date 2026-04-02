@@ -11,9 +11,10 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
-import { MonthlyInsight, MonthlyData, SpendCategory, EmotionCount, UserGoals, DayMacros } from '../types';
+import { MonthlyInsight, MonthlyData, SpendCategory, EmotionCount, UserGoals, DayMacros, ExpenseEntry } from '../types';
 import { generateMonthlyInsight, NOT_ENOUGH_DATA } from '../services/MonthlyInsightService';
 import { StorageService } from '../services/StorageService';
+import { groupByCategory, formatINR } from '../services/ExpenseService';
 // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
 // import { getSMSSpendCategories } from '../services/SMSSpendService';
 import { SECTION_LABELS } from './InsightSections';
@@ -177,12 +178,30 @@ const MEAL_DAY_STYLE: Record<'good' | 'mixed' | 'poor', object> = {
   poor:  { backgroundColor: 'rgba(252,165,165,0.20)', borderWidth: 1, borderColor: 'rgba(252,165,165,0.60)' },
 };
 
-function MealDayGrid({ days }: { days: ('good' | 'mixed' | 'poor' | null)[] }) {
+function MealDayGrid({
+  days,
+  mealMacrosByDay,
+  selectedDayIdx,
+  onDayPress,
+}: {
+  days: ('good' | 'mixed' | 'poor' | null)[];
+  mealMacrosByDay?: DayMacros[];
+  selectedDayIdx?: number | null;
+  onDayPress?: (dayIdx: number) => void;
+}) {
   const { todayIndex, daysInMonth } = getMonthMeta();
   const full: ('good' | 'mixed' | 'poor' | null)[] =
     Array.from({ length: daysInMonth }, (_, i) => days[i] ?? null);
   const rows: ('good' | 'mixed' | 'poor' | null)[][] = [];
   for (let i = 0; i < full.length; i += 7) rows.push(full.slice(i, i + 7));
+
+  // Build a quick lookup: dayIdx → DayMacros
+  const macroByIdx: Record<number, DayMacros> = {};
+  (mealMacrosByDay ?? []).forEach(m => {
+    const d = new Date(m.date + 'T12:00:00');
+    macroByIdx[d.getDate() - 1] = m;
+  });
+
   return (
     <View style={{ gap: 5, marginTop: 7 }}>
       {rows.map((row, wi) => (
@@ -190,16 +209,28 @@ function MealDayGrid({ days }: { days: ('good' | 'mixed' | 'poor' | null)[] }) {
           <Text style={infoStyles.weekLabel}>W{wi + 1}</Text>
           {row.map((quality, di) => {
             const idx = wi * 7 + di;
-            const isToday  = idx === todayIndex;
-            const isFuture = idx > todayIndex;
-            const dotStyle = isToday ? infoStyles.gridDotToday
-              : isFuture  ? infoStyles.gridDotFuture
-              : quality   ? MEAL_DAY_STYLE[quality]
+            const isToday   = idx === todayIndex;
+            const isFuture  = idx > todayIndex;
+            const isSelected = idx === selectedDayIdx;
+            const hasMacros = !!macroByIdx[idx];
+            const tappable  = !isFuture && (quality !== null || hasMacros);
+            const dotStyle  = isToday ? infoStyles.gridDotToday
+              : isFuture ? infoStyles.gridDotFuture
+              : quality  ? MEAL_DAY_STYLE[quality]
               : infoStyles.gridDotOff;
             return (
-              <View key={di} style={[infoStyles.gridDot, dotStyle]}>
+              <TouchableOpacity
+                key={di}
+                activeOpacity={tappable ? 0.65 : 1}
+                onPress={tappable && onDayPress ? () => onDayPress(idx) : undefined}
+                style={[
+                  infoStyles.gridDot,
+                  dotStyle,
+                  isSelected && mealGridStyles.selectedRing,
+                ]}
+              >
                 {isToday && <Text style={infoStyles.todayStar}>★</Text>}
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -225,11 +256,21 @@ const mealSectionLabel = StyleSheet.create({
   label: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', letterSpacing: 0.6, textTransform: 'uppercase' },
 });
 
+const expStyles = StyleSheet.create({
+  sourceTag:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  sourceText: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(147,197,253,0.55)', letterSpacing: 0.3 },
+  txCount:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)' },
+});
+
 const mealGridStyles = StyleSheet.create({
-  legend:      { flexDirection: 'row', gap: 12, marginTop: 5 },
-  legendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot:   { width: 8, height: 8, borderRadius: 4 },
-  legendLabel: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', textTransform: 'lowercase' },
+  legend:       { flexDirection: 'row', gap: 12, marginTop: 5 },
+  legendItem:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot:    { width: 8, height: 8, borderRadius: 4 },
+  legendLabel:  { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', textTransform: 'lowercase' },
+  selectedRing: { borderWidth: 2, borderColor: 'rgba(224,242,254,0.90)' },
+  dayDetail:    { marginTop: 10, padding: 12, backgroundColor: 'rgba(152,212,250,0.06)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)', gap: 6 },
+  dayDetailTitle: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.70)', fontWeight: '600', letterSpacing: 0.3 },
+  dayDetailSummary: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.70)', lineHeight: 17, fontStyle: 'italic' },
 });
 
 
@@ -568,13 +609,16 @@ function SectionRow({
   body,
   monthlyData,
   goals,
+  trackedExpenses,
 }: {
   sectionKey: string;
   body: string;
   monthlyData?: MonthlyData;
   goals?: UserGoals;
+  trackedExpenses?: ExpenseEntry[];
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [selectedMealDayIdx, setSelectedMealDayIdx] = useState<number | null>(null);
   const meta = SECTION_LABELS[sectionKey];
 
   // For Meals: default body = last recorded meal day's actual summary; fall back to AI text
@@ -651,29 +695,65 @@ function SectionRow({
           : null;
 
       case 'Meals': {
+        const macrosByDay = monthlyData?.mealMacrosByDay ?? [];
+
+        // Build dayIdx → DayMacros lookup (same logic as MealDayGrid)
+        const macroByIdx: Record<number, DayMacros> = {};
+        macrosByDay.forEach(m => {
+          const d = new Date(m.date + 'T12:00:00');
+          macroByIdx[d.getDate() - 1] = m;
+        });
+
+        const handleDayPress = (idx: number) => {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          setSelectedMealDayIdx(prev => prev === idx ? null : idx);
+        };
+
         const monthlyGrid = monthlyData?.mealDays?.length
-          ? <MealDayGrid days={monthlyData.mealDays} />
+          ? (
+            <MealDayGrid
+              days={monthlyData.mealDays}
+              mealMacrosByDay={macrosByDay}
+              selectedDayIdx={selectedMealDayIdx}
+              onDayPress={handleDayPress}
+            />
+          )
           : monthlyData?.mealWeeks?.length
             ? <MealWeekStrip weeks={monthlyData.mealWeeks as any} />
             : null;
 
-        // Last day with macro data — default for daily view
-        const lastMacros = monthlyData?.mealMacrosByDay?.length
-          ? monthlyData.mealMacrosByDay[monthlyData.mealMacrosByDay.length - 1]
-          : undefined;
+        // Macros to show — selected day first, then last recorded day as default
+        const selectedMacros = selectedMealDayIdx !== null ? macroByIdx[selectedMealDayIdx] : undefined;
+        const lastMacros = macrosByDay.length ? macrosByDay[macrosByDay.length - 1] : undefined;
+        const displayMacros = selectedMacros ?? lastMacros;
 
-        const hasAnyMealData = !!(monthlyGrid || lastMacros);
+        // Date label for the currently displayed day
+        const displayDate = displayMacros
+          ? new Date(displayMacros.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
+          : null;
+
+        const hasAnyMealData = !!(monthlyGrid || displayMacros);
         if (!hasAnyMealData) return null;
 
         return (
           <View style={{ gap: 14, marginTop: 6 }}>
+            {/* Day macro panel — updates when a day dot is tapped */}
             <View style={{ gap: 6 }}>
-              <Text style={mealSectionLabel.label}>DAY</Text>
-              <DailyMacroView macros={lastMacros} goals={goals} />
+              <Text style={mealSectionLabel.label}>
+                {displayDate ? displayDate.toUpperCase() : 'DAY'}
+              </Text>
+              <DailyMacroView macros={displayMacros} goals={goals} />
+              {/* Meal summary text for the selected/default day */}
+              {displayMacros?.mealSummary ? (
+                <Text style={mealGridStyles.dayDetailSummary}>{displayMacros.mealSummary}</Text>
+              ) : null}
             </View>
+            {/* Monthly grid — each day is now tappable */}
             {monthlyGrid && (
               <View style={{ gap: 6 }}>
-                <Text style={mealSectionLabel.label}>MONTH</Text>
+                <Text style={mealSectionLabel.label}>
+                  MONTH{selectedMealDayIdx !== null ? ' — TAP DAY TO DESELECT' : ' — TAP DAY FOR DETAILS'}
+                </Text>
                 {monthlyGrid}
               </View>
             )}
@@ -682,10 +762,69 @@ function SectionRow({
       }
 
       case 'Spending': {
-        // SMS live data disabled — use stored monthly insight data only
+        // Prefer real tracked expenses extracted from voice/manual notes.
+        // Fall back to AI-estimated categories from the monthly insight.
+        const hasTracked = (trackedExpenses?.length ?? 0) > 0;
+
+        if (hasTracked) {
+          const grouped   = groupByCategory(trackedExpenses!);
+          const total     = trackedExpenses!.reduce((s, e) => s + e.amount, 0);
+          const maxTotal  = grouped[0]?.total ?? 1;
+          const budget    = goals?.monthlySpendBudget;
+
+          return (
+            <View style={{ gap: 10, marginTop: 6 }}>
+              {/* Budget progress bar — only if goal is set */}
+              {budget && total > 0 && (
+                <GoalProgressBar
+                  label="SPENT THIS MONTH"
+                  current={total}
+                  target={budget}
+                  unit="₹"
+                  color="rgba(74,222,128,0.70)"
+                />
+              )}
+              {/* Source label */}
+              <View style={expStyles.sourceTag}>
+                <Feather name="mic" size={9} color="rgba(147,197,253,0.70)" />
+                <Text style={expStyles.sourceText}>tracked from your notes</Text>
+              </View>
+              {/* Per-category rows with actual amounts + bars */}
+              {grouped.map(g => {
+                const barFill = g.total / maxTotal;
+                const isOver  = budget ? g.total > budget * 0.5 : false;
+                const barColor = isOver
+                  ? 'rgba(252,165,165,0.50)'
+                  : 'rgba(74,222,128,0.40)';
+                return (
+                  <View key={g.category} style={infoStyles.catRow}>
+                    <View style={infoStyles.catHeader}>
+                      <Text style={infoStyles.catName}>{g.category}</Text>
+                      <Text style={[infoStyles.catAmount, { color: 'rgba(224,242,254,0.85)' }]}>
+                        {formatINR(g.total)}
+                        <Text style={expStyles.txCount}> · {g.count} item{g.count !== 1 ? 's' : ''}</Text>
+                      </Text>
+                    </View>
+                    <View style={infoStyles.spendTrack}>
+                      <View style={[infoStyles.spendBar, { flex: barFill, backgroundColor: barColor }]} />
+                      <View style={{ flex: 1 - barFill }} />
+                    </View>
+                    {/* Most recent entry in this category */}
+                    {g.entries[g.entries.length - 1]?.description ? (
+                      <Text style={infoStyles.catSummary}>
+                        Last: {g.entries[g.entries.length - 1].description}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          );
+        }
+
+        // Fallback: AI-estimated categories from monthly insight
         const cats = monthlyData?.spendCategories ?? [];
         const total = cats.reduce((s, c) => s + (c.amount ?? 0), 0);
-
         const budgetBar = goals?.monthlySpendBudget && total > 0
           ? <GoalProgressBar
               label="SPENT THIS MONTH"
@@ -795,9 +934,7 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   const [refreshing,        setRefreshing]        = useState(false);
   const [goals,             setGoals]             = useState<UserGoals | null>(null);
   const [showGoals,         setShowGoals]         = useState(false);
-  // SMS spend tracking disabled
-  // const [liveSpendTotal,    setLiveSpendTotal]    = useState<number>(0);
-  // const [liveSpendCats,     setLiveSpendCats]     = useState<SpendCategory[]>([]);
+  const [trackedExpenses,   setTrackedExpenses]   = useState<ExpenseEntry[]>([]);
 
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
@@ -805,16 +942,11 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   useEffect(() => {
     loadInsight(false);
     StorageService.getGoals().then(g => setGoals(g));
-    // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
-    // if (Platform.OS === 'android') {
-    //   const now = new Date();
-    //   getSMSSpendCategories(now.getFullYear(), now.getMonth() + 1)
-    //     .then(cats => {
-    //       setLiveSpendCats(cats);
-    //       setLiveSpendTotal(cats.reduce((s, c) => s + (c.amount ?? 0), 0));
-    //     })
-    //     .catch(() => {});
-    // }
+    // Load real tracked expenses for the current month
+    const yearMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    StorageService.getExpensesForMonth(yearMonth)
+      .then(entries => setTrackedExpenses(entries))
+      .catch(() => {});
   }, [refreshKey]);
 
   useEffect(() => {
@@ -935,6 +1067,7 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
                 body={s.body}
                 monthlyData={insight.weeklyData}
                 goals={goals ?? undefined}
+                trackedExpenses={s.key === 'Spending' ? trackedExpenses : undefined}
               />
             ))}
           </View>

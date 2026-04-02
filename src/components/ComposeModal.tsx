@@ -17,6 +17,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { StorageService } from '../services/StorageService';
+import { extractAndSaveExpenses } from '../services/ExpenseService';
 import { TranscriptEntry } from '../types';
 
 interface Props {
@@ -175,6 +176,9 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
         };
         await StorageService.addTranscript(entry);
         onSaved(entry);
+        // Fire-and-forget expense extraction — passes photo for OCR if one is attached
+        const date = new Date(entry.timestamp).toISOString().split('T')[0];
+        extractAndSaveExpenses(entry.text, date, entry.id, savedPhotoUri).catch(() => {});
       }
 
       reset();

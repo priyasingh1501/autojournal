@@ -149,6 +149,9 @@ export default function SummaryScreen() {
   const flatListRef = useRef<FlatList<DailySummary>>(null);
   const currentIndexRef = useRef(0);
   const summariesRef = useRef<DailySummary[]>([]);
+  // Ref-based guard so handleGenerate stays a stable useCallback([]) reference,
+  // preventing renderItem from being recreated on every generate start/end.
+  const generatingRef = useRef<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -162,9 +165,19 @@ export default function SummaryScreen() {
           if (idx !== -1) scrollToIndex(idx, false);
         }
       });
-      // Catch-up generation: generate yesterday's summary if missing, then reload
+      // Catch-up generation: generate yesterday's summary if missing, then reload.
+      // Preserve the date the user is currently viewing so the index doesn't jump
+      // when the new summary is prepended at position 0.
       generateIfNeeded(yesterday).then(generated => {
-        if (generated) loadSummaries();
+        if (generated) {
+          const viewingDate = summariesRef.current[currentIndexRef.current]?.date;
+          loadSummaries().then(() => {
+            if (viewingDate) {
+              const idx = summariesRef.current.findIndex(s => s.date === viewingDate);
+              if (idx !== -1) scrollToIndex(idx, false);
+            }
+          });
+        }
       }).catch(() => {});
     }, [route?.params?.jumpToDate])
   );
@@ -193,7 +206,10 @@ export default function SummaryScreen() {
   const today = new Date().toISOString().split('T')[0];
 
   const handleGenerate = useCallback(async (date: string) => {
-    if (generatingDate) return;
+    // Use a ref guard (not state) so this callback stays stable and renderItem
+    // doesn't re-create on every generate start/end cycle.
+    if (generatingRef.current) return;
+    generatingRef.current = date;
     setGeneratingDate(date);
     try {
       const transcripts = await StorageService.getTranscriptsForDate(date);
@@ -214,9 +230,10 @@ export default function SummaryScreen() {
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Something went wrong. Please try again.');
     } finally {
+      generatingRef.current = null;
       setGeneratingDate(null);
     }
-  }, [generatingDate]);
+  }, []);
 
   const handleDownload = async (item: DailySummary) => {
     try {

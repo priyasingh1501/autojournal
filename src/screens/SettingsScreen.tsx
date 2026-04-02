@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   View,
@@ -9,10 +9,17 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { StorageService } from '../services/StorageService';
 import { fetchElevenLabsVoices, ELVoice } from '../services/ElevenLabsService';
+import PinSetupModal from '../components/PinSetupModal';
+import {
+  isWellbeingEnabled,
+  setWellbeingEnabled as saveWellbeingEnabled,
+} from '../services/WellbeingService';
 import { AppSettings } from '../types';
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -33,9 +40,20 @@ export default function SettingsScreen() {
   const [loadingElVoices, setLoadingElVoices] = useState(false);
   const [elVoiceError, setElVoiceError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // PIN / App Lock
+  const [pinEnabled, setPinEnabled] = useState(false);
+  const [showPinSetup, setShowPinSetup] = useState(false);
+
+  // Wellbeing check-ins
+  const [wellbeingEnabled, setWellbeingEnabled] = useState(true);
+
+  // Reload settings every time this screen comes into focus so changes made
+  // in onboarding (or any other entry point) are always reflected here.
+  useFocusEffect(useCallback(() => {
     loadSettings();
-  }, []);
+    StorageService.hasPinSet().then(setPinEnabled);
+    isWellbeingEnabled().then(setWellbeingEnabled);
+  }, []));
 
   const loadElVoices = async (key: string) => {
     if (!key.trim()) return;
@@ -263,6 +281,99 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {/* App Lock */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>App Lock</Text>
+          <Text style={styles.sectionSubtitle}>
+            Require a 4-digit PIN each time you open the app or return from background.
+          </Text>
+
+          <View style={styles.lockRow}>
+            <View style={styles.lockRowLeft}>
+              <Feather name="lock" size={16} color="rgba(152, 212, 250, 0.75)" />
+              <Text style={styles.lockRowLabel}>Require PIN to open</Text>
+            </View>
+            <Switch
+              value={pinEnabled}
+              onValueChange={async (val) => {
+                if (val) {
+                  // Enable — open setup modal
+                  setShowPinSetup(true);
+                } else {
+                  // Disable — confirm then remove
+                  Alert.alert(
+                    'Remove App Lock',
+                    'Are you sure you want to remove the PIN lock?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Remove',
+                        style: 'destructive',
+                        onPress: async () => {
+                          await StorageService.removePin();
+                          setPinEnabled(false);
+                        },
+                      },
+                    ],
+                  );
+                }
+              }}
+              trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
+              thumbColor={pinEnabled ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
+            />
+          </View>
+
+          {pinEnabled && (
+            <TouchableOpacity
+              style={styles.changePinBtn}
+              onPress={() => setShowPinSetup(true)}
+            >
+              <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.75)" />
+              <Text style={styles.changePinText}>Change PIN</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* PIN setup modal */}
+        <PinSetupModal
+          visible={showPinSetup}
+          onDone={() => {
+            setShowPinSetup(false);
+            setPinEnabled(true);
+          }}
+          onCancel={() => setShowPinSetup(false)}
+        />
+
+        {/* Wellbeing check-ins */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Wellbeing Check-ins</Text>
+          <Text style={styles.sectionSubtitle}>
+            untangle pays attention to how you're doing over time. If it notices you
+            might need support, it'll gently check in — never alarmed, always warm.
+          </Text>
+
+          <View style={styles.lockRow}>
+            <View style={styles.lockRowLeft}>
+              <Feather name="shield" size={16} color="rgba(152, 212, 250, 0.75)" />
+              <Text style={styles.lockRowLabel}>Wellbeing check-ins</Text>
+            </View>
+            <Switch
+              value={wellbeingEnabled}
+              onValueChange={async (val) => {
+                await saveWellbeingEnabled(val);
+                setWellbeingEnabled(val);
+              }}
+              trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
+              thumbColor={wellbeingEnabled ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
+            />
+          </View>
+
+          <Text style={styles.hint}>
+            All pattern detection happens on-device using your journal data only.
+            Nothing is shared externally.
+          </Text>
+        </View>
+
         <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
           <Text style={styles.saveButtonText}>Save Settings</Text>
         </TouchableOpacity>
@@ -433,6 +544,43 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   saveButtonText: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 17, fontWeight: '500', fontFamily: 'GillSans-Light' },
+
+  // ── App Lock ───────────────────────────────────────────────────────────────
+  lockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  lockRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  lockRowLabel: {
+    fontSize: 15,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(224, 242, 254, 0.90)',
+  },
+  changePinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 16,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(9, 41, 173, 0.10)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.18)',
+    alignSelf: 'flex-start',
+  },
+  changePinText: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152, 212, 250, 0.80)',
+  },
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   footer: { alignItems: 'center', marginTop: 24, marginBottom: 12 },

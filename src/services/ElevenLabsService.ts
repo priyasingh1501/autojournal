@@ -53,9 +53,17 @@ export async function synthesizeSpeech(
     throw new Error(`ElevenLabs TTS error: ${err}`);
   }
 
-  // Write audio bytes directly to a temp file via ArrayBuffer (FileReader is browser-only)
+  // Write audio bytes directly to a temp file via ArrayBuffer (FileReader is browser-only).
+  // We process in 8 KB chunks to avoid a RangeError ("Maximum call stack size exceeded")
+  // that occurs when spreading large typed arrays as individual arguments to String.fromCharCode.
   const arrayBuffer = await res.arrayBuffer();
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = '';
+  const CHUNK = 8192;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)));
+  }
+  const base64 = btoa(binary);
 
   const dir = FileSystem.cacheDirectory;
   if (!dir) throw new Error('Cache directory unavailable');

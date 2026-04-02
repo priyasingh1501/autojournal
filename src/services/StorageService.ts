@@ -2,9 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   TranscriptEntry, DailySummary, AppSettings, PendingClip, MonthlyInsight,
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
-  UserGoals,
+  UserGoals, ExpenseEntry,
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis, HowYouThinkAnalysis, YourStoryAnalysis,
-  EnneagramResponse,
+  EnneagramResponse, SavedShort, JournalSignal,
 } from '../types';
 
 const KEYS = {
@@ -25,11 +25,33 @@ const KEYS = {
   HOW_YOU_THINK: 'insightv2_thinking',
   YOUR_STORY:    'insightv2_story',
   ENNEAGRAM_RESP:'insightv2_enneagram_response',
-  ARC_HISTORY:   'insightv2_arc_history',
+  ARC_HISTORY:    'insightv2_arc_history',
+  EXPENSE_PREFIX: 'expenses_',
+  APP_PIN: 'app_pin_hash',
+  WISDOM_SAVED: 'wisdom_saved_shorts',
+  WISDOM_SEEN: 'wisdom_seen_shorts',
+  WISDOM_SIGNAL: 'wisdom_journal_signal',
 };
 
 function todayKey(): string {
   return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * djb2-based hash with a fixed salt — sufficient for local PIN storage.
+ * The PIN never leaves the device; this protects against casual inspection
+ * of the AsyncStorage file on a rooted device.
+ */
+function _hashPin(rawPin: string): string {
+  const salted = `untangle_pin_v1_${rawPin}`;
+  let h = 5381;
+  for (let i = 0; i < salted.length; i++) {
+    // eslint-disable-next-line no-bitwise
+    h = ((h << 5) + h + salted.charCodeAt(i)) | 0;
+  }
+  // >>> 0 converts to unsigned 32-bit so we never get a leading '-'
+  // eslint-disable-next-line no-bitwise
+  return (h >>> 0).toString(16).padStart(8, '0');
 }
 
 export const StorageService = {
@@ -279,5 +301,101 @@ export const StorageService = {
   },
   async saveArcHistory(history: Array<{ type: string; dateRange: string }>): Promise<void> {
     await AsyncStorage.setItem(KEYS.ARC_HISTORY, JSON.stringify(history));
+  },
+
+  // ── Tracked expenses (extracted from voice/manual notes) ────────────────────
+
+  async addExpenses(entries: ExpenseEntry[]): Promise<void> {
+    if (entries.length === 0) return;
+    // Group by month so we do one read/write per month (usually just one)
+    const byMonth = new Map<string, ExpenseEntry[]>();
+    for (const e of entries) {
+      const m = e.date.slice(0, 7); // YYYY-MM
+      if (!byMonth.has(m)) byMonth.set(m, []);
+      byMonth.get(m)!.push(e);
+    }
+    for (const [monthKey, batch] of byMonth) {
+      const key = KEYS.EXPENSE_PREFIX + monthKey;
+      const existing: ExpenseEntry[] = JSON.parse((await AsyncStorage.getItem(key)) ?? '[]');
+      // Deduplicate: skip entries whose sourceTranscriptId already has a record this month
+      const seenTranscripts = new Set(existing.map(e => e.sourceTranscriptId));
+      const fresh = batch.filter(e => !seenTranscripts.has(e.sourceTranscriptId));
+      if (fresh.length === 0) continue;
+      await AsyncStorage.setItem(key, JSON.stringify([...existing, ...fresh]));
+    }
+  },
+
+  async getExpensesForMonth(yearMonth: string): Promise<ExpenseEntry[]> {
+    const key = KEYS.EXPENSE_PREFIX + yearMonth;
+    const json = await AsyncStorage.getItem(key);
+    return json ? JSON.parse(json) : [];
+  },
+
+  // ── App lock PIN ────────────────────────────────────────────────────────────
+
+  /** Returns true if a PIN has been set. */
+  async hasPinSet(): Promise<boolean> {
+    const val = await AsyncStorage.getItem(KEYS.APP_PIN);
+    return val !== null && val.length > 0;
+  },
+
+  /** Hash + save a raw 4-digit PIN. */
+  async savePin(rawPin: string): Promise<void> {
+    await AsyncStorage.setItem(KEYS.APP_PIN, _hashPin(rawPin));
+  },
+
+  /** Returns true if the raw PIN matches the stored hash. */
+  async verifyPin(rawPin: string): Promise<boolean> {
+    const stored = await AsyncStorage.getItem(KEYS.APP_PIN);
+    if (!stored) return false;
+    return _hashPin(rawPin) === stored;
+  },
+
+  /** Remove the stored PIN (disables app lock). */
+  async removePin(): Promise<void> {
+    await AsyncStorage.removeItem(KEYS.APP_PIN);
+  },
+
+  // ── Wisdom Shorts ───────────────────────────────────────────────────────────
+
+  async getSavedShorts(): Promise<SavedShort[]> {
+    const json = await AsyncStorage.getItem(KEYS.WISDOM_SAVED);
+    return json ? JSON.parse(json) : [];
+  },
+
+  async saveShort(shortId: string): Promise<void> {
+    const saved = await this.getSavedShorts();
+    if (saved.some(s => s.shortId === shortId)) return;
+    saved.push({ shortId, savedAt: Date.now() });
+    await AsyncStorage.setItem(KEYS.WISDOM_SAVED, JSON.stringify(saved));
+  },
+
+  async unsaveShort(shortId: string): Promise<void> {
+    const saved = await this.getSavedShorts();
+    const filtered = saved.filter(s => s.shortId !== shortId);
+    await AsyncStorage.setItem(KEYS.WISDOM_SAVED, JSON.stringify(filtered));
+  },
+
+  async getSeenShortIds(): Promise<string[]> {
+    const json = await AsyncStorage.getItem(KEYS.WISDOM_SEEN);
+    return json ? JSON.parse(json) : [];
+  },
+
+  async markShortSeen(shortId: string): Promise<void> {
+    const seen = await this.getSeenShortIds();
+    if (seen.includes(shortId)) return;
+    seen.push(shortId);
+    // Keep last 200 seen IDs
+    const capped = seen.length > 200 ? seen.slice(-200) : seen;
+    await AsyncStorage.setItem(KEYS.WISDOM_SEEN, JSON.stringify(capped));
+  },
+
+  async getJournalSignal(): Promise<JournalSignal | null> {
+    const json = await AsyncStorage.getItem(KEYS.WISDOM_SIGNAL);
+    return json ? JSON.parse(json) : null;
+  },
+
+  async saveJournalSignal(signal: JournalSignal): Promise<void> {
+    await AsyncStorage.setItem(KEYS.WISDOM_SIGNAL, JSON.stringify(signal));
   },
 };

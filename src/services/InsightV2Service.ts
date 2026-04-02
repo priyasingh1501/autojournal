@@ -78,7 +78,10 @@ function extractJson(raw: string): string {
 
 async function buildContext(days: number): Promise<{ text: string; dates: string[] }> {
   const allDates = await StorageService.getSummaryDates();
-  const recent = allDates.slice(0, days);
+  // Filter by actual calendar window, not by entry count.
+  // allDates is sorted newest-first (YYYY-MM-DD strings sort correctly).
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString().split('T')[0];
+  const recent = allDates.filter(d => d >= cutoff);
   const summaries = await StorageService.getSummariesForDateRange(recent);
   if (summaries.length < 3) throw new Error(NOT_ENOUGH_DATA);
   const text = summaries
@@ -103,7 +106,9 @@ async function buildContext(days: number): Promise<{ text: string; dates: string
 //   Internal vs External    → written (deliberate vs reactive self-reference)
 async function buildThinkingContext(): Promise<{ text: string; dates: string[] }> {
   const allDates  = await StorageService.getSummaryDates();
-  const recent    = allDates.slice(0, 30);
+  // Filter by actual 45-day calendar window (matches FRESHNESS.thinking.windowDays).
+  const cutoff    = new Date(Date.now() - 45 * 86_400_000).toISOString().split('T')[0];
+  const recent    = allDates.filter(d => d >= cutoff);
   const summaries = await StorageService.getSummariesForDateRange(recent);
   if (summaries.length < 3) throw new Error(NOT_ENOUGH_DATA);
 

@@ -51,6 +51,17 @@ export interface SpendCategory {
   source?: 'sms' | 'ai';                         // data origin
 }
 
+export interface ExpenseEntry {
+  id: string;
+  amount: number;                                 // in local currency (₹)
+  currency: string;                               // 'INR' default
+  category: string;                               // e.g. 'Food & Dining'
+  description: string;                            // brief note, e.g. "lunch at office"
+  date: string;                                   // YYYY-MM-DD
+  timestamp: number;                              // unix ms (when extracted)
+  sourceTranscriptId: string;                     // deduplication key
+}
+
 export interface DayMacros {
   date: string;             // YYYY-MM-DD
   calories?: number | null; // estimated kcal
@@ -213,6 +224,45 @@ export interface ConversationMessage {
   role: 'user' | 'assistant';
   text: string;
   timestamp: number;
+}
+
+// ── Wisdom Shorts ─────────────────────────────────────────────────────────────
+
+export interface WisdomShort {
+  id: string;
+  title: string;
+  short: string;
+  pullquote: string;
+  source_author: string;
+  source_url: string;
+  source_type: 'video' | 'essay' | 'book' | 'talk' | 'paper';
+  themes: string[];
+  emotional_states: string[];
+  cognitive_patterns: string[];
+  enneagram_resonance: number[];
+  cognitive_style: string[];
+  values: string[];
+  depth: 'entry' | 'mid' | 'deep';
+}
+
+export interface JournalSignal {
+  emotional_states: string[];
+  cognitive_patterns: string[];
+  themes: string[];
+  values_in_tension: string[];
+  enneagram_hints: number[];
+  depth_preference: 'entry' | 'mid' | 'deep';
+}
+
+export interface FeedSelection {
+  acute: WisdomShort[];        // ~70% — matched to today's signals
+  dispositional: WisdomShort[]; // ~20% — matched to persistent patterns
+  stretch: WisdomShort[];      // ~10% — slightly outside comfort zone
+}
+
+export interface SavedShort {
+  shortId: string;
+  savedAt: number;
 }
 
 // ── Insights V2 ───────────────────────────────────────────────────────────────

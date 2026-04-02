@@ -20,9 +20,17 @@ import { audioRecorderService, RecordingStatus } from '../services/AudioRecorder
 import { transcribePendingClips, BatchProgress } from '../services/BatchTranscriptionService';
 import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
-import { PendingClip } from '../types';
+import {
+  analyzeEntry,
+  getPendingReentry,
+  clearPendingReentry,
+  ReentryPending,
+  WellbeingAnalysis,
+} from '../services/WellbeingService';
+import { PendingClip, TranscriptEntry } from '../types';
 import ComposeModal from '../components/ComposeModal';
 import MonthlyInsightCard from '../components/MonthlyInsightCard';
+import WellbeingResponseModal from '../components/WellbeingResponseModal';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
 // import { syncSMSTransactionsToNotes } from '../services/SMSSpendService';
@@ -38,16 +46,43 @@ export default function HomeScreen() {
   // Holds the pending auto-generate timer so additional notes reset the countdown
   const autoGenerateTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Wellbeing ────────────────────────────────────────────────────────────
+  const [wellbeingAlert, setWellbeingAlert] = useState<WellbeingAnalysis | null>(null);
+  const [reentryPending, setReentryPending] = useState<ReentryPending | null>(null);
+  const [reentryDismissed, setReentryDismissed] = useState(false);
+
   useFocusEffect(
     useCallback(() => {
       loadData();
       syncWidgetMonitoringIntent();
+      // Check for a pending re-entry check-in from a prior Tier 2/3 session
+      getPendingReentry().then(r => {
+        if (r) {
+          const today = new Date().toISOString().split('T')[0];
+          // Only surface if the event was from a previous day (not this session)
+          if (r.date < today) {
+            setReentryPending(r);
+            setReentryDismissed(false);
+          }
+        }
+      });
       // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
       // if (Platform.OS === 'android') {
       //   syncSMSTransactionsToNotes().catch(() => {});
       // }
     }, [])
   );
+
+  // Cancel the auto-generate debounce timer when the component unmounts so we
+  // don't call setState on an unmounted component or do unnecessary API work.
+  useEffect(() => {
+    return () => {
+      if (autoGenerateTimerRef.current) {
+        clearTimeout(autoGenerateTimerRef.current);
+        autoGenerateTimerRef.current = null;
+      }
+    };
+  }, []);
 
 
   // Sync widget state whenever the app comes to foreground (not just on screen focus).
@@ -91,6 +126,15 @@ export default function HomeScreen() {
   const loadData = async () => {
     const clips = await StorageService.getPendingClips();
     setPendingClips(clips);
+  };
+
+  // ── Wellbeing check ───────────────────────────────────────────────────────
+  const checkWellbeing = async (entry: TranscriptEntry) => {
+    const date = new Date(entry.timestamp).toISOString().split('T')[0];
+    const analysis = await analyzeEntry(entry, date);
+    if (analysis && analysis.tier >= 2) {
+      setWellbeingAlert(analysis);
+    }
   };
 
   // ── Widget ↔ app sync ────────────────────────────────────────────────────
@@ -141,8 +185,9 @@ export default function HomeScreen() {
     try {
       await transcribePendingClips(
         (progress) => setBatchProgress(progress),
-        () => {
-          // Entry saved to storage — Notes tab will show it on next focus
+        (entry) => {
+          // Entry saved to storage — run wellbeing check fire-and-forget
+          checkWellbeing(entry).catch(() => {});
         },
       );
     } finally {
@@ -217,6 +262,39 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Re-entry check-in — shown after a Tier 2/3 session from a prior day */}
+        {reentryPending && !reentryDismissed && (
+          <View style={styles.reentryCard}>
+            <View style={styles.reentryRow}>
+              <Feather name="heart" size={15} color="rgba(152, 212, 250, 0.70)" />
+              <Text style={styles.reentryText}>
+                Last time felt heavy. How are you today?
+              </Text>
+            </View>
+            <View style={styles.reentryActions}>
+              <TouchableOpacity
+                style={styles.reentryBtn}
+                onPress={() => {
+                  clearPendingReentry();
+                  setReentryPending(null);
+                  setShowCompose(true);
+                }}
+              >
+                <Text style={styles.reentryBtnText}>Write about it</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.reentrySkipBtn}
+                onPress={() => {
+                  clearPendingReentry();
+                  setReentryDismissed(true);
+                }}
+              >
+                <Text style={styles.reentrySkipText}>I'm okay today</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Main Button — Jellyfish card */}
         <View style={styles.monitorCard}>
           <ImageBackground
@@ -279,14 +357,81 @@ export default function HomeScreen() {
       <ComposeModal
         visible={showCompose}
         onClose={() => setShowCompose(false)}
-        onSaved={() => setShowCompose(false)}
+        onSaved={(entry) => {
+          setShowCompose(false);
+          // Run wellbeing check after a brief delay so modal closes first
+          setTimeout(() => checkWellbeing(entry).catch(() => {}), 600);
+        }}
       />
+
+      {/* Wellbeing response modal — Tier 2 or Tier 3 */}
+      {wellbeingAlert && (
+        <WellbeingResponseModal
+          visible
+          tier={wellbeingAlert.tier}
+          onContinue={() => setWellbeingAlert(null)}
+          onDismiss={() => setWellbeingAlert(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#02060E' },
+
+  // ── Re-entry check-in card ────────────────────────────────────────────────
+  reentryCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    backgroundColor: 'rgba(3, 18, 40, 0.85)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.18)',
+    padding: 16,
+  },
+  reentryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  reentryText: {
+    fontSize: 15,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(224, 242, 254, 0.88)',
+    flex: 1,
+    lineHeight: 22,
+  },
+  reentryActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  reentryBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(9, 41, 173, 0.22)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.28)',
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  reentryBtnText: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(224, 242, 254, 0.88)',
+    fontWeight: '500',
+  },
+  reentrySkipBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  reentrySkipText: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152, 212, 250, 0.50)',
+  },
 
   // ── Jellyfish monitor card ────────────────────────────────────────────────
   monitorCard: {

@@ -2,6 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { TranscriptEntry } from '../types';
 import { transcribeAudio } from './TranscriptionService';
 import { StorageService } from './StorageService';
+import { extractAndSaveExpenses } from './ExpenseService';
 
 export type BatchProgress = {
   total: number;
@@ -55,5 +56,9 @@ export async function transcribePendingClips(
     };
     await StorageService.addTranscript(entry);
     onBatchComplete(entry);
+
+    // Fire-and-forget expense extraction — never blocks transcription
+    const date = new Date(entry.timestamp).toISOString().split('T')[0];
+    extractAndSaveExpenses(entry.text, date, entry.id).catch(() => {});
   }
 }

@@ -133,6 +133,16 @@ export default function ChatScreen({ summary, onClose }: Props) {
   const [savingReflection, setSaving]    = useState(false);
   const [selectedMindId,   setSelectedMindId] = useState<string | null>(null);
 
+  // Go back to the mind picker from an active conversation
+  const handleBackToPicker = () => {
+    setMessages([]);
+    setDraft('');
+    setError(null);
+    setSelectedMindId(null);
+    setConvState('selecting');
+    messagesRef.current = [];
+  };
+
   const activeRef   = useRef(true);
   const messagesRef = useRef<ConversationMessage[]>([]);
   const scrollRef   = useRef<ScrollView>(null);
@@ -253,7 +263,16 @@ export default function ChatScreen({ summary, onClose }: Props) {
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
-          <View style={{ flex: 1 }}>
+          {/* Back to mind picker */}
+          <TouchableOpacity
+            onPress={handleBackToPicker}
+            style={styles.backBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Feather name="chevron-left" size={20} color="rgba(152,212,250,0.70)" />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, marginLeft: 4 }}>
             <View style={styles.headerNameRow}>
               {activeMind && (
                 <Text style={styles.headerSymbol}>{activeMind.symbol}</Text>
@@ -448,6 +467,12 @@ const styles = StyleSheet.create({
   headerSub: {
     fontSize: 12, color: 'rgba(152,212,250,0.60)',
     fontFamily: 'GillSans-Light', marginTop: 2,
+  },
+  backBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: 'rgba(152,212,250,0.06)',
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.13)',
+    alignItems: 'center', justifyContent: 'center',
   },
   closeBtn: {
     width: 34, height: 34, borderRadius: 17,
