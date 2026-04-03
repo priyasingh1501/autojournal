@@ -6,6 +6,7 @@ import {
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis, HowYouThinkAnalysis, YourStoryAnalysis,
   EnneagramResponse, SavedShort, JournalSignal, WisdomShort,
 } from '../types';
+import { ANTHROPIC_API_KEY, OPENAI_API_KEY } from '../config/keys';
 
 const KEYS = {
   TRANSCRIPTS_PREFIX: 'transcripts_',
@@ -60,7 +61,14 @@ export const StorageService = {
   // Settings
   async getSettings(): Promise<AppSettings | null> {
     const json = await AsyncStorage.getItem(KEYS.SETTINGS);
-    return json ? JSON.parse(json) : null;
+    const stored: AppSettings | null = json ? JSON.parse(json) : null;
+    // Always inject hardcoded keys — overrides anything stored in settings
+    const base: AppSettings = stored ?? ({} as AppSettings);
+    return {
+      ...base,
+      anthropicApiKey: ANTHROPIC_API_KEY,
+      openaiApiKey:    OPENAI_API_KEY,
+    };
   },
 
   async saveSettings(settings: AppSettings): Promise<void> {
