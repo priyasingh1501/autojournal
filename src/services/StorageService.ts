@@ -4,7 +4,7 @@ import {
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
   UserGoals, ExpenseEntry,
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis, HowYouThinkAnalysis, YourStoryAnalysis,
-  EnneagramResponse, SavedShort, JournalSignal,
+  EnneagramResponse, SavedShort, JournalSignal, WisdomShort,
 } from '../types';
 
 const KEYS = {
@@ -31,6 +31,8 @@ const KEYS = {
   WISDOM_SAVED: 'wisdom_saved_shorts',
   WISDOM_SEEN: 'wisdom_seen_shorts',
   WISDOM_SIGNAL: 'wisdom_journal_signal',
+  PUBLISHER_MODE: 'publisher_mode',
+  CUSTOM_SHORTS: 'wisdom_custom_shorts',
 };
 
 function todayKey(): string {
@@ -397,5 +399,40 @@ export const StorageService = {
 
   async saveJournalSignal(signal: JournalSignal): Promise<void> {
     await AsyncStorage.setItem(KEYS.WISDOM_SIGNAL, JSON.stringify(signal));
+  },
+
+  // ── Publisher mode ──────────────────────────────────────────────────────────
+
+  async isPublisherMode(): Promise<boolean> {
+    const val = await AsyncStorage.getItem(KEYS.PUBLISHER_MODE);
+    return val === 'true';
+  },
+
+  async setPublisherMode(enabled: boolean): Promise<void> {
+    await AsyncStorage.setItem(KEYS.PUBLISHER_MODE, enabled ? 'true' : 'false');
+  },
+
+  // ── Custom Wisdom Shorts ────────────────────────────────────────────────────
+
+  async getCustomShorts(): Promise<WisdomShort[]> {
+    const json = await AsyncStorage.getItem(KEYS.CUSTOM_SHORTS);
+    return json ? JSON.parse(json) : [];
+  },
+
+  async saveCustomShort(short: WisdomShort): Promise<void> {
+    const existing = await this.getCustomShorts();
+    const idx = existing.findIndex(s => s.id === short.id);
+    if (idx >= 0) {
+      existing[idx] = short; // update
+    } else {
+      existing.push(short);  // insert
+    }
+    await AsyncStorage.setItem(KEYS.CUSTOM_SHORTS, JSON.stringify(existing));
+  },
+
+  async deleteCustomShort(id: string): Promise<void> {
+    const existing = await this.getCustomShorts();
+    const filtered = existing.filter(s => s.id !== id);
+    await AsyncStorage.setItem(KEYS.CUSTOM_SHORTS, JSON.stringify(filtered));
   },
 };

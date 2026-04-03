@@ -1,268 +1,503 @@
 /**
- * ShortCard — displays a single Wisdom Short in the feed.
+ * ShortCard — displays a single Wisdom Short as a full-bleed image card with
+ * a glassmorphic text panel overlaid at the bottom.
  *
- * Anatomy (top → bottom):
- *   Source type badge + author
- *   Title
- *   Short body text (collapsible via "Read more" for long entries)
- *   Pullquote (visually accented)
- *   Action row: Save · Reflect
+ * Image lifecycle:
+ *  1. Check local cache (getCachedImageUri)
+ *  2. If not cached → trigger DALL-E 3 generation in background
+ *  3. While loading → show animated gradient placeholder
+ *  4. Once ready → fade the image in
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Linking,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { WisdomShort } from '../types';
+import { getCachedImageUri, generateAndCacheImage } from '../services/WisdomImageService';
 
-// ── Colours ────────────────────────────────────────────────────────────────────
+const { width: SCREEN_W } = Dimensions.get('window');
+const CARD_W = SCREEN_W - 32; // 16 margin each side
+const IMAGE_H = Math.round(CARD_W * 0.72); // 3:2-ish ratio
 
-const AUTHOR_COLOURS: Record<string, string> = {
-  'Acharya Prashant':   'rgba(251, 146, 60, 0.85)',  // amber
-  'Alan Watts':          'rgba(139, 92, 246, 0.85)',  // violet
-  'Viktor Frankl':       'rgba(52, 211, 153, 0.85)',  // emerald
-  'J. Krishnamurti':     'rgba(96, 165, 250, 0.85)',  // blue
-  'Osho':                'rgba(244, 114, 182, 0.85)', // pink
-  'Naval Ravikant':      'rgba(251, 191, 36, 0.85)',  // yellow
+// ── Gradient placeholder colours per depth ────────────────────────────────────
+
+const DEPTH_GRADIENT: Record<WisdomShort['depth'], [string, string, string]> = {
+  entry: ['#1a2a18', '#2d4a28', '#0a1a0a'],
+  mid:   ['#1a1a3a', '#2a1a4a', '#0a0a1e'],
+  deep:  ['#2a1018', '#4a1828', '#0e0608'],
 };
 
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  talk:  'Talk',
-  book:  'Book',
-  essay: 'Essay',
-  paper: 'Research',
-  video: 'Video',
+// ── Author accent colours (same palette as before) ───────────────────────────
+
+const AUTHOR_ACCENTS: Record<string, string> = {
+  'Acharya Prashant':            'rgba(251, 146, 60,  0.85)',
+  'Alan Watts':                  'rgba(167, 139, 250, 0.85)',
+  'Viktor Frankl':               'rgba(52,  211, 153, 0.85)',
+  'J. Krishnamurti':             'rgba(96,  165, 250, 0.85)',
+  'Osho':                        'rgba(244, 114, 182, 0.85)',
+  'Naval Ravikant':              'rgba(251, 191, 36,  0.85)',
+  'Epictetus':                   'rgba(180, 160, 120, 0.85)',
+  'Marcus Aurelius':             'rgba(180, 160, 120, 0.85)',
+  'Seneca':                      'rgba(180, 160, 120, 0.85)',
+  'Albert Camus':                'rgba(248, 113, 113, 0.85)',
+  'Carl Jung':                   'rgba(196, 181, 253, 0.85)',
+  'Abraham Maslow':              'rgba(134, 239, 172, 0.85)',
+  'Bessel van der Kolk':         'rgba(134, 239, 172, 0.85)',
+  'Brené Brown':                 'rgba(253, 186, 116, 0.85)',
+  'Aaron Beck (Cognitive Therapy)': 'rgba(103, 232, 249, 0.85)',
+  'Antonio Damasio':             'rgba(103, 232, 249, 0.85)',
+  'Lisa Feldman Barrett':        'rgba(103, 232, 249, 0.85)',
+  'Personal Reflection':         'rgba(251, 191, 36,  0.85)',
 };
 
-function authorColour(author: string): string {
-  for (const key of Object.keys(AUTHOR_COLOURS)) {
-    if (author.startsWith(key)) return AUTHOR_COLOURS[key];
+function accentFor(author: string): string {
+  for (const key of Object.keys(AUTHOR_ACCENTS)) {
+    if (author.startsWith(key)) return AUTHOR_ACCENTS[key];
   }
-  return 'rgba(152, 212, 250, 0.75)'; // default sky-blue
+  return 'rgba(152, 212, 250, 0.80)';
 }
 
-// ── Component ──────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────────
 
 interface Props {
   short: WisdomShort;
   isSaved: boolean;
-  onSave: (id: string) => void;
-  onUnsave: (id: string) => void;
+  onSave:    (id: string) => void;
+  onUnsave:  (id: string) => void;
   onReflect: (short: WisdomShort) => void;
+  onShare:   (short: WisdomShort) => void;
 }
 
-const COLLAPSE_THRESHOLD = 240; // characters — show "Read more" beyond this
+export default function ShortCard({
+  short, isSaved, onSave, onUnsave, onReflect, onShare,
+}: Props) {
+  const [imageUri,     setImageUri]     = useState<string | null>(short.imageUri ?? null);
+  const [generating,   setGenerating]   = useState(false);
+  const [bodyExpanded, setBodyExpanded] = useState(false);
 
-export default function ShortCard({ short, isSaved, onSave, onUnsave, onReflect }: Props) {
-  const [expanded, setExpanded] = useState(false);
-  const needsCollapse = short.short.length > COLLAPSE_THRESHOLD;
-  const displayText =
-    needsCollapse && !expanded ? short.short.slice(0, COLLAPSE_THRESHOLD) + '…' : short.short;
+  const imageFade = useRef(new Animated.Value(0)).current;
+  const shimmer   = useRef(new Animated.Value(0)).current;
 
-  const accent = authorColour(short.source_author);
+  const accent = accentFor(short.source_author);
+  const gradientColors = DEPTH_GRADIENT[short.depth] ?? DEPTH_GRADIENT.mid;
 
-  const handleAuthorPress = () => {
-    if (short.source_url) {
-      Linking.openURL(short.source_url).catch(() => {});
-    }
+  // ── Load / generate image ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      // 1. Already have a URI (just came from creation flow)
+      if (imageUri) {
+        Animated.timing(imageFade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+        return;
+      }
+
+      // 2. Check cache
+      const cached = await getCachedImageUri(short.id);
+      if (cancelled) return;
+
+      if (cached) {
+        setImageUri(cached);
+        Animated.timing(imageFade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+        return;
+      }
+
+      // 3. Not cached — generate (fire-and-forget per card)
+      setGenerating(true);
+      const generated = await generateAndCacheImage(short);
+      if (cancelled) return;
+      setGenerating(false);
+
+      if (generated) {
+        setImageUri(generated);
+        Animated.timing(imageFade, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [short.id]);
+
+  // Shimmer animation while no image
+  useEffect(() => {
+    if (imageUri) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        Animated.timing(shimmer, { toValue: 0, duration: 1200, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [imageUri]);
+
+  const shimmerOpacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.30, 0.65] });
+
+  // ── Body collapse ─────────────────────────────────────────────────────────
+
+  const BODY_LIMIT = 180;
+  const needsCollapse = short.short.length > BODY_LIMIT;
+  const displayBody = needsCollapse && !bodyExpanded
+    ? short.short.slice(0, BODY_LIMIT) + '…'
+    : short.short;
+
+  const openSource = () => {
+    if (short.source_url) Linking.openURL(short.source_url).catch(() => {});
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <View style={[styles.card, { borderLeftColor: accent }]}>
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <View style={[styles.badge, { backgroundColor: accent + '22', borderColor: accent + '55' }]}>
-          <Text style={[styles.badgeText, { color: accent }]}>
-            {SOURCE_TYPE_LABELS[short.source_type] ?? short.source_type}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={handleAuthorPress} disabled={!short.source_url}>
-          <Text style={[styles.author, short.source_url && styles.authorLink]}>
-            {short.source_author}
-          </Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.card}>
 
-      {/* ── Title ── */}
-      <Text style={styles.title}>{short.title}</Text>
+      {/* ── Image / Placeholder ── */}
+      <View style={styles.imageContainer}>
 
-      {/* ── Body ── */}
-      <Text style={styles.body}>{displayText}</Text>
-      {needsCollapse && (
-        <TouchableOpacity onPress={() => setExpanded(e => !e)}>
-          <Text style={[styles.readMore, { color: accent }]}>
-            {expanded ? 'Read less' : 'Read more'}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      {/* ── Pullquote ── */}
-      <View style={[styles.pullquoteBar, { backgroundColor: accent + '18', borderLeftColor: accent }]}>
-        <Text style={[styles.pullquote, { color: accent }]}>"{short.pullquote}"</Text>
-      </View>
-
-      {/* ── Theme chips ── */}
-      <View style={styles.chipRow}>
-        {short.themes.slice(0, 3).map(t => (
-          <View key={t} style={styles.chip}>
-            <Text style={styles.chipText}>{t}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* ── Actions ── */}
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => isSaved ? onUnsave(short.id) : onSave(short.id)}
-        >
-          <Feather
-            name="bookmark"
-            size={16}
-            color={isSaved ? accent : 'rgba(152, 212, 250, 0.5)'}
+        {/* Gradient shimmer placeholder (always rendered below) */}
+        <LinearGradient
+          colors={gradientColors}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0.2, y: 0 }}
+          end={{ x: 0.8, y: 1 }}
+        />
+        {!imageUri && (
+          <Animated.View
+            style={[StyleSheet.absoluteFill, styles.shimmerOverlay, { opacity: shimmerOpacity }]}
           />
-          <Text style={[styles.actionLabel, isSaved && { color: accent }]}>
-            {isSaved ? 'Saved' : 'Save'}
-          </Text>
-        </TouchableOpacity>
+        )}
+        {generating && (
+          <View style={styles.generatingBadge}>
+            <Feather name="image" size={10} color="rgba(251,191,36,0.70)" />
+            <Text style={styles.generatingText}>painting…</Text>
+          </View>
+        )}
 
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.reflectBtn, { borderColor: accent + '55' }]}
-          onPress={() => onReflect(short)}
-        >
-          <Feather name="edit-3" size={14} color={accent} />
-          <Text style={[styles.actionLabel, { color: accent }]}>Reflect</Text>
-        </TouchableOpacity>
+        {/* Actual image fades in */}
+        {imageUri && (
+          <Animated.Image
+            source={{ uri: imageUri }}
+            style={[StyleSheet.absoluteFill, styles.image, { opacity: imageFade }]}
+            resizeMode="cover"
+          />
+        )}
+
+        {/* Top gradient fade — so the bottom panel bleeds upward naturally */}
+        <LinearGradient
+          colors={['transparent', 'rgba(4,13,30,0.92)']}
+          style={styles.bottomFade}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          pointerEvents="none"
+        />
+
+        {/* Top-right: source badge */}
+        <View style={styles.topRight}>
+          <View style={[styles.badge, { borderColor: accent + '55', backgroundColor: 'rgba(4,13,30,0.55)' }]}>
+            <Text style={[styles.badgeText, { color: accent }]}>
+              {short.source_author}
+            </Text>
+          </View>
+        </View>
+
+      </View>
+
+      {/* ── Glassmorphic text panel ── */}
+      <View style={styles.panel}>
+
+        {/* Accent line */}
+        <View style={[styles.accentDivider, { backgroundColor: accent }]} />
+
+        {/* Title */}
+        <Text style={styles.title}>{short.title.toUpperCase()}</Text>
+
+        {/* Gold separator */}
+        <View style={[styles.titleSeparator, { backgroundColor: accent }]} />
+
+        {/* Body */}
+        <Text style={styles.body}>{displayBody}</Text>
+        {needsCollapse && (
+          <TouchableOpacity onPress={() => setBodyExpanded(e => !e)}>
+            <Text style={styles.readMore}>
+              {bodyExpanded ? 'Read less' : 'Read more'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Pull quote — warm golden to match the luminous image palette */}
+        <View style={styles.pullWrap}>
+          <Text style={styles.pullText}>"{short.pullquote}"</Text>
+        </View>
+
+        {/* Theme chips */}
+        {short.themes.length > 0 && (
+          <View style={styles.chipRow}>
+            {short.themes.slice(0, 3).map(t => (
+              <View key={t} style={styles.chip}>
+                <Text style={styles.chipText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* Actions */}
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => isSaved ? onUnsave(short.id) : onSave(short.id)}
+          >
+            <Feather
+              name="bookmark"
+              size={15}
+              color={isSaved ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.28)'}
+            />
+            <Text style={[styles.actionLabel, isSaved && { color: 'rgba(255,255,255,0.90)' }]}>
+              {isSaved ? 'Saved' : 'Save'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={{ flex: 1 }} />
+
+          <TouchableOpacity
+            style={styles.reflectBtn}
+            onPress={() => onReflect(short)}
+          >
+            <Feather name="edit-3" size={13} color="rgba(255,255,255,0.55)" />
+            <Text style={styles.reflectLabel}>Reflect</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.reflectBtn, styles.shareBtn]}
+            onPress={() => onShare(short)}
+          >
+            <Feather name="share-2" size={13} color="rgba(255,255,255,0.55)" />
+          </TouchableOpacity>
+        </View>
+
       </View>
     </View>
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+
   card: {
-    backgroundColor: 'rgba(10, 18, 35, 0.92)',
-    borderRadius: 16,
-    borderLeftWidth: 3,
     marginHorizontal: 16,
-    marginBottom: 16,
-    padding: 18,
+    marginBottom: 20,
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.14)',
     shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.40,
+    shadowRadius: 24,
+    elevation: 10,
+    backgroundColor: '#040d1e',
   },
 
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    gap: 8,
-    flexWrap: 'wrap',
+  // ── Image zone ──
+  imageContainer: {
+    width: '100%',
+    height: IMAGE_H,
+    overflow: 'hidden',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  shimmerOverlay: {
+    backgroundColor: 'rgba(152,212,250,0.06)',
+  },
+  bottomFade: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: IMAGE_H * 0.45,
+  },
+  topRight: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
   },
   badge: {
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
   },
   badgeText: {
     fontSize: 10,
     fontWeight: '600',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    fontFamily: 'GillSans-Light',
   },
-  author: {
-    fontSize: 12,
-    color: 'rgba(152, 212, 250, 0.65)',
+  generatingBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(4,13,30,0.70)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.25)',
+  },
+  generatingText: {
+    fontSize: 10,
+    color: 'rgba(251,191,36,0.70)',
+    fontFamily: 'GillSans-Light',
     fontStyle: 'italic',
   },
-  authorLink: {
-    textDecorationLine: 'underline',
+
+  // ── Glassmorphic text panel ──
+  panel: {
+    backgroundColor: 'rgba(4,13,30,0.92)',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 6,
+  },
+
+  accentDivider: {
+    height: 2,
+    width: 28,
+    borderRadius: 2,
+    marginBottom: 12,
+    opacity: 0.70,
   },
 
   title: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '700',
-    color: 'rgba(224, 242, 254, 0.95)',
-    marginBottom: 10,
-    lineHeight: 22,
+    color: 'rgba(224,242,254,0.95)',
+    letterSpacing: 2.0,
+    lineHeight: 19,
     fontFamily: 'Baskerville',
+    marginBottom: 8,
+  },
+
+  titleSeparator: {
+    height: 1,
+    width: 32,
+    borderRadius: 1,
+    marginBottom: 12,
+    opacity: 0.55,
   },
 
   body: {
     fontSize: 14,
-    color: 'rgba(186, 226, 255, 0.78)',
+    color: 'rgba(255,255,255,0.88)',
     lineHeight: 22,
+    fontFamily: 'GillSans-Light',
     marginBottom: 4,
   },
   readMore: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    marginBottom: 10,
+    color: 'rgba(255,255,255,0.45)',
     marginTop: 2,
+    marginBottom: 4,
   },
 
-  pullquoteBar: {
+  pullWrap: {
     borderLeftWidth: 2,
-    borderRadius: 4,
+    borderLeftColor: 'rgba(251,191,36,0.70)',
+    borderRadius: 3,
     marginTop: 12,
-    marginBottom: 12,
+    marginBottom: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    backgroundColor: 'rgba(251,191,36,0.06)',
   },
-  pullquote: {
+  pullText: {
     fontSize: 13,
     fontStyle: 'italic',
     lineHeight: 19,
     fontFamily: 'Baskerville',
+    color: 'rgba(251,191,36,0.90)',
   },
 
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginBottom: 14,
+    marginTop: 8,
   },
   chip: {
-    backgroundColor: 'rgba(152, 212, 250, 0.08)',
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
     paddingHorizontal: 10,
     paddingVertical: 3,
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   chipText: {
-    fontSize: 11,
-    color: 'rgba(152, 212, 250, 0.55)',
-    textTransform: 'lowercase',
+    fontSize: 10,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(255,255,255,0.40)',
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(152,212,250,0.07)',
+    marginTop: 12,
+    marginBottom: 0,
   },
 
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    paddingVertical: 10,
   },
   actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  reflectBtn: {
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
   },
   actionLabel: {
     fontSize: 13,
     fontWeight: '500',
-    color: 'rgba(152, 212, 250, 0.5)',
+    color: 'rgba(152,212,250,0.40)',
+    fontFamily: 'GillSans-Light',
+  },
+  reflectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: 20,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  reflectLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(255,255,255,0.55)',
+  },
+  shareBtn: {
+    marginLeft: 8,
+    paddingHorizontal: 12,
   },
 });

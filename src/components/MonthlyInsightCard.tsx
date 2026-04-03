@@ -10,6 +10,8 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  ScrollView,
+  Dimensions,
 } from 'react-native';
 import { MonthlyInsight, MonthlyData, SpendCategory, EmotionCount, UserGoals, DayMacros, ExpenseEntry } from '../types';
 import { generateMonthlyInsight, NOT_ENOUGH_DATA } from '../services/MonthlyInsightService';
@@ -19,6 +21,8 @@ import { groupByCategory, formatINR } from '../services/ExpenseService';
 // import { getSMSSpendCategories } from '../services/SMSSpendService';
 import { SECTION_LABELS } from './InsightSections';
 import GoalsModal from './GoalsModal';
+
+const CARD_WIDTH = Dimensions.get('window').width - 64;
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -926,6 +930,17 @@ const gpStyles = StyleSheet.create({
 
 // ── Main card ─────────────────────────────────────────────────────────────────
 
+// ── Tracker → section key mapping ─────────────────────────────────────────────
+const TRACKER_SECTION_MAP: Record<string, string> = {
+  meals:      'Meals',
+  workout:    'Movement',
+  meditation: 'Meditation',
+  spending:   'Spending',
+};
+
+// Sections that are always shown regardless of tracker settings
+const ALWAYS_SHOWN_SECTIONS = new Set(['Emotional check-in', 'Recurring thoughts', 'Learnings']);
+
 export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: number }) {
   const [insight,           setInsight]           = useState<MonthlyInsight | null>(null);
   const [loading,           setLoading]           = useState(true);
@@ -935,6 +950,9 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   const [goals,             setGoals]             = useState<UserGoals | null>(null);
   const [showGoals,         setShowGoals]         = useState(false);
   const [trackedExpenses,   setTrackedExpenses]   = useState<ExpenseEntry[]>([]);
+  const [enabledTrackers,   setEnabledTrackers]   = useState<Set<string>>(
+    new Set(['meals', 'workout', 'meditation', 'spending']),
+  );
 
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
   const pulseLoop = useRef<Animated.CompositeAnimation | null>(null);
@@ -947,6 +965,12 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
     StorageService.getExpensesForMonth(yearMonth)
       .then(entries => setTrackedExpenses(entries))
       .catch(() => {});
+    // Load tracker preferences
+    StorageService.getSettings().then(s => {
+      if (s?.enabledTrackers) {
+        setEnabledTrackers(new Set(s.enabledTrackers));
+      }
+    }).catch(() => {});
   }, [refreshKey]);
 
   useEffect(() => {
@@ -986,7 +1010,15 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
     ? new Date(insight.weekStart + 'T12:00:00').toLocaleDateString([], { month: 'long', year: 'numeric' })
     : new Date().toLocaleDateString([], { month: 'long', year: 'numeric' });
 
-  const sections = insight ? parseSections(insight.insightText) : [];
+  const allSections = insight ? parseSections(insight.insightText) : [];
+  // Filter out tracker sections the user hasn't opted into
+  const sections = allSections.filter(s => {
+    if (ALWAYS_SHOWN_SECTIONS.has(s.key)) return true;
+    // Find which tracker key maps to this section
+    const trackerKey = Object.entries(TRACKER_SECTION_MAP).find(([, v]) => v === s.key)?.[0];
+    if (!trackerKey) return true; // unknown section → show it
+    return enabledTrackers.has(trackerKey);
+  });
 
   return (
     <View style={styles.card}>

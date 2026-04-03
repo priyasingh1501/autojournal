@@ -26,6 +26,11 @@ interface Props {
   onSaved: (entry: TranscriptEntry) => void;
   /** If provided the modal opens in edit mode pre-filled with this entry */
   editEntry?: TranscriptEntry & { date: string };
+  /**
+   * If provided (YYYY-MM-DD), the new entry is saved to that date instead of today.
+   * Has no effect when editEntry is set.
+   */
+  targetDate?: string;
 }
 
 const PHOTOS_DIR = FileSystem.documentDirectory + 'photos/';
@@ -60,7 +65,16 @@ async function copyPhotoToApp(uri: string): Promise<string> {
   return dest;
 }
 
-export default function ComposeModal({ visible, onClose, onSaved, editEntry }: Props) {
+/** Format YYYY-MM-DD as a short human-readable label, e.g. "Mon, 12 May" */
+function formatTargetDate(date: string): string {
+  return new Date(date + 'T12:00:00').toLocaleDateString([], {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+export default function ComposeModal({ visible, onClose, onSaved, editEntry, targetDate }: Props) {
   const isEditing = !!editEntry;
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -166,9 +180,13 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
         await StorageService.updateTranscript(updated, editEntry.date);
         onSaved(updated);
       } else {
+        // Use noon on targetDate if provided; otherwise now.
+        const timestamp = targetDate
+          ? new Date(targetDate + 'T12:00:00').getTime()
+          : Date.now();
         const entry: TranscriptEntry = {
           id: `manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          timestamp: Date.now(),
+          timestamp,
           text: text.trim(),
           duration: 0,
           kind: 'manual',
@@ -213,7 +231,17 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry }: P
             <TouchableOpacity onPress={handleClose} style={styles.headerBtn}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.title}>{isEditing ? 'Edit Entry' : 'New Entry'}</Text>
+            <View style={styles.titleWrap}>
+              <Text style={styles.title}>
+                {isEditing ? 'Edit Entry' : 'New Entry'}
+              </Text>
+              {!isEditing && targetDate && (
+                <View style={styles.datePill}>
+                  <Feather name="calendar" size={10} color="rgba(152, 212, 250, 0.55)" />
+                  <Text style={styles.datePillText}>{formatTargetDate(targetDate)}</Text>
+                </View>
+              )}
+            </View>
             {saving ? (
               <ActivityIndicator color="rgba(152, 212, 250, 0.85)" style={styles.headerBtn} />
             ) : (
@@ -307,7 +335,20 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(152, 212, 250, 0.08)',
   },
   headerBtn: { minWidth: 56 },
+  titleWrap: { alignItems: 'center', gap: 4 },
   title: { fontSize: 16, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
+  datePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(152, 212, 250, 0.08)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  datePillText: { fontSize: 11, color: 'rgba(152, 212, 250, 0.55)', fontFamily: 'GillSans-Light' },
   cancelText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 15, fontFamily: 'GillSans-Light' },
   saveText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '500', textAlign: 'right', fontFamily: 'GillSans-Light' },
   saveTextDisabled: { opacity: 0.35 },

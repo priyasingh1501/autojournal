@@ -12,7 +12,19 @@ export const SECTION_LABELS: Record<string, { iconName: string; color: string }>
   'Learnings':          { iconName: 'book-open',     color: 'rgba(224, 242, 254, 0.90)' },
 };
 
-export function renderInsightSections(text: string): React.ReactNode {
+// Which section keys are controlled by tracker preferences
+const TRACKER_SECTION_KEYS: Record<string, string> = {
+  'Meals':      'meals',
+  'Movement':   'workout',
+  'Meditation': 'meditation',
+  'Spending':   'spending',
+};
+
+// When null, all sections are shown (default / no preference saved)
+export function renderInsightSections(
+  text: string,
+  enabledTrackers?: Set<string> | null,
+): React.ReactNode {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const nodes: React.ReactNode[] = [];
   let i = 0;
@@ -36,6 +48,14 @@ export function renderInsightSections(text: string): React.ReactNode {
         bodyLines.push(lines[i]);
         i++;
       }
+
+      // Filter tracker-controlled sections if preferences exist
+      if (enabledTrackers && TRACKER_SECTION_KEYS[headingKey]) {
+        if (!enabledTrackers.has(TRACKER_SECTION_KEYS[headingKey])) {
+          continue; // skip this section
+        }
+      }
+
       const inlineBody = line.replace(new RegExp(`^${headingKey}:?\\s*`, 'i'), '').trim();
       const body = inlineBody
         ? [inlineBody, ...bodyLines].join(' ')

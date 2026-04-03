@@ -145,6 +145,7 @@ export default function SummaryScreen() {
   const [callSummary, setCallSummary] = useState<DailySummary | null>(null);
   const [chatSummary, setChatSummary] = useState<DailySummary | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
+  const [enabledTrackers, setEnabledTrackers] = useState<Set<string> | null>(null);
 
   const flatListRef = useRef<FlatList<DailySummary>>(null);
   const currentIndexRef = useRef(0);
@@ -165,6 +166,14 @@ export default function SummaryScreen() {
           if (idx !== -1) scrollToIndex(idx, false);
         }
       });
+      // Load tracker preferences for insight section filtering
+      StorageService.getSettings().then(s => {
+        if (s?.enabledTrackers) {
+          setEnabledTrackers(new Set(s.enabledTrackers));
+        } else {
+          setEnabledTrackers(null); // null = show all
+        }
+      }).catch(() => {});
       // Catch-up generation: generate yesterday's summary if missing, then reload.
       // Preserve the date the user is currently viewing so the index doesn't jump
       // when the new summary is prepended at position 0.
@@ -356,7 +365,7 @@ export default function SummaryScreen() {
       >
         {item.insightText ? (
           <View style={styles.insightSection}>
-            {renderInsightSections(item.insightText)}
+            {renderInsightSections(item.insightText, enabledTrackers)}
           </View>
         ) : null}
 

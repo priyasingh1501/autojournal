@@ -47,12 +47,20 @@ export default function SettingsScreen() {
   // Wellbeing check-ins
   const [wellbeingEnabled, setWellbeingEnabled] = useState(true);
 
+  // Publisher mode
+  const [publisherMode, setPublisherMode] = useState(false);
+
+  // Tracker preferences
+  const ALL_TRACKERS: ('meals' | 'workout' | 'meditation' | 'spending')[] = ['meals', 'workout', 'meditation', 'spending'];
+  const [enabledTrackers, setEnabledTrackers] = useState<Set<string>>(new Set(ALL_TRACKERS));
+
   // Reload settings every time this screen comes into focus so changes made
   // in onboarding (or any other entry point) are always reflected here.
   useFocusEffect(useCallback(() => {
     loadSettings();
     StorageService.hasPinSet().then(setPinEnabled);
     isWellbeingEnabled().then(setWellbeingEnabled);
+    StorageService.isPublisherMode().then(setPublisherMode);
   }, []));
 
   const loadElVoices = async (key: string) => {
@@ -71,7 +79,14 @@ export default function SettingsScreen() {
 
   const loadSettings = async () => {
     const s = await StorageService.getSettings();
-    if (s) setSettings(s);
+    if (s) {
+      setSettings(s);
+      if (s.enabledTrackers) {
+        setEnabledTrackers(new Set(s.enabledTrackers));
+      } else {
+        setEnabledTrackers(new Set(ALL_TRACKERS));
+      }
+    }
   };
 
   const saveSettings = async () => {
@@ -79,8 +94,25 @@ export default function SettingsScreen() {
       Alert.alert('Missing Keys', 'Please fill in both API keys.');
       return;
     }
-    await StorageService.saveSettings(settings);
+    const updated = {
+      ...settings,
+      enabledTrackers: ALL_TRACKERS.filter(t => enabledTrackers.has(t)),
+    };
+    await StorageService.saveSettings(updated);
+    setSettings(updated);
     Alert.alert('Saved', 'Settings saved successfully.');
+  };
+
+  const toggleTracker = (tracker: 'meals' | 'workout' | 'meditation' | 'spending') => {
+    setEnabledTrackers(prev => {
+      const next = new Set(prev);
+      if (next.has(tracker)) {
+        next.delete(tracker);
+      } else {
+        next.add(tracker);
+      }
+      return next;
+    });
   };
 
   return (
@@ -372,6 +404,69 @@ export default function SettingsScreen() {
             All pattern detection happens on-device using your journal data only.
             Nothing is shared externally.
           </Text>
+        </View>
+
+        {/* Trackers */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Trackers</Text>
+          <Text style={styles.sectionSubtitle}>
+            Choose what you want to track. Only your selected trackers will appear in your daily home card and summaries.
+          </Text>
+
+          {([
+            { key: 'meals',      label: 'Meals & Nutrition', icon: 'coffee' },
+            { key: 'workout',    label: 'Workout & Movement', icon: 'zap' },
+            { key: 'meditation', label: 'Meditation',         icon: 'moon' },
+            { key: 'spending',   label: 'Spending',           icon: 'credit-card' },
+          ] as const).map(({ key, label, icon }) => (
+            <View key={key} style={styles.lockRow}>
+              <View style={styles.lockRowLeft}>
+                <Feather name={icon as any} size={16} color="rgba(152, 212, 250, 0.75)" />
+                <Text style={styles.lockRowLabel}>{label}</Text>
+              </View>
+              <Switch
+                value={enabledTrackers.has(key)}
+                onValueChange={() => toggleTracker(key)}
+                trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
+                thumbColor={enabledTrackers.has(key) ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
+              />
+            </View>
+          ))}
+
+          <Text style={styles.hint}>
+            Changes apply after you tap "Save Settings" below.
+          </Text>
+        </View>
+
+        {/* Publisher Mode */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Publisher Mode</Text>
+          <Text style={styles.sectionSubtitle}>
+            Enable this to add your own Wisdom Shorts to the feed. Custom shorts are
+            visible to all users on this device.
+          </Text>
+
+          <View style={styles.lockRow}>
+            <View style={styles.lockRowLeft}>
+              <Feather name="edit" size={16} color="rgba(152, 212, 250, 0.75)" />
+              <Text style={styles.lockRowLabel}>Publisher mode</Text>
+            </View>
+            <Switch
+              value={publisherMode}
+              onValueChange={async (val) => {
+                await StorageService.setPublisherMode(val);
+                setPublisherMode(val);
+              }}
+              trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
+              thumbColor={publisherMode ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
+            />
+          </View>
+
+          {publisherMode && (
+            <Text style={styles.hint}>
+              A + button will appear on the Wisdom screen. Tap it to add or edit your custom shorts.
+            </Text>
+          )}
         </View>
 
         <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>

@@ -1,22 +1,164 @@
 /**
  * WisdomService — Matching, ranking, and reflect prompt generation.
  *
- * Phase 1 (MVP):
- *   • Client-side scoring against the static library — no API call required.
- *   • Reflect prompt generation (Job 4) — one Claude Haiku call, user-triggered.
- *
- * Phase 2 additions (not yet implemented):
- *   • Job 1: extractJournalSignal() — post-entry signal extraction via Claude Haiku.
- *   • Job 3: rankWithClaude() — server-side semantic ranking for richer matching.
- *
- * Feed composition: 70% acute (journal-matched) · 20% dispositional · 10% stretch.
- * Total feed size: 5 shorts per session.
+ * Feed refresh model:
+ *   • Daily rotation  — date-seeded deterministic shuffle; same order all day, new order tomorrow.
+ *   • Mood signal     — user picks a mood on the screen; maps to a JournalSignal and re-ranks.
+ *   • Journal signal  — extracted post-entry (Phase 2); overrides mood if fresher.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import { WisdomShort, JournalSignal, FeedSelection } from '../types';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
 import { StorageService } from './StorageService';
+
+// ── Mood definitions ───────────────────────────────────────────────────────────
+
+export interface Mood {
+  id: string;
+  label: string;
+  emoji: string;
+  signal: JournalSignal;
+}
+
+export const MOODS: Mood[] = [
+  {
+    id: 'heavy',
+    label: 'Heavy',
+    emoji: '🌧️',
+    signal: {
+      emotional_states: ['hopeless', 'stuck', 'numb', 'grieving'],
+      cognitive_patterns: ['rumination', 'all-or-nothing', 'learned-helplessness'],
+      themes: ['suffering', 'meaning', 'resilience'],
+      values_in_tension: ['meaning', 'freedom'],
+      enneagram_hints: [4, 9],
+      depth_preference: 'mid',
+    },
+  },
+  {
+    id: 'scattered',
+    label: 'Scattered',
+    emoji: '🌀',
+    signal: {
+      emotional_states: ['overwhelmed', 'anxious', 'restless', 'distracted'],
+      cognitive_patterns: ['over-analysis', 'future-orientation', 'catastrophising'],
+      themes: ['stress', 'clarity', 'presence'],
+      values_in_tension: ['clarity', 'peace'],
+      enneagram_hints: [6, 7],
+      depth_preference: 'entry',
+    },
+  },
+  {
+    id: 'frustrated',
+    label: 'Frustrated',
+    emoji: '🔥',
+    signal: {
+      emotional_states: ['angry', 'resentful', 'frustrated', 'conflicted'],
+      cognitive_patterns: ['should-statements', 'personalisation', 'all-or-nothing'],
+      themes: ['control', 'expectations', 'relationships'],
+      values_in_tension: ['fairness', 'integrity'],
+      enneagram_hints: [1, 8],
+      depth_preference: 'entry',
+    },
+  },
+  {
+    id: 'comparing',
+    label: 'Comparing',
+    emoji: '⚖️',
+    signal: {
+      emotional_states: ['comparing', 'insecure', 'envious', 'approval-seeking'],
+      cognitive_patterns: ['comparison', 'approval-seeking', 'social-evaluation'],
+      themes: ['comparison', 'identity', 'status', 'self-worth'],
+      values_in_tension: ['authenticity', 'self-worth'],
+      enneagram_hints: [2, 3, 4],
+      depth_preference: 'mid',
+    },
+  },
+  {
+    id: 'disconnected',
+    label: 'Numb',
+    emoji: '🫥',
+    signal: {
+      emotional_states: ['disconnected', 'numb', 'purposeless', 'empty'],
+      cognitive_patterns: ['avoidance', 'emotional-suppression', 'withdrawal'],
+      themes: ['meaning', 'identity', 'solitude', 'presence'],
+      values_in_tension: ['meaning', 'connection'],
+      enneagram_hints: [5, 9],
+      depth_preference: 'deep',
+    },
+  },
+  {
+    id: 'lonely',
+    label: 'Lonely',
+    emoji: '🌑',
+    signal: {
+      emotional_states: ['lonely', 'isolated', 'disconnected', 'longing'],
+      cognitive_patterns: ['withdrawal', 'personalisation', 'avoidance'],
+      themes: ['loneliness', 'connection', 'belonging', 'relationships'],
+      values_in_tension: ['connection', 'belonging'],
+      enneagram_hints: [2, 4, 5],
+      depth_preference: 'mid',
+    },
+  },
+  {
+    id: 'seeking',
+    label: 'Seeking',
+    emoji: '🔭',
+    signal: {
+      emotional_states: ['curious', 'seeking', 'purposeless', 'existential'],
+      cognitive_patterns: ['over-analysis', 'philosophical'],
+      themes: ['meaning', 'identity', 'growth', 'existence'],
+      values_in_tension: ['meaning', 'truth'],
+      enneagram_hints: [4, 5, 7],
+      depth_preference: 'deep',
+    },
+  },
+  {
+    id: 'calm',
+    label: 'Calm',
+    emoji: '🌊',
+    signal: {
+      emotional_states: ['content', 'reflective', 'curious', 'open'],
+      cognitive_patterns: ['reflective', 'analytical'],
+      themes: ['presence', 'wisdom', 'growth', 'consciousness'],
+      values_in_tension: [],
+      enneagram_hints: [],
+      depth_preference: 'deep',
+    },
+  },
+];
+
+// ── Date-seeded shuffle ────────────────────────────────────────────────────────
+
+/**
+ * Deterministic seeded PRNG (mulberry32).
+ * Same seed → same sequence every time; different date → different sequence.
+ */
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Seed from today's date so the shuffle changes daily but is stable within a day. */
+function todaySeed(): number {
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+}
+
+/** Fisher-Yates shuffle using a seeded PRNG. */
+function seededShuffle<T>(arr: T[], seed: number): T[] {
+  const result = [...arr];
+  const rand = mulberry32(seed);
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
 
 // ── Scoring ────────────────────────────────────────────────────────────────────
 
@@ -68,103 +210,91 @@ function scoreDispositional(short: WisdomShort, seenIds: Set<string>): number {
 // ── Feed selection ─────────────────────────────────────────────────────────────
 
 /**
- * Build a 5-short feed from the library.
+ * Build the full feed from the library (all shorts, ranked).
  *
- * Composition:
- *   • 3 acute   (70%) — highest signal match, filtered by depth pref if set
- *   • 1 dispositional (20%) — different author/theme from acute picks
- *   • 1 stretch (10%) — lowest signal match (challenges the user a bit)
+ * When a signal exists (mood picker or journal):
+ *   • Shorts scored by relevance, sorted high → low.
+ *   • Ties broken by today's date seed so the order is fresh each day.
  *
- * When no journal signal is available, falls back to a well-distributed random
- * selection across authors.
+ * When no signal: daily seeded shuffle, interleaved by author, unseen first.
  */
 export function buildFeed(
   signal: JournalSignal | null,
   savedIds: Set<string>,
   seenIds: Set<string>,
   emotionFilter?: string,
+  library?: WisdomShort[],
 ): FeedSelection {
-  let pool = [...SHORTS_LIBRARY];
+  let pool = library ? [...library] : [...SHORTS_LIBRARY];
 
-  // Apply emotion filter if provided
   if (emotionFilter) {
     const filtered = pool.filter(s => s.emotional_states.includes(emotionFilter));
-    if (filtered.length >= 3) pool = filtered;
+    if (filtered.length > 0) pool = filtered;
   }
 
   if (!signal) {
-    // No signal — distribute across authors, prefer unseen
     return buildFallbackFeed(pool, seenIds);
   }
 
-  const scored: ScoredShort[] = pool.map(s => ({ short: s, score: scoreShort(s, signal) }));
+  // Score + stable-sort (ties broken by seeded shuffle position)
+  const seed = todaySeed();
+  const shuffled = seededShuffle(pool, seed);
+  const scored: ScoredShort[] = shuffled.map(s => ({ short: s, score: scoreShort(s, signal) }));
   scored.sort((a, b) => b.score - a.score);
 
-  const usedIds = new Set<string>();
+  const total = scored.length;
+  const acuteCutoff        = Math.ceil(total * 0.7);
+  const dispositionalCutoff = Math.ceil(total * 0.9);
 
-  // Acute: top 3 scorers
-  const acute: WisdomShort[] = [];
-  for (const { short } of scored) {
-    if (acute.length >= 3) break;
-    if (usedIds.has(short.id)) continue;
-    acute.push(short);
-    usedIds.add(short.id);
-  }
-
-  // Dispositional: different author than any acute pick, prefer unseen
-  const acuteAuthors = new Set(acute.map(s => s.source_author));
-  const dispositionalCandidates = pool
-    .filter(s => !usedIds.has(s.id) && !acuteAuthors.has(s.source_author))
-    .map(s => ({ short: s, score: scoreDispositional(s, seenIds) }))
-    .sort((a, b) => b.score - a.score);
-
-  const dispositional: WisdomShort[] = [];
-  if (dispositionalCandidates.length > 0) {
-    dispositional.push(dispositionalCandidates[0].short);
-    usedIds.add(dispositionalCandidates[0].short.id);
-  }
-
-  // Stretch: lowest scorer among remaining (not already picked)
-  const stretch: WisdomShort[] = [];
-  const remaining = scored.filter(({ short }) => !usedIds.has(short.id));
-  if (remaining.length > 0) {
-    stretch.push(remaining[remaining.length - 1].short);
-  }
-
-  return { acute, dispositional, stretch };
+  return {
+    acute:        scored.slice(0, acuteCutoff).map(s => s.short),
+    dispositional: scored.slice(acuteCutoff, dispositionalCutoff).map(s => s.short),
+    stretch:      scored.slice(dispositionalCutoff).map(s => s.short),
+  };
 }
 
 /**
- * Fallback feed when no journal signal is available.
- * Distributes across 3–4 different authors, prefers unseen shorts.
+ * Fallback feed — no signal.
+ * Daily seeded shuffle keeps the order consistent within a day but fresh tomorrow.
+ * Unseen shorts float to the top; author-interleaved to avoid source clustering.
  */
 function buildFallbackFeed(pool: WisdomShort[], seenIds: Set<string>): FeedSelection {
-  // Shuffle pool, prefer unseen
-  const unseen = pool.filter(s => !seenIds.has(s.id));
-  const seen = pool.filter(s => seenIds.has(s.id));
-  const ordered = [...unseen, ...seen];
+  const seed   = todaySeed();
+  const unseen = seededShuffle(pool.filter(s => !seenIds.has(s.id)), seed);
+  const seen   = seededShuffle(pool.filter(s =>  seenIds.has(s.id)), seed + 1);
+  const ordered = interleaveByAuthor([...unseen, ...seen]);
 
-  // Pick 5 across different authors
-  const picked: WisdomShort[] = [];
-  const usedAuthors = new Set<string>();
-  for (const s of ordered) {
-    if (picked.length >= 5) break;
-    if (!usedAuthors.has(s.source_author) || usedAuthors.size >= 4) {
-      picked.push(s);
-      usedAuthors.add(s.source_author);
-    }
-  }
-  // Fill remainder if needed
-  for (const s of ordered) {
-    if (picked.length >= 5) break;
-    if (!picked.includes(s)) picked.push(s);
-  }
+  const total = ordered.length;
+  const acuteCutoff        = Math.ceil(total * 0.7);
+  const dispositionalCutoff = Math.ceil(total * 0.9);
 
   return {
-    acute: picked.slice(0, 3),
-    dispositional: picked.slice(3, 4),
-    stretch: picked.slice(4, 5),
+    acute:        ordered.slice(0, acuteCutoff),
+    dispositional: ordered.slice(acuteCutoff, dispositionalCutoff),
+    stretch:      ordered.slice(dispositionalCutoff),
   };
+}
+
+/** Round-robin across authors to avoid source clustering in the feed. */
+function interleaveByAuthor(shorts: WisdomShort[]): WisdomShort[] {
+  const byAuthor = new Map<string, WisdomShort[]>();
+  for (const s of shorts) {
+    if (!byAuthor.has(s.source_author)) byAuthor.set(s.source_author, []);
+    byAuthor.get(s.source_author)!.push(s);
+  }
+  const buckets = Array.from(byAuthor.values());
+  const result: WisdomShort[] = [];
+  let added = true;
+  while (added) {
+    added = false;
+    for (const bucket of buckets) {
+      if (bucket.length > 0) {
+        result.push(bucket.shift()!);
+        added = true;
+      }
+    }
+  }
+  return result;
 }
 
 /**

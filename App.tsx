@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, Component, useState } from 'react';
-import { AppState, AppStateStatus, Linking, Platform, View, Text, StyleSheet, Alert } from 'react-native';
+import { AppState, AppStateStatus, Linking, Platform, View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import { Audio } from 'expo-av';
 import { Feather } from '@expo/vector-icons';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
@@ -269,11 +269,20 @@ export default function App() {
             <Tab.Screen
               name="Journal"
               component={HomeScreen}
-              options={{
+              options={({ navigation }) => ({
                 title: 'Untangle',
                 headerTitleStyle: { fontFamily: 'Baskerville', fontSize: 22, fontWeight: '500' },
                 tabBarIcon: ({ color }) => <Feather name="mic" size={18} color={color} />,
-              }}
+                headerRight: () => (
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('Settings')}
+                    style={{ marginRight: 18, padding: 4 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="settings" size={18} color="rgba(152, 212, 250, 0.60)" />
+                  </TouchableOpacity>
+                ),
+              })}
             />
             <Tab.Screen
               name="Notes"
@@ -309,9 +318,21 @@ export default function App() {
             <Tab.Screen
               name="Settings"
               component={SettingsScreen}
-              options={{
-                tabBarIcon: ({ color }) => <Feather name="settings" size={18} color={color} />,
-              }}
+              options={({ navigation }) => ({
+                title: 'Settings',
+                headerLeft: () => (
+                  <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    style={{ marginLeft: 16, padding: 4 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="chevron-left" size={22} color="rgba(152, 212, 250, 0.80)" />
+                  </TouchableOpacity>
+                ),
+                // Hide from the tab bar — accessed via the gear icon only
+                tabBarButton: () => null,
+                tabBarStyle: { display: 'none' },
+              })}
             />
           </Tab.Navigator>
         </NavigationContainer>

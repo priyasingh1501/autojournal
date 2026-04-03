@@ -34,6 +34,7 @@ export interface AppSettings {
   ttsVoiceId?: string;          // expo-speech voice identifier for Chat mode
   elevenLabsApiKey?: string;   // ElevenLabs API key for Call mode
   elevenLabsVoiceId?: string;  // ElevenLabs voice ID for Call mode
+  enabledTrackers?: ('meals' | 'workout' | 'meditation' | 'spending')[]; // which trackers to show in home + summaries
 }
 
 export interface EmotionCount {
@@ -243,6 +244,8 @@ export interface WisdomShort {
   cognitive_style: string[];
   values: string[];
   depth: 'entry' | 'mid' | 'deep';
+  imageUri?: string;    // local cached file path for the generated image
+  imagePrompt?: string; // DALL-E prompt used to generate the image
 }
 
 export interface JournalSignal {
