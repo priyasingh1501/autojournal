@@ -21,6 +21,73 @@ import { WisdomShort } from '../types';
 const IMAGE_CACHE_KEY = 'wisdom_img_'; // prefix + shortId
 const IMAGE_DIR = (FileSystem.documentDirectory ?? '') + 'wisdom_images/';
 
+// ── Generation queue (one image at a time, no stampede) ───────────────────────
+
+type QueueEntry = { short: WisdomShort; resolve: (uri: string | null) => void };
+let _queue: QueueEntry[] = [];
+let _running = false;
+const _inFlight = new Set<string>(); // short IDs currently being generated
+
+async function _processQueue(): Promise<void> {
+  if (_running) return;
+  _running = true;
+
+  while (_queue.length > 0) {
+    const entry = _queue.shift()!;
+    const uri = await _generateNow(entry.short);
+    entry.resolve(uri);
+  }
+
+  _running = false;
+}
+
+/** Internal: actually calls DALL-E and caches. No queue logic here. */
+async function _generateNow(short: WisdomShort): Promise<string | null> {
+  try {
+    const settings = await StorageService.getSettings();
+    if (!settings?.openaiApiKey) {
+      console.warn('[WisdomImage] No OpenAI API key in settings — skipping image generation for:', short.id);
+      return null;
+    }
+
+    await ensureImageDir();
+
+    const client = new OpenAI({ apiKey: settings.openaiApiKey });
+    const prompt = short.imagePrompt ?? buildAutoPrompt(short);
+
+    console.log('[WisdomImage] Generating image for:', short.id, '\nPrompt:', prompt);
+
+    const response = await client.images.generate({
+      model: 'dall-e-3',
+      prompt,
+      size: '1024x1024',
+      quality: 'standard',
+      n: 1,
+    });
+
+    const imageUrl = response.data?.[0]?.url;
+    if (!imageUrl) {
+      console.warn('[WisdomImage] DALL-E returned no URL for:', short.id);
+      return null;
+    }
+
+    const safeName = short.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const localPath = IMAGE_DIR + safeName + '.jpg';
+    const result = await FileSystem.downloadAsync(imageUrl, localPath);
+    if (result.status !== 200) {
+      console.warn('[WisdomImage] Download failed (status', result.status, ') for:', short.id);
+      return null;
+    }
+
+    await AsyncStorage.setItem(IMAGE_CACHE_KEY + short.id, localPath);
+    console.log('[WisdomImage] Cached image for:', short.id, '→', localPath);
+    return localPath;
+  } catch (err) {
+    console.error('[WisdomImage] Generation failed for:', short.id, err);
+    return null;
+  }
+}
+
 // ── File system helpers ───────────────────────────────────────────────────────
 
 async function ensureImageDir(): Promise<void> {
@@ -59,40 +126,30 @@ function buildAutoPrompt(short: WisdomShort): string {
 }
 
 /**
- * Generates a DALL-E 3 image for the short, saves it locally, and caches the
- * path.  Returns the local file URI on success, or null on any error.
+ * Queues DALL-E 3 image generation for the short.
+ * Only one image is generated at a time to avoid rate-limit stampedes.
+ * Returns the local file URI on success, or null on any error.
  */
 export async function generateAndCacheImage(short: WisdomShort): Promise<string | null> {
-  try {
-    const settings = await StorageService.getSettings();
-    if (!settings?.openaiApiKey) return null;
-
-    await ensureImageDir();
-
-    const client = new OpenAI({ apiKey: settings.openaiApiKey });
-    const prompt = short.imagePrompt ?? buildAutoPrompt(short);
-
-    const response = await client.images.generate({
-      model: 'dall-e-3',
-      prompt,
-      size: '1024x1024',
-      quality: 'standard',
-      n: 1,
+  // Skip if already in-flight for this short
+  if (_inFlight.has(short.id)) {
+    return new Promise(resolve => {
+      _queue.push({ short, resolve });
+      _processQueue();
     });
-
-    const imageUrl = response.data?.[0]?.url;
-    if (!imageUrl) return null;
-
-    const safeName = short.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const localPath = IMAGE_DIR + safeName + '.jpg';
-    const result = await FileSystem.downloadAsync(imageUrl, localPath);
-    if (result.status !== 200) return null;
-
-    await AsyncStorage.setItem(IMAGE_CACHE_KEY + short.id, localPath);
-    return localPath;
-  } catch {
-    return null;
   }
+
+  _inFlight.add(short.id);
+  return new Promise(resolve => {
+    _queue.push({
+      short,
+      resolve: (uri) => {
+        _inFlight.delete(short.id);
+        resolve(uri);
+      },
+    });
+    _processQueue();
+  });
 }
 
 // ── Metadata auto-fill ────────────────────────────────────────────────────────

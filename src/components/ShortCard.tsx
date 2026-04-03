@@ -82,6 +82,7 @@ export default function ShortCard({
 }: Props) {
   const [imageUri,     setImageUri]     = useState<string | null>(short.imageUri ?? null);
   const [generating,   setGenerating]   = useState(false);
+  const [genFailed,    setGenFailed]    = useState(false);
   const [bodyExpanded, setBodyExpanded] = useState(false);
 
   const imageFade = useRef(new Animated.Value(0)).current;
@@ -92,39 +93,42 @@ export default function ShortCard({
 
   // ── Load / generate image ─────────────────────────────────────────────────
 
+  const loadOrGenerate = async (cancelled: { current: boolean }) => {
+    // 1. Already have a URI
+    if (imageUri) {
+      Animated.timing(imageFade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+      return;
+    }
+
+    // 2. Check cache
+    const cached = await getCachedImageUri(short.id);
+    if (cancelled.current) return;
+
+    if (cached) {
+      setImageUri(cached);
+      Animated.timing(imageFade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+      return;
+    }
+
+    // 3. Not cached — queue generation
+    setGenFailed(false);
+    setGenerating(true);
+    const generated = await generateAndCacheImage(short);
+    if (cancelled.current) return;
+    setGenerating(false);
+
+    if (generated) {
+      setImageUri(generated);
+      Animated.timing(imageFade, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+    } else {
+      setGenFailed(true);
+    }
+  };
+
   useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      // 1. Already have a URI (just came from creation flow)
-      if (imageUri) {
-        Animated.timing(imageFade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-        return;
-      }
-
-      // 2. Check cache
-      const cached = await getCachedImageUri(short.id);
-      if (cancelled) return;
-
-      if (cached) {
-        setImageUri(cached);
-        Animated.timing(imageFade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-        return;
-      }
-
-      // 3. Not cached — generate (fire-and-forget per card)
-      setGenerating(true);
-      const generated = await generateAndCacheImage(short);
-      if (cancelled) return;
-      setGenerating(false);
-
-      if (generated) {
-        setImageUri(generated);
-        Animated.timing(imageFade, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-      }
-    })();
-
-    return () => { cancelled = true; };
+    const cancelled = { current: false };
+    loadOrGenerate(cancelled);
+    return () => { cancelled.current = true; };
   }, [short.id]);
 
   // Shimmer animation while no image
@@ -179,6 +183,19 @@ export default function ShortCard({
             <Feather name="image" size={10} color="rgba(251,191,36,0.70)" />
             <Text style={styles.generatingText}>painting…</Text>
           </View>
+        )}
+        {genFailed && !generating && !imageUri && (
+          <TouchableOpacity
+            style={styles.retryBadge}
+            onPress={() => {
+              const cancelled = { current: false };
+              setGenFailed(false);
+              loadOrGenerate(cancelled);
+            }}
+          >
+            <Feather name="refresh-cw" size={10} color="rgba(248,113,113,0.80)" />
+            <Text style={styles.retryText}>tap to retry</Text>
+          </TouchableOpacity>
         )}
 
         {/* Actual image fades in */}
@@ -363,6 +380,26 @@ const styles = StyleSheet.create({
   generatingText: {
     fontSize: 10,
     color: 'rgba(251,191,36,0.70)',
+    fontFamily: 'GillSans-Light',
+    fontStyle: 'italic',
+  },
+  retryBadge: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(4,13,30,0.70)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.30)',
+  },
+  retryText: {
+    fontSize: 10,
+    color: 'rgba(248,113,113,0.80)',
     fontFamily: 'GillSans-Light',
     fontStyle: 'italic',
   },
