@@ -6,7 +6,7 @@ import {
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis, HowYouThinkAnalysis, YourStoryAnalysis,
   EnneagramResponse, SavedShort, JournalSignal, WisdomShort,
 } from '../types';
-import { ANTHROPIC_API_KEY, OPENAI_API_KEY } from '../config/keys';
+import { ANTHROPIC_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID } from '../config/keys';
 
 const KEYS = {
   TRANSCRIPTS_PREFIX: 'transcripts_',
@@ -66,8 +66,10 @@ export const StorageService = {
     const base: AppSettings = stored ?? ({} as AppSettings);
     return {
       ...base,
-      anthropicApiKey: ANTHROPIC_API_KEY,
-      openaiApiKey:    OPENAI_API_KEY,
+      anthropicApiKey:   ANTHROPIC_API_KEY,
+      openaiApiKey:      OPENAI_API_KEY,
+      elevenLabsApiKey:  ELEVENLABS_API_KEY,
+      elevenLabsVoiceId: ELEVENLABS_VOICE_ID,
     };
   },
 
