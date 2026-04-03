@@ -1,10 +1,10 @@
 /**
  * ShareModal — visual Story Card for a Wisdom Short.
- * Renders a 9:16 gradient card with the pullquote centred in large Baskerville,
- * then offers WhatsApp and native Share options.
+ * Renders a 9:16 gradient card, captures it as a PNG via react-native-view-shot,
+ * then shares the image to WhatsApp, Instagram Stories, or any native target.
  */
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -14,11 +14,14 @@ import {
   Share,
   Linking,
   Alert,
-  Platform,
+  ActivityIndicator,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
+import ViewShot from 'react-native-view-shot';
+import * as ExpoSharing from 'expo-sharing';
 import { WisdomShort } from '../types';
 
 // ── Gradient palettes per author / discipline ──────────────────────────────────
@@ -69,31 +72,106 @@ interface Props {
 }
 
 export default function ShareModal({ short, visible, onClose }: Props) {
+  const viewShotRef = useRef<ViewShot>(null);
+  const [capturing, setCapturing] = useState(false);
+
   if (!short) return null;
 
   const colors = gradientFor(short.source_author);
   const accentColor = colors[2];
 
   const appLink = 'https://apps.apple.com/app/untangle/id6748722626';
-  const shareText = `"${short.pullquote}"\n\n— ${short.source_author}\n\n${short.title}\n\n_via untangle · ${appLink}_`;
 
-  const handleNativeShare = async () => {
+  /** Capture card → returns local file URI */
+  const captureCard = async (): Promise<string | null> => {
     try {
-      await Share.share({ message: shareText });
-    } catch {
-      Alert.alert('Could not open share sheet. Please try again.');
+      if (!viewShotRef.current?.capture) return null;
+      const uri = await viewShotRef.current.capture();
+      return uri;
+    } catch (e) {
+      console.warn('ViewShot capture failed', e);
+      return null;
     }
   };
 
-  const handleWhatsApp = async () => {
-    const encoded = encodeURIComponent(shareText);
-    const url = `whatsapp://send?text=${encoded}`;
-    const supported = await Linking.canOpenURL(url);
-    if (supported) {
-      await Linking.openURL(url);
+  /** Share image via native share sheet (covers WhatsApp, Instagram, etc.) */
+  const handleNativeShare = async () => {
+    setCapturing(true);
+    const uri = await captureCard();
+    setCapturing(false);
+
+    if (!uri) {
+      Alert.alert('Could not capture card', 'Please try again.');
+      return;
+    }
+
+    const canShare = await ExpoSharing.isAvailableAsync();
+    if (canShare) {
+      await ExpoSharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Share wisdom card',
+      });
     } else {
-      // Fallback: web WhatsApp
-      await Linking.openURL(`https://wa.me/?text=${encoded}`);
+      // Fallback: share text on platforms where image sharing isn't available
+      await Share.share({
+        message: `"${short.pullquote}"\n\n— ${short.source_author}\n\n${short.title}\n\n_via untangle · ${appLink}_`,
+      });
+    }
+  };
+
+  /** Direct WhatsApp share — image via native intent on Android, share sheet on iOS */
+  const handleWhatsApp = async () => {
+    setCapturing(true);
+    const uri = await captureCard();
+    setCapturing(false);
+
+    if (!uri) {
+      Alert.alert('Could not capture card', 'Please try again.');
+      return;
+    }
+
+    if (Platform.OS === 'android') {
+      // On Android, expo-sharing opens the system share sheet pre-filtered;
+      // user picks WhatsApp from there
+      const canShare = await ExpoSharing.isAvailableAsync();
+      if (canShare) {
+        await ExpoSharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share to WhatsApp' });
+      }
+    } else {
+      // iOS: share sheet with image — user taps WhatsApp in the list
+      await ExpoSharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Share to WhatsApp',
+        UTI: 'public.png',
+      });
+    }
+  };
+
+  /** Instagram Stories direct share (iOS only via URL scheme, Android via share sheet) */
+  const handleInstagramStories = async () => {
+    setCapturing(true);
+    const uri = await captureCard();
+    setCapturing(false);
+
+    if (!uri) {
+      Alert.alert('Could not capture card', 'Please try again.');
+      return;
+    }
+
+    if (Platform.OS === 'ios') {
+      // Instagram Stories URL scheme on iOS
+      const igUrl = 'instagram-stories://share?source_application=untangle';
+      const supported = await Linking.canOpenURL(igUrl);
+      if (supported) {
+        // Use native share sheet to pass image; Instagram Stories picks it up
+        await ExpoSharing.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png' });
+      } else {
+        Alert.alert('Instagram not installed', 'Share using the share sheet instead.');
+        await ExpoSharing.shareAsync(uri, { mimeType: 'image/png', UTI: 'public.png' });
+      }
+    } else {
+      // Android: share sheet — user selects Instagram
+      await ExpoSharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share to Instagram Stories' });
     }
   };
 
@@ -116,65 +194,89 @@ export default function ShareModal({ short, visible, onClose }: Props) {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.body}
           >
-            {/* ── Story Card ── */}
-            <LinearGradient
-              colors={colors}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.storyCard}
+            {/* ── Story Card (captured by ViewShot) ── */}
+            <ViewShot
+              ref={viewShotRef}
+              options={{ format: 'png', quality: 1.0 }}
+              style={styles.viewShotWrapper}
             >
-              {/* Top label */}
-              <View style={styles.storyBadge}>
-                <Text style={[styles.storyBadgeText, { color: accentColor }]}>
-                  {short.source_type.toUpperCase()}
-                </Text>
-              </View>
+              <LinearGradient
+                colors={colors}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.storyCard}
+              >
+                {/* Top label */}
+                <View style={styles.storyBadge}>
+                  <Text style={[styles.storyBadgeText, { color: accentColor }]}>
+                    {short.source_type.toUpperCase()}
+                  </Text>
+                </View>
 
-              {/* Pullquote — centred, large */}
-              <View style={styles.quoteWrap}>
-                <Text style={styles.openQuote}>"</Text>
-                <Text style={styles.quotePrimary}>{short.pullquote}</Text>
-                <Text style={styles.closeQuote}>"</Text>
-              </View>
+                {/* Pullquote — centred, large */}
+                <View style={styles.quoteWrap}>
+                  <Text style={styles.openQuote}>"</Text>
+                  <Text style={styles.quotePrimary}>{short.pullquote}</Text>
+                  <Text style={styles.closeQuote}>"</Text>
+                </View>
 
-              {/* Author & title */}
-              <View style={styles.storyFooter}>
-                <View style={[styles.footerLine, { backgroundColor: accentColor }]} />
-                <Text style={[styles.storyAuthor, { color: accentColor }]}>
-                  {short.source_author}
-                </Text>
-                <Text style={styles.storyTitle} numberOfLines={2}>
-                  {short.title}
-                </Text>
-              </View>
+                {/* Author & title */}
+                <View style={styles.storyFooter}>
+                  <View style={[styles.footerLine, { backgroundColor: accentColor }]} />
+                  <Text style={[styles.storyAuthor, { color: accentColor }]}>
+                    {short.source_author}
+                  </Text>
+                  <Text style={styles.storyTitle} numberOfLines={2}>
+                    {short.title}
+                  </Text>
+                </View>
 
-              {/* App watermark */}
-              <Text style={styles.watermark}>untangle · get the app</Text>
-            </LinearGradient>
+                {/* App watermark */}
+                <Text style={styles.watermark}>untangle · get the app</Text>
+              </LinearGradient>
+            </ViewShot>
 
             {/* ── Hint ── */}
             <Text style={styles.hint}>
-              Screenshot the card above, then share it to Instagram Stories or WhatsApp Status.
+              Tap a button below to share the card as an image.
             </Text>
 
             {/* ── Share buttons ── */}
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.shareBtn, { borderColor: '#25D366' + '55', backgroundColor: '#25D366' + '12' }]}
-                onPress={handleWhatsApp}
-              >
-                <Feather name="message-circle" size={16} color="#25D366" />
-                <Text style={[styles.shareBtnText, { color: '#25D366' }]}>WhatsApp</Text>
-              </TouchableOpacity>
+            {capturing ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color="rgba(152,212,250,0.7)" size="small" />
+                <Text style={styles.loadingText}>Preparing image…</Text>
+              </View>
+            ) : (
+              <View style={styles.buttonCol}>
+                {/* WhatsApp */}
+                <TouchableOpacity
+                  style={[styles.shareBtn, { borderColor: '#25D366' + '55', backgroundColor: '#25D366' + '12' }]}
+                  onPress={handleWhatsApp}
+                >
+                  <Feather name="message-circle" size={16} color="#25D366" />
+                  <Text style={[styles.shareBtnText, { color: '#25D366' }]}>WhatsApp</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.shareBtn, { borderColor: accentColor + '55', backgroundColor: accentColor + '12' }]}
-                onPress={handleNativeShare}
-              >
-                <Feather name="share-2" size={16} color={accentColor} />
-                <Text style={[styles.shareBtnText, { color: accentColor }]}>More…</Text>
-              </TouchableOpacity>
-            </View>
+                {/* Instagram Stories */}
+                <TouchableOpacity
+                  style={[styles.shareBtn, { borderColor: '#E1306C55', backgroundColor: '#E1306C12' }]}
+                  onPress={handleInstagramStories}
+                >
+                  <Feather name="instagram" size={16} color="#E1306C" />
+                  <Text style={[styles.shareBtnText, { color: '#E1306C' }]}>Instagram Stories</Text>
+                </TouchableOpacity>
+
+                {/* More (native share sheet) */}
+                <TouchableOpacity
+                  style={[styles.shareBtn, { borderColor: accentColor + '55', backgroundColor: accentColor + '12' }]}
+                  onPress={handleNativeShare}
+                >
+                  <Feather name="share-2" size={16} color={accentColor} />
+                  <Text style={[styles.shareBtnText, { color: accentColor }]}>More…</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </ScrollView>
         </View>
       </View>
@@ -228,12 +330,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  // ── ViewShot wrapper ────────────────────────────────────────────────────────
+  viewShotWrapper: {
+    width: '100%',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+
   // ── Story Card ─────────────────────────────────────────────────────────────
   storyCard: {
     width: '100%',
     aspectRatio: 9 / 16,
-    borderRadius: 20,
-    overflow: 'hidden',
     padding: 28,
     justifyContent: 'space-between',
     shadowColor: '#000',
@@ -329,13 +436,23 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
-  buttonRow: {
+  loadingRow: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 20,
+  },
+  loadingText: {
+    color: 'rgba(152,212,250,0.6)',
+    fontSize: 14,
+    fontFamily: 'GillSans-Light',
+  },
+
+  buttonCol: {
+    gap: 10,
     width: '100%',
   },
   shareBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -343,6 +460,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 14,
     paddingVertical: 14,
+    width: '100%',
   },
   shareBtnText: {
     fontSize: 15,
