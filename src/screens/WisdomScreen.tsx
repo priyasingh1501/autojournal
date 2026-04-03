@@ -29,6 +29,7 @@ import { WisdomShort, JournalSignal } from '../types';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
 import { StorageService } from '../services/StorageService';
 import { buildFeed, flattenFeed, MOODS, Mood } from '../services/WisdomService';
+import { getShortsLibrary } from '../services/SupabaseService';
 import ShortCard from '../components/ShortCard';
 import ReflectPromptModal from '../components/ReflectPromptModal';
 import AddShortModal from '../components/AddShortModal';
@@ -236,8 +237,10 @@ export default function WisdomScreen() {
   const [isPublisher, setIsPublisher]         = useState(false);
   const [showAddShort, setShowAddShort]       = useState(false);
   const [editShort, setEditShort]             = useState<WisdomShort | null>(null);
+  // Supabase library — starts with bundled shorts for instant display, refreshes from remote
+  const [remoteLibrary, setRemoteLibrary]     = useState<WisdomShort[]>(SHORTS_LIBRARY);
 
-  // ── Load stored state on focus ─────────────────────────────────────────────
+  // ── Load stored state + remote library on focus ───────────────────────────
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -255,6 +258,12 @@ export default function WisdomScreen() {
         setJournalSignal(sig);
         setCustomShorts(customs);
         setIsPublisher(publisher);
+
+        // Load library from Supabase (cache-first, background refresh)
+        const lib = await getShortsLibrary((fresh) => {
+          if (active) setRemoteLibrary(fresh);
+        });
+        if (active && lib.length > 0) setRemoteLibrary(lib);
       })();
       return () => { active = false; };
     }, []),
@@ -268,10 +277,10 @@ export default function WisdomScreen() {
     return journalSignal;
   }, [selectedMoodId, journalSignal]);
 
-  // ── Merged library (curated + custom) ─────────────────────────────────────
+  // ── Merged library (remote/curated + custom) ──────────────────────────────
   const fullLibrary = useMemo<WisdomShort[]>(
-    () => [...SHORTS_LIBRARY, ...customShorts],
-    [customShorts],
+    () => [...remoteLibrary, ...customShorts],
+    [remoteLibrary, customShorts],
   );
 
   // ── Build feed ─────────────────────────────────────────────────────────────
