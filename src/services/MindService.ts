@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Mind, MindPerspective } from '../types';
 import { StorageService } from './StorageService';
@@ -143,9 +143,6 @@ export async function generateMindPerspective(
   const mind = MINDS.find(m => m.id === mindId);
   if (!mind) throw new Error(`Unknown mind: ${mindId}`);
 
-  const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured. Go to Settings.');
-
   if (!forceRefresh) {
     const cached = await getCached(mindId);
     if (cached && Date.now() - cached.generatedAt < CACHE_TTL) return cached;
@@ -162,9 +159,7 @@ export async function generateMindPerspective(
     .map(s => `[${s.date}]\n${s.insightText ?? s.summary}`)
     .join('\n\n');
 
-  const client = new Anthropic({ apiKey: settings.anthropicApiKey, dangerouslyAllowBrowser: true });
-
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 900,
     system: buildSystemPrompt(mind),

@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import { DailySummary, ConversationMessage } from '../types';
 import { StorageService } from './StorageService';
 
@@ -96,15 +96,7 @@ export async function sendMessage(
   apiKey?: string,
   mindId?: string | null,
 ): Promise<string> {
-  const key = apiKey ?? (await StorageService.getSettings())?.anthropicApiKey;
-  if (!key) throw new Error('Anthropic API key not configured. Go to Settings.');
-
-  const client = new Anthropic({
-    apiKey: key,
-    dangerouslyAllowBrowser: true,
-  });
-
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 360,
     system: getSystemPrompt(mindId),
@@ -126,21 +118,13 @@ export async function getOpeningMessage(
   apiKey?: string,
   mindId?: string | null,
 ): Promise<string> {
-  const key = apiKey ?? (await StorageService.getSettings())?.anthropicApiKey;
-  if (!key) throw new Error('Anthropic API key not configured. Go to Settings.');
-
-  const client = new Anthropic({
-    apiKey: key,
-    dangerouslyAllowBrowser: true,
-  });
-
   const contextBlock = [
     `DAY: ${summary.date}`,
     `\nDAY SUMMARY:\n${summary.summary}`,
     summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
   ].filter(Boolean).join('\n');
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 180,
     system: getSystemPrompt(mindId),
@@ -173,8 +157,6 @@ export async function generateReflection(
   apiKey: string,
   mode: 'call' | 'chat' = 'call',
 ): Promise<string> {
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-
   const convoText = messages
     .map(m => `${m.role === 'user' ? 'You' : 'Companion'}: ${m.text}`)
     .join('\n');
@@ -185,7 +167,7 @@ export async function generateReflection(
     summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
   ].filter(Boolean).join('\n');
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 220,
     system: `You are a thoughtful journaling assistant writing a post-session reflection.
@@ -269,14 +251,12 @@ export async function fetchSentences(
   mindId?: string | null,
   distressTier?: 2 | 3,
 ): Promise<string[]> {
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-
   const baseSystem = getSystemPrompt(mindId);
   const system = distressTier
     ? baseSystem + (CALL_DISTRESS_ADDITIONS[distressTier] ?? '')
     : baseSystem;
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: distressTier === 3 ? 80 : 220,
     system,

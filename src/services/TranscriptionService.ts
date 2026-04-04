@@ -1,38 +1,5 @@
-import { StorageService } from './StorageService';
+import { transcribeAudio as proxyTranscribe } from './AIProxy';
 
 export async function transcribeAudio(audioUri: string): Promise<string> {
-  const settings = await StorageService.getSettings();
-  if (!settings?.openaiApiKey) {
-    throw new Error('OpenAI API key not configured. Go to Settings.');
-  }
-
-  // React Native's FormData supports { uri, type, name } objects directly —
-  // no need to fetch/blob the local file URI first.
-  const formData = new FormData();
-  formData.append('file', {
-    uri: audioUri,
-    type: 'audio/m4a',
-    name: 'recording.m4a',
-  } as any);
-  formData.append('model', 'whisper-1');
-  formData.append('language', 'en');
-
-  // Do NOT set Content-Type manually — React Native's fetch sets it automatically
-  // as "multipart/form-data; boundary=..." when the body is FormData.
-  // Setting it manually strips the boundary and breaks the API request.
-  const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${settings.openaiApiKey}`,
-    },
-    body: formData,
-  });
-
-  if (!whisperResponse.ok) {
-    const error = await whisperResponse.text();
-    throw new Error(`Whisper API error: ${error}`);
-  }
-
-  const data = await whisperResponse.json();
-  return data.text?.trim() ?? '';
+  return proxyTranscribe(audioUri);
 }

@@ -10,7 +10,7 @@
  * Deduplication via sourceTranscriptId in StorageService.addExpenses().
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import * as FileSystem from 'expo-file-system/legacy';
 import { StorageService } from './StorageService';
 import { ExpenseEntry } from '../types';
@@ -92,7 +92,6 @@ async function extractFromPhoto(
   photoUri: string,
   date: string,
   transcriptId: string,
-  client: Anthropic,
 ): Promise<ExpenseEntry[]> {
   try {
     const base64 = await FileSystem.readAsStringAsync(photoUri, {
@@ -101,7 +100,7 @@ async function extractFromPhoto(
     const mimeType = getMimeType(photoUri);
     const categoryList = EXPENSE_CATEGORIES.map(c => `"${c}"`).join(', ');
 
-    const response = await client.messages.create({
+    const response = await claudeProxy.messages.create({
       model: 'claude-opus-4-5', // opus-4-5 supports vision
       max_tokens: 500,
       messages: [
@@ -148,13 +147,12 @@ async function extractFromText(
   text: string,
   date: string,
   transcriptId: string,
-  client: Anthropic,
 ): Promise<ExpenseEntry[]> {
   if (!mayContainExpense(text)) return [];
 
   const categoryList = EXPENSE_CATEGORIES.map(c => `"${c}"`).join(', ');
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 500,
     messages: [
@@ -208,23 +206,18 @@ export async function extractAndSaveExpenses(
   if (!photoUri && !mayContainExpense(text)) return;
 
   try {
-    const settings = await StorageService.getSettings();
-    const apiKey = settings?.anthropicApiKey?.trim();
-    if (!apiKey) return;
-
-    const client = new Anthropic({ apiKey });
     const entries: ExpenseEntry[] = [];
 
     // 1. Vision OCR if a photo is attached
     if (photoUri) {
-      const photoEntries = await extractFromPhoto(photoUri, date, transcriptId + '_photo', client);
+      const photoEntries = await extractFromPhoto(photoUri, date, transcriptId + '_photo');
       entries.push(...photoEntries);
     }
 
     // 2. Text extraction (always runs if text has keywords — catches spoken mentions
     //    even when a receipt photo is also present)
     if (mayContainExpense(text)) {
-      const textEntries = await extractFromText(text, date, transcriptId, client);
+      const textEntries = await extractFromText(text, date, transcriptId);
       entries.push(...textEntries);
     }
 

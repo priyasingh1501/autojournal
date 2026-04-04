@@ -11,8 +11,7 @@
 
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
+import { openaiImageProxy, claudeProxy } from './AIProxy';
 import { StorageService } from './StorageService';
 import { WisdomShort } from '../types';
 
@@ -44,20 +43,13 @@ async function _processQueue(): Promise<void> {
 /** Internal: actually calls DALL-E and caches. No queue logic here. */
 async function _generateNow(short: WisdomShort): Promise<string | null> {
   try {
-    const settings = await StorageService.getSettings();
-    if (!settings?.openaiApiKey) {
-      console.warn('[WisdomImage] No OpenAI API key in settings — skipping image generation for:', short.id);
-      return null;
-    }
-
     await ensureImageDir();
 
-    const client = new OpenAI({ apiKey: settings.openaiApiKey });
     const prompt = short.imagePrompt ?? buildAutoPrompt(short);
 
     console.log('[WisdomImage] Generating image for:', short.id, '\nPrompt:', prompt);
 
-    const response = await client.images.generate({
+    const response = await openaiImageProxy.images.generate({
       model: 'dall-e-3',
       prompt,
       size: '1024x1024',
@@ -174,10 +166,8 @@ export interface AutoFilledMeta {
 export async function autoFillShortMetadata(
   title: string,
   body: string,
-  apiKey: string,
+  _apiKey: string,  // ignored — key is now server-side
 ): Promise<AutoFilledMeta> {
-  const client = new Anthropic({ apiKey });
-
   const systemPrompt =
     'You are a wisdom-short curator and metadata expert. ' +
     'Return ONLY a valid JSON object — no explanation, no markdown fences.';
@@ -211,7 +201,7 @@ Field rules:
 
 Return ONLY the JSON.`;
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 800,
     messages: [

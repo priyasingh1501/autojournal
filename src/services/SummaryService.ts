@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import * as FileSystem from 'expo-file-system/legacy';
 import { TranscriptEntry, DailySummary } from '../types';
 import { StorageService } from './StorageService';
@@ -34,23 +34,12 @@ export async function generateDailySummary(
   transcripts: TranscriptEntry[],
   date: string,
 ): Promise<DailySummary> {
-  const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) {
-    throw new Error('Anthropic API key not configured. Go to Settings.');
-  }
   if (transcripts.length === 0) {
     throw new Error('No entries recorded today.');
   }
 
-  const client = new Anthropic({
-    apiKey: settings.anthropicApiKey,
-    dangerouslyAllowBrowser: true,
-  });
-
   // Start jellyfish image generation in parallel with Claude — doesn't block summary
-  const imagePromise = settings.openaiApiKey
-    ? generateSummaryImage(date, settings.openaiApiKey)
-    : Promise.resolve(null);
+  const imagePromise = generateSummaryImage(date, '');
 
   // Sort chronologically
   const sorted = [...transcripts].sort((a, b) => a.timestamp - b.timestamp);
@@ -173,7 +162,7 @@ Rules:
     text: 'Please create a thoughtful daily summary based on all the entries above.',
   });
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-opus-4-5',   // opus-4-5 supports vision; swap back to opus-4-6 when it launches with vision
     max_tokens: 1600,
     system: systemPrompt,

@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { openaiImageProxy } from './AIProxy';
 import * as FileSystem from 'expo-file-system/legacy';
 
 /**
@@ -8,17 +8,13 @@ import * as FileSystem from 'expo-file-system/legacy';
  */
 export async function generateSummaryImage(
   date: string,
-  openaiApiKey: string,
+  _openaiApiKey: string,  // ignored — key is now server-side
 ): Promise<string | null> {
   try {
     // Resolved inside the function so documentDirectory is read at call-time, not module-load time
     const imageDir = `${FileSystem.documentDirectory}summary-images/`;
-    const client = new OpenAI({
-      apiKey: openaiApiKey,
-      dangerouslyAllowBrowser: true,
-    });
 
-    const response = await client.images.generate({
+    const response = await openaiImageProxy.images.generate({
       model: 'dall-e-3',
       prompt:
         'A single bioluminescent jellyfish drifting through an infinite dark deep ocean, ' +

@@ -43,6 +43,7 @@
     "@expo/metro-config": "~54.0.14",
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.10",
+    "tsx": "^4.21.0",
     "typescript": "~5.9.2"
   },
   "private": true

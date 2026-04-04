@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import {
   EmotionAnalysis, EmotionEntry,
   ThoughtPatternAnalysis,
@@ -63,9 +63,6 @@ async function buildContext(windowDays: number): Promise<{
   return { contextText, dates: summaries.map(s => s.date), windowDays };
 }
 
-function getClient(apiKey: string) {
-  return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-}
 
 function extractJson(raw: string): string {
   // Grab everything after the sentinel (or use the full string as fallback)
@@ -114,7 +111,6 @@ export async function generateEmotionAnalysis(
   forceRefresh = false,
 ): Promise<EmotionAnalysis> {
   const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured. Go to Settings.');
 
   const tag = `${windowDays}d`;
 
@@ -124,9 +120,8 @@ export async function generateEmotionAnalysis(
   }
 
   const { contextText, windowDays: actualDays } = await buildContext(windowDays);
-  const client = getClient(settings.anthropicApiKey);
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 800,
     system: EMOTION_SYSTEM,
@@ -198,7 +193,6 @@ export async function generateThoughtPatternAnalysis(
   forceRefresh = false,
 ): Promise<ThoughtPatternAnalysis> {
   const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured. Go to Settings.');
 
   const tag = `${windowDays}d`;
 
@@ -208,9 +202,8 @@ export async function generateThoughtPatternAnalysis(
   }
 
   const { contextText, windowDays: actualDays } = await buildContext(windowDays);
-  const client = getClient(settings.anthropicApiKey);
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 900,
     system: PATTERN_SYSTEM,
@@ -279,7 +272,6 @@ The JSON must be valid. No trailing commas. No code fences.`;
 
 export async function generatePersonalityAnalysis(forceRefresh = false): Promise<PersonalityAnalysis> {
   const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured. Go to Settings.');
 
   if (!forceRefresh) {
     const cached = await StorageService.getPersonalityAnalysis();
@@ -295,9 +287,8 @@ export async function generatePersonalityAnalysis(forceRefresh = false): Promise
     .map(s => `[${s.date}]\n${s.insightText ?? s.summary}`)
     .join('\n\n');
 
-  const client = getClient(settings.anthropicApiKey);
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 1000,
     system: PERSONALITY_SYSTEM,
@@ -358,7 +349,6 @@ Rules:
 
 export async function generateGrowthTips(forceRefresh = false): Promise<GrowthTipsAnalysis> {
   const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured. Go to Settings.');
 
   if (!forceRefresh) {
     const cached = await StorageService.getGrowthTipsAnalysis();
@@ -397,9 +387,8 @@ export async function generateGrowthTips(forceRefresh = false): Promise<GrowthTi
     contextParts.push(summaries.map(s => `[${s.date}]\n${s.insightText ?? s.summary}`).join('\n\n'));
   }
 
-  const client = getClient(settings.anthropicApiKey);
 
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 900,
     system: GROWTH_TIPS_SYSTEM,

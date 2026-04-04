@@ -15,7 +15,7 @@
  * Returns null if wellbeing check-ins are disabled or API key is missing.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageService } from './StorageService';
 import { TranscriptEntry } from '../types';
@@ -113,10 +113,6 @@ export async function analyzeCallTurn(
     const enabled = await isWellbeingEnabled();
     if (!enabled) return null;
 
-    const settings = await StorageService.getSettings();
-    const apiKey = settings?.anthropicApiKey?.trim();
-    if (!apiKey) return null;
-
     const fullText = allUserTexts.join('\n');
     // Don't check on the first turn — too little signal
     if (fullText.trim().split(/\s+/).length < 10) return 1;
@@ -125,9 +121,7 @@ export async function analyzeCallTurn(
       / allUserTexts.length;
     const driftingShort = turnCount >= 3 && avgLength < 6; // very short replies = withdrawal proxy
 
-    const client = new Anthropic({ apiKey });
-
-    const response = await client.messages.create({
+    const response = await claudeProxy.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 60,
       system: `You are assessing emotional distress during a voice journaling call. The text below is everything the person has said so far in the call, in order. Classify the overall distress tier:
@@ -173,10 +167,6 @@ export async function analyzeEntry(
     const enabled = await isWellbeingEnabled();
     if (!enabled) return null;
 
-    const settings = await StorageService.getSettings();
-    const apiKey = settings?.anthropicApiKey?.trim();
-    if (!apiKey) return null;
-
     // ── Build longitudinal context ───────────────────────────────────────────
 
     const [recentEvents, summaryDates] = await Promise.all([
@@ -200,8 +190,6 @@ export async function analyzeEntry(
       recentEvents.filter(e => e.tier >= 2).length >= 2;
 
     // ── Claude classification ────────────────────────────────────────────────
-
-    const client = new Anthropic({ apiKey });
 
     const systemPrompt = `You are a compassionate mental health-aware AI assessing emotional wellbeing in personal journal entries. Your role is to classify — not to treat or respond.
 
@@ -229,7 +217,7 @@ Return ONLY valid JSON — no explanation, no markdown:
       `Current entry to assess:\n"""\n${entry.text.slice(0, 3000)}\n"""`,
     ].join('');
 
-    const response = await client.messages.create({
+    const response = await claudeProxy.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 80,
       system: systemPrompt,

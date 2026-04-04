@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import { StorageService } from './StorageService';
 import {
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis,
@@ -172,8 +172,7 @@ async function buildLongContext(): Promise<{ text: string; dates: string[] }> {
 }
 
 async function callClaude(system: string, user: string, apiKey: string, maxTokens = 1200): Promise<string> {
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-  const res = await client.messages.create({
+  const res = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: maxTokens,
     system,
@@ -230,7 +229,6 @@ Rules:
 
 export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAreAnalysis> {
   const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured.');
   const allDates = await StorageService.getSummaryDates();
   const currentCount = allDates.length;
   if (!forceRefresh) {
@@ -241,7 +239,6 @@ export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAre
   const raw = await callClaude(
     WHO_SYSTEM,
     `Here are my journal entries:\n\n${text}\n\nPlease write my character portrait.`,
-    settings.anthropicApiKey,
     1400,
   );
   let parsed: any;
@@ -298,7 +295,6 @@ Rules:
 
 export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYouCareAboutAnalysis> {
   const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured.');
   const allDates = await StorageService.getSummaryDates();
   const currentCount = allDates.length;
   if (!forceRefresh) {
@@ -309,7 +305,6 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
   const raw = await callClaude(
     VALUES_SYSTEM,
     `Here are my journal entries:\n\n${text}\n\nPlease map what I actually care about.`,
-    settings.anthropicApiKey,
     1100,
   );
   let parsed: any;
@@ -393,7 +388,6 @@ Rules:
 
 export async function generateHowYouThink(forceRefresh = false): Promise<HowYouThinkAnalysis> {
   const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured.');
   const allDates = await StorageService.getSummaryDates();
   const currentCount = allDates.length;
   if (!forceRefresh) {
@@ -404,7 +398,6 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
   const raw = await callClaude(
     THINK_SYSTEM,
     `Here are my journal entries — processed summaries, raw voice notes, and written notes:\n\n${text}\n\nPlease map how I think. Use voice notes for Systems vs Stories and Resolves vs Sits With. Use written notes for Zoomed In vs Out and Internal vs External. Note any meaningful gap between how I think out loud vs how I write.`,
-    settings.anthropicApiKey,
     1100,
   );
   let parsed: any;
@@ -462,7 +455,6 @@ Rules:
 
 export async function generateYourStory(forceRefresh = false): Promise<YourStoryAnalysis> {
   const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) throw new Error('Anthropic API key not configured.');
   const allDates = await StorageService.getSummaryDates();
   const currentCount = allDates.length;
   if (!forceRefresh) {
@@ -475,7 +467,6 @@ export async function generateYourStory(forceRefresh = false): Promise<YourStory
   const raw = await callClaude(
     STORY_SYSTEM,
     `Here are my journal entries:\n\n${text}\n\nPlease write my story.`,
-    settings.anthropicApiKey,
     1200,
   );
   let parsed: any;

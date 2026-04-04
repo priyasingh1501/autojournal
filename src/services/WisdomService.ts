@@ -7,7 +7,7 @@
  *   • Journal signal  — extracted post-entry (Phase 2); overrides mood if fresher.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import { WisdomShort, JournalSignal, FeedSelection } from '../types';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
 import { StorageService } from './StorageService';
@@ -326,13 +326,9 @@ export async function extractJournalSignal(
   summaryText: string,
 ): Promise<JournalSignal | null> {
   try {
-    const settings = await StorageService.getSettings();
-    const apiKey = settings?.anthropicApiKey?.trim();
-    if (!apiKey || !summaryText.trim()) return null;
+    if (!summaryText.trim()) return null;
 
-    const client = new Anthropic({ apiKey });
-
-    const response = await client.messages.create({
+    const response = await claudeProxy.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 200,
       system: `Extract a structured signal from this journal summary for content matching.
@@ -373,17 +369,11 @@ export async function generateReflectPrompt(
   journalContext?: string,
 ): Promise<string | null> {
   try {
-    const settings = await StorageService.getSettings();
-    const apiKey = settings?.anthropicApiKey?.trim();
-    if (!apiKey) return null;
-
-    const client = new Anthropic({ apiKey });
-
     const context = journalContext
       ? `\n\nToday's journal context:\n${journalContext.slice(0, 400)}`
       : '';
 
-    const response = await client.messages.create({
+    const response = await claudeProxy.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 60,
       system:

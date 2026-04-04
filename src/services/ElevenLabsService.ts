@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import { synthesizeSpeech as proxySynthesize } from './AIProxy';
 
 const BASE = 'https://api.elevenlabs.io/v1';
 
@@ -26,51 +27,14 @@ export async function fetchElevenLabsVoices(apiKey: string): Promise<ELVoice[]> 
 export async function synthesizeSpeech(
   text: string,
   voiceId: string,
-  apiKey: string,
+  _apiKey: string,  // ignored — key is now server-side
 ): Promise<string> {
-  // mp3_22050_32 → ~4× smaller file than default 44100/128, still clear for voice
-  const res = await fetch(`${BASE}/text-to-speech/${voiceId}?output_format=mp3_22050_32`, {
-    method: 'POST',
-    headers: {
-      'xi-api-key': apiKey,
-      'Content-Type': 'application/json',
-      Accept: 'audio/mpeg',
-    },
-    body: JSON.stringify({
-      text,
-      model_id: 'eleven_flash_v2_5',  // fastest EL model (~3× faster than turbo_v2)
-      voice_settings: {
-        stability: 0.45,
-        similarity_boost: 0.75,
-        style: 0,                      // style processing adds latency; 0 = skip it
-        use_speaker_boost: false,      // extra DSP pass; not needed for conversation
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.text().catch(() => res.status.toString());
-    throw new Error(`ElevenLabs TTS error: ${err}`);
-  }
-
-  // Write audio bytes directly to a temp file via ArrayBuffer (FileReader is browser-only).
-  // We process in 8 KB chunks to avoid a RangeError ("Maximum call stack size exceeded")
-  // that occurs when spreading large typed arrays as individual arguments to String.fromCharCode.
-  const arrayBuffer = await res.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  let binary = '';
-  const CHUNK = 8192;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)));
-  }
-  const base64 = btoa(binary);
-
+  const base64 = await proxySynthesize(voiceId, text);
   const dir = FileSystem.cacheDirectory;
   if (!dir) throw new Error('Cache directory unavailable');
   const uri = `${dir}el_tts_${Date.now()}.mp3`;
   await FileSystem.writeAsStringAsync(uri, base64, {
     encoding: FileSystem.EncodingType.Base64,
   });
-
   return uri;
 }

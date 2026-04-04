@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { claudeProxy } from './AIProxy';
 import { DailySummary, MonthlyInsight } from '../types';
 import { StorageService } from './StorageService';
 // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
@@ -137,11 +137,6 @@ export const NOT_ENOUGH_DATA = 'NOT_ENOUGH_DATA';
 export async function generateMonthlyInsight(
   forceRefresh = false,
 ): Promise<MonthlyInsight> {
-  const settings = await StorageService.getSettings();
-  if (!settings?.anthropicApiKey) {
-    throw new Error('Anthropic API key not configured. Go to Settings.');
-  }
-
   const now = new Date();
   const { monthKey, monthStart, monthEnd, dates, totalDaysInMonth } = getMonthDateRange(now);
 
@@ -158,12 +153,7 @@ export async function generateMonthlyInsight(
   const stats  = await collectMonthStats(dates);
   const prompt = buildPrompt(summaries, monthStart, monthEnd);
 
-  const client = new Anthropic({
-    apiKey: settings.anthropicApiKey,
-    dangerouslyAllowBrowser: true,
-  });
-
-  const response = await client.messages.create({
+  const response = await claudeProxy.messages.create({
     model: 'claude-opus-4-5',
     max_tokens: 2200,
     system: SYSTEM_PROMPT,
