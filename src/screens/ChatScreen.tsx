@@ -135,6 +135,7 @@ export default function ChatScreen({ summary, onClose }: Props) {
     date: new Date().toISOString().split('T')[0],
     summary: 'No journal entries today — open conversation.',
     transcriptCount: 0,
+    createdAt: Date.now(),
   };
   const [messages,         setMessages]  = useState<ConversationMessage[]>([]);
   const [convState,        setConvState] = useState<ConvState>('selecting');

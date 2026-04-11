@@ -184,7 +184,7 @@ async function purchasePro(plan: ProPlan): Promise<boolean> {
 
 async function restorePurchases(): Promise<boolean> {
   try {
-    const customerInfo = await Purchases.restoreProducts();
+    const customerInfo = await Purchases.restorePurchases();
     const active = customerInfo.entitlements.active['pro'] !== undefined;
     await AsyncStorage.setItem(KEYS.IS_SUBSCRIBED, active ? 'true' : 'false');
     return active;

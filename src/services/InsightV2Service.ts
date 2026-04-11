@@ -216,6 +216,20 @@ Then output ONLY raw JSON — no markdown, no code fences, no backticks, no trai
     "coreDesire": "Second person — stated tentatively",
     "growthDirection": "Second person — where your entries suggest you are being pulled"
   },
+  "motivationDrivers": [
+    {
+      "driver": "mastery",
+      "type": "toward",
+      "strength": 82,
+      "observation": "Second person, one sentence — e.g. 'You keep returning to the idea of getting better at things...'"
+    },
+    {
+      "driver": "security",
+      "type": "away",
+      "strength": 70,
+      "observation": "Second person — what they move away from and why it shows up in the entries"
+    }
+  ],
   "sourceEntries": ["YYYY-MM-DD"]
 }
 
@@ -224,6 +238,11 @@ Rules:
 - Direction: compare recent vs earlier entries — "rising", "stable", "falling"
 - Enneagram: hypothesis only — 1 or 2 types, never more
 - narratives must be observations, not textbook definitions
+- motivationDrivers: identify the top 3 "toward" drivers and top 3 "away" drivers (6 total)
+  - driver must be exactly one of: status, security, freedom, love, mastery, control, meaning, pleasure
+  - type: "toward" = what pulls them forward, "away" = what they instinctively avoid or resist
+  - strength: 0–100, how strongly this shows in the entries
+  - observation: specific to what you saw, not generic — second person
 - sourceEntries: list the 3–6 most relevant entry dates
 - No markdown. No code fences. Valid JSON only.`;
 
@@ -251,6 +270,7 @@ export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAre
     bigFive: parsed.bigFive ?? {},
     bigFiveNarratives: parsed.bigFiveNarratives ?? {},
     enneagram: parsed.enneagram ?? { types: [], typeSummaries: {}, coreFear: '', coreDesire: '', growthDirection: '' },
+    motivationDrivers: parsed.motivationDrivers ?? [],
     sourceEntries: parsed.sourceEntries ?? dates.slice(0, 6),
   };
   await StorageService.saveWhoYouAre(result);
@@ -328,22 +348,42 @@ const THINK_SYSTEM = `You are a cognitive analyst reading someone's private jour
 
 You have three types of input:
 - PROCESSED SUMMARIES: cleaned-up, structured — good for frequency of themes over time, not for thinking style
-- VOICE NOTES: unedited, stream-of-consciousness — primary evidence for Systems vs Stories and Resolves vs Sits With. Filler words, false starts, and abandoned sentences are signal, not noise. How do ideas connect? Does the thought land, or spiral?
-- WRITTEN NOTES: typed, more considered — primary evidence for Zoomed In vs Out and Internal vs External. Word choice is intentional. Sentence structure is deliberate. What scope did they choose? Do they reference themselves or look outward?
-
-The contrast between voice and written is itself a cognitive insight. Someone structured in writing but scattered verbally is externalising thought to clarify it. Someone consistent across both modalities is different. Note any gap between the two.
-
-Four dimensions to assess. Each is a spectrum — score 0=fully left pole, 100=fully right pole.
+- VOICE NOTES: unedited, stream-of-consciousness — primary evidence for Systems vs Stories and Resolves vs Sits With. Filler words, false starts, and abandoned sentences are signal, not noise.
+- WRITTEN NOTES: typed, more considered — primary evidence for Zoomed In vs Out and Internal vs External.
 
 Output a framing sentence, then ===JSON===, then only raw JSON:
 {
+  "decisionStyle": {
+    "primaryStyle": "short label e.g. 'Analytical deliberator' or 'Intuition-first' or 'Consensus seeker'",
+    "description": "Second person, 2 sentences — how this person actually makes decisions based on evidence in entries",
+    "patterns": [
+      "Second person pattern — e.g. 'You tend to gather more information than you need before deciding'",
+      "Second person pattern — e.g. 'Once you decide, you rarely revisit it'"
+    ]
+  },
+  "biasPatterns": [
+    {
+      "name": "Bias name — e.g. 'Sunk cost thinking' or 'Optimism bias' or 'Analysis paralysis'",
+      "observation": "Second person, one sentence — specific to what you saw",
+      "frequency": "frequent"
+    }
+  ],
+  "executionPatterns": {
+    "startsFinishesRatio": 35,
+    "consistencyScore": 60,
+    "planningActionScore": 72,
+    "observations": [
+      "Second person — e.g. 'You start more than you finish — there are several threads in your entries that quietly dropped off'",
+      "Second person — e.g. 'You work in bursts rather than steady rhythms'"
+    ]
+  },
   "dimensions": [
     {
       "name": "Systems vs. Stories",
       "leftLabel": "Systems",
       "rightLabel": "Stories",
       "score": 35,
-      "observation": "Second person, one sentence — e.g. 'You reach for frameworks first...' — specific to what you saw in the entries, not a generic definition.",
+      "observation": "Second person, one sentence — specific to what you saw in the entries",
       "sourceEntries": ["YYYY-MM-DD"]
     },
     {
@@ -370,18 +410,26 @@ Output a framing sentence, then ===JSON===, then only raw JSON:
       "observation": "One sentence — specific to this person",
       "sourceEntries": ["YYYY-MM-DD"]
     }
+  ],
+  "repeatingLoops": [
+    {
+      "name": "Loop name — e.g. 'Procrastination cycle' or 'Burnout cycle' or 'Comparison spiral'",
+      "description": "Second person, 1–2 sentences — what the loop looks like",
+      "triggerPattern": "Second person — what tends to start it e.g. 'Usually starts when you take on more than feels comfortable'"
+    }
   ]
 }
 
-Dimension meanings:
-- Systems vs Stories: do they explain through structure/frameworks (left) or narrative/metaphor (right)?
-- Zoomed In vs Out: detail-focused (left) or altitude/big-picture (right)?
-- Resolves vs Sits With: closes loops, seeks answers (left) or stays in questions, tolerates ambiguity (right)?
-- Internal vs External: trusts own read, self-referential (left) or looks for external signals, others' opinions (right)?
-
 Rules:
-- observations must be specific to THIS person's entries, not generic definitions of the pole
-- include 1–3 sourceEntries per dimension (the entries that most clearly showed this)
+- decisionStyle: primaryStyle is a short descriptive label, not a framework name
+- biasPatterns: 2–4 patterns max. frequency must be exactly one of: "occasional", "frequent", "dominant"
+- executionPatterns scores are 0–100:
+  - startsFinishesRatio: 0=starts everything, finishes nothing; 100=always follows through
+  - consistencyScore: 0=pure bursts; 100=perfectly consistent
+  - planningActionScore: 0=pure action bias; 100=pure planning bias
+  - observations: 1–3 sentences, second person, specific
+- dimensions: observations must be specific to THIS person's entries, not generic definitions. Include 1–3 sourceEntries per dimension.
+- repeatingLoops: 1–3 loops max. Only include if genuinely visible in the entries. Leave empty array if not present.
 - No markdown. No code fences. Valid JSON only.`;
 
 export async function generateHowYouThink(forceRefresh = false): Promise<HowYouThinkAnalysis> {
@@ -404,7 +452,11 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
   const result: HowYouThinkAnalysis = {
     generatedAt: Date.now(),
     entryCountAtGeneration: currentCount,
-    dimensions: parsed.dimensions ?? [],
+    decisionStyle:     parsed.decisionStyle     ?? undefined,
+    biasPatterns:      parsed.biasPatterns      ?? [],
+    executionPatterns: parsed.executionPatterns ?? undefined,
+    dimensions:        parsed.dimensions        ?? [],
+    repeatingLoops:    parsed.repeatingLoops    ?? [],
   };
   await StorageService.saveHowYouThink(result);
   return result;
@@ -414,38 +466,63 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
 
 const STORY_SYSTEM = `You are a narrative analyst reading someone's private journal entries across time.
 
-Your task: identify the story arc of the writer's life right now. Write everything in SECOND PERSON addressing the writer directly ("you", "your") — as if a trusted witness is describing the writer's life back to them. The chapter narrative should feel immediate and specific, not like third-person analysis.
+Your task: identify the story arc of the writer's life right now. Write everything in SECOND PERSON addressing the writer directly ("you", "your") — as if a trusted witness is describing the writer's life back to them.
 
 Output a framing sentence, then ===JSON===, then only raw JSON:
 {
+  "selfLabels": [
+    {
+      "label": "I am always the one who holds it together",
+      "frequency": 6,
+      "valence": "negative"
+    }
+  ],
   "currentChapter": {
-    "title": "2–3 word chapter title — evocative, like a book chapter name. e.g. 'The Clearing', 'Building the Frame', 'After the Storm'",
+    "title": "2–3 word chapter title — evocative. e.g. 'The Clearing', 'Building the Frame', 'After the Storm'",
     "dateRange": "Month Year – present, or Month–Month Year",
-    "narrative": "2–3 sentences in SECOND PERSON, present tense — direct and specific. e.g. 'Something has been set down. Not resolved — set down. You are moving through a quieter kind of change...'"
+    "narrative": "2–3 sentences in SECOND PERSON, present tense — direct and specific."
   },
   "recurringCast": [
     {
-      "archetype": "Second person — e.g. 'A relationship where you hold back' or 'A version of yourself you are grieving' or 'A project that carries more weight than it should'",
-      "frequency": 7
+      "archetype": "Second person — e.g. 'A relationship where you hold back'",
+      "frequency": 7,
+      "interactionStyle": "Second person — e.g. 'You tend to over-explain yourself to this person, as if preparing a defence'",
+      "conflictStyle": "Second person — e.g. 'When tension rises, you go quiet and withdraw rather than naming what's happening'"
+    }
+  ],
+  "narrativePatterns": [
+    {
+      "pattern": "Short label — e.g. 'Victim of circumstance' or 'The reluctant hero' or 'Waiting to be ready'",
+      "observation": "Second person, one sentence — specific to what you saw in the entries"
+    }
+  ],
+  "internalContradictions": [
+    {
+      "statement1": "Something the writer says or believes about themselves",
+      "statement2": "A contradicting pattern their entries actually show",
+      "tension": "One sentence describing the tension between the two"
     }
   ],
   "arcPattern": {
     "type": "Seeker",
-    "description": "Second person, 2–3 sentences — e.g. 'You make meaning through inquiry. You are at home in questions...'"
+    "description": "Second person, 2–3 sentences"
   },
   "sourceEntries": ["YYYY-MM-DD"]
 }
 
 Arc types (pick exactly one):
-- Seeker: makes meaning through inquiry, at home in questions, journey is toward better questions not answers
-- Builder: makes meaning through creation and accumulation, measures progress through what is constructed
-- Witness: makes meaning through presence and observation, value is in seeing clearly, not necessarily changing
-- Transformer: makes meaning through change and shedding, identity is defined by what has been left behind
-- Returner: makes meaning through cycles and return, wisdom lives in what keeps coming back
+- Seeker: makes meaning through inquiry, at home in questions
+- Builder: makes meaning through creation and accumulation
+- Witness: makes meaning through presence and observation
+- Transformer: makes meaning through change and shedding
+- Returner: makes meaning through cycles and return
 
 Rules:
+- selfLabels: 3–6 recurring "I am…" or "I always…" identity statements implied by the entries. Not direct quotes — inferred from patterns. valence must be "positive", "negative", or "neutral".
 - currentChapter narrative: write it, don't describe it. Present tense. Second person.
-- recurringCast: 2–4 figures max. Unnamed. Archetype descriptions should be specific and slightly uncomfortable — real, not flattering.
+- recurringCast: 2–4 figures max. Unnamed. Archetype descriptions should be specific and slightly uncomfortable. interactionStyle and conflictStyle: each one sentence, second person. Only include if clearly visible in entries.
+- narrativePatterns: 1–3 story patterns the writer keeps falling into. Only include if genuinely present.
+- internalContradictions: 1–2 max. Only include when the gap between stated self and actual pattern is clearly visible. Leave empty if not present.
 - arcPattern: must be exactly one of the 5 types above
 - sourceEntries: 3–6 most relevant dates
 - No markdown. No code fences. Valid JSON only.`;
@@ -482,12 +559,20 @@ export async function generateYourStory(forceRefresh = false): Promise<YourStory
   const result: YourStoryAnalysis = {
     generatedAt: Date.now(),
     entryCountAtGeneration: currentCount,
-    currentChapter: parsed.currentChapter ?? { title: '', dateRange: '', narrative: '' },
-    recurringCast: parsed.recurringCast ?? [],
+    selfLabels:             parsed.selfLabels             ?? [],
+    currentChapter:         parsed.currentChapter         ?? { title: '', dateRange: '', narrative: '' },
+    recurringCast:          (parsed.recurringCast ?? []).map((c: any) => ({
+      archetype:         c.archetype         ?? '',
+      frequency:         c.frequency         ?? 1,
+      interactionStyle:  c.interactionStyle  ?? undefined,
+      conflictStyle:     c.conflictStyle     ?? undefined,
+    })),
+    narrativePatterns:      parsed.narrativePatterns      ?? [],
+    internalContradictions: parsed.internalContradictions ?? [],
     arcPattern: {
-      type: newType ?? 'Seeker',
+      type:        newType ?? 'Seeker',
       description: parsed.arcPattern?.description ?? '',
-      history: arcHistory,
+      history:     arcHistory,
     },
     sourceEntries: parsed.sourceEntries ?? dates.slice(0, 6),
   };

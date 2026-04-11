@@ -3,7 +3,7 @@ import { Alert, Linking, PermissionsAndroid, Platform } from 'react-native';
 import { PendingClip } from '../types';
 import { StorageService } from './StorageService';
 
-export type RecordingStatus = 'idle' | 'recording';
+export type RecordingStatus = 'idle' | 'monitoring' | 'recording';
 
 type StatusCallback    = (status: RecordingStatus) => void;
 type PendingClipCallback = (clip: PendingClip) => void;
