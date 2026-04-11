@@ -1,21 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
   Alert,
-  ActivityIndicator,
   Switch,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { StorageService } from '../services/StorageService';
-import { fetchElevenLabsVoices, ELVoice } from '../services/ElevenLabsService';
+import { clearImageCache } from '../services/WisdomImageService';
 import PinSetupModal from '../components/PinSetupModal';
+import { SubscriptionService } from '../services/SubscriptionService';
+import PaywallModal from '../components/PaywallModal';
 import {
   isWellbeingEnabled,
   setWellbeingEnabled as saveWellbeingEnabled,
@@ -33,49 +34,31 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
-  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
-  const [showElevenLabsKey, setShowElevenLabsKey] = useState(false);
-  const [elVoices, setElVoices] = useState<ELVoice[]>([]);
-  const [loadingElVoices, setLoadingElVoices] = useState(false);
-  const [elVoiceError, setElVoiceError] = useState<string | null>(null);
-
   // PIN / App Lock
   const [pinEnabled, setPinEnabled] = useState(false);
   const [showPinSetup, setShowPinSetup] = useState(false);
 
+  // Subscription
+  const [isPro, setIsPro]           = useState(false);
+  const [isTrialing, setIsTrialing] = useState(false);
+  const [trialDays, setTrialDays]   = useState(0);
+  const [showPaywall, setShowPaywall] = useState(false);
+
   // Wellbeing check-ins
   const [wellbeingEnabled, setWellbeingEnabled] = useState(true);
-
-  // Publisher mode
-  const [publisherMode, setPublisherMode] = useState(false);
 
   // Tracker preferences
   const ALL_TRACKERS: ('meals' | 'workout' | 'meditation' | 'spending')[] = ['meals', 'workout', 'meditation', 'spending'];
   const [enabledTrackers, setEnabledTrackers] = useState<Set<string>>(new Set(ALL_TRACKERS));
 
-  // Reload settings every time this screen comes into focus so changes made
-  // in onboarding (or any other entry point) are always reflected here.
   useFocusEffect(useCallback(() => {
     loadSettings();
     StorageService.hasPinSet().then(setPinEnabled);
     isWellbeingEnabled().then(setWellbeingEnabled);
-    StorageService.isPublisherMode().then(setPublisherMode);
+    SubscriptionService.hasPro().then(setIsPro);
+    SubscriptionService.isInTrial().then(setIsTrialing);
+    SubscriptionService.getTrialDaysRemaining().then(setTrialDays);
   }, []));
-
-  const loadElVoices = async (key: string) => {
-    if (!key.trim()) return;
-    setLoadingElVoices(true);
-    setElVoiceError(null);
-    try {
-      const list = await fetchElevenLabsVoices(key.trim());
-      setElVoices(list.sort((a, b) => a.name.localeCompare(b.name)));
-    } catch (e: any) {
-      setElVoiceError(e?.message ?? 'Could not load voices.');
-    } finally {
-      setLoadingElVoices(false);
-    }
-  };
 
   const loadSettings = async () => {
     const s = await StorageService.getSettings();
@@ -90,10 +73,6 @@ export default function SettingsScreen() {
   };
 
   const saveSettings = async () => {
-    if (!settings.openaiApiKey || !settings.anthropicApiKey) {
-      Alert.alert('Missing Keys', 'Please fill in both API keys.');
-      return;
-    }
     const updated = {
       ...settings,
       enabledTrackers: ALL_TRACKERS.filter(t => enabledTrackers.has(t)),
@@ -103,67 +82,60 @@ export default function SettingsScreen() {
     Alert.alert('Saved', 'Settings saved successfully.');
   };
 
-  const toggleTracker = (tracker: 'meals' | 'workout' | 'meditation' | 'spending') => {
-    setEnabledTrackers(prev => {
-      const next = new Set(prev);
-      if (next.has(tracker)) {
-        next.delete(tracker);
-      } else {
-        next.add(tracker);
-      }
-      return next;
-    });
+  const toggleTracker = async (tracker: 'meals' | 'workout' | 'meditation' | 'spending') => {
+    const next = new Set(enabledTrackers);
+    if (next.has(tracker)) {
+      next.delete(tracker);
+    } else {
+      next.add(tracker);
+    }
+    setEnabledTrackers(next);
+    // Auto-save immediately so the change takes effect without tapping Save Settings
+    const updated = { ...settings, enabledTrackers: ALL_TRACKERS.filter(t => next.has(t)) };
+    await StorageService.saveSettings(updated);
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* API Keys */}
+        {/* Subscription */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>API Keys</Text>
-          <Text style={styles.sectionSubtitle}>
-            Required to enable transcription and summaries.
-          </Text>
-
-          <Text style={styles.label}>OpenAI API Key (for Whisper transcription)</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              value={settings.openaiApiKey}
-              onChangeText={(v) => setSettings(prev => ({ ...prev, openaiApiKey: v }))}
-              placeholder="sk-..."
-              placeholderTextColor="rgba(152, 212, 250, 0.40)"
-              secureTextEntry={!showOpenAIKey}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              style={styles.eyeButton}
-              onPress={() => setShowOpenAIKey(!showOpenAIKey)}
-            >
-              <Feather name={showOpenAIKey ? 'eye-off' : 'eye'} size={16} color="rgba(152, 212, 250, 0.65)" />
+          <Text style={styles.sectionTitle}>Plan</Text>
+          {isPro && !isTrialing ? (
+            <View style={styles.subRow}>
+              <View style={styles.proBadge}>
+                <Feather name="zap" size={12} color="rgba(224,242,254,0.90)" />
+                <Text style={styles.proBadgeText}>Pro</Text>
+              </View>
+              <Text style={styles.subStatus}>You have full access to all features.</Text>
+            </View>
+          ) : isTrialing ? (
+            <View style={styles.subRow}>
+              <View style={[styles.proBadge, styles.trialBadge]}>
+                <Text style={styles.proBadgeText}>Trial</Text>
+              </View>
+              <Text style={styles.subStatus}>
+                {trialDays} day{trialDays !== 1 ? 's' : ''} left — free access to everything.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.subRow}>
+              <Text style={styles.subStatus}>Free plan · 3 summaries/week</Text>
+            </View>
+          )}
+          {!isPro || isTrialing ? (
+            <TouchableOpacity style={styles.upgradeBtn} onPress={() => setShowPaywall(true)} activeOpacity={0.85}>
+              <Text style={styles.upgradeBtnText}>Upgrade to Pro</Text>
             </TouchableOpacity>
-          </View>
-
-          <Text style={styles.label}>Anthropic API Key (for Claude summaries)</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              value={settings.anthropicApiKey}
-              onChangeText={(v) => setSettings(prev => ({ ...prev, anthropicApiKey: v }))}
-              placeholder="sk-ant-..."
-              placeholderTextColor="rgba(152, 212, 250, 0.40)"
-              secureTextEntry={!showAnthropicKey}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+          ) : (
             <TouchableOpacity
-              style={styles.eyeButton}
-              onPress={() => setShowAnthropicKey(!showAnthropicKey)}
+              style={styles.manageBtn}
+              onPress={() => Linking.openURL('https://apps.apple.com/account/subscriptions')}
+              activeOpacity={0.8}
             >
-              <Feather name={showAnthropicKey ? 'eye-off' : 'eye'} size={16} color="rgba(152, 212, 250, 0.65)" />
+              <Text style={styles.manageBtnText}>Manage subscription</Text>
             </TouchableOpacity>
-          </View>
+          )}
         </View>
 
         {/* Voice Detection */}
@@ -222,95 +194,6 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             ))}
           </View>
-        </View>
-
-        {/* ElevenLabs — Call voice */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Call Voice · ElevenLabs</Text>
-          <Text style={styles.sectionSubtitle}>
-            Add your ElevenLabs API key for a lifelike voice during Call mode. Leave blank to use the device voice.
-          </Text>
-
-          <Text style={styles.label}>ElevenLabs API Key</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              value={settings.elevenLabsApiKey ?? ''}
-              onChangeText={v => setSettings(prev => ({ ...prev, elevenLabsApiKey: v }))}
-              placeholder="sk_..."
-              placeholderTextColor="rgba(152, 212, 250, 0.40)"
-              secureTextEntry={!showElevenLabsKey}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity style={styles.eyeButton} onPress={() => setShowElevenLabsKey(v => !v)}>
-              <Feather name={showElevenLabsKey ? 'eye-off' : 'eye'} size={16} color="rgba(152, 212, 250, 0.65)" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Manual voice ID entry */}
-          <Text style={styles.label}>Voice ID</Text>
-          <Text style={styles.hint}>
-            Paste an ElevenLabs voice ID directly, or pick one from the list below.
-          </Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              value={settings.elevenLabsVoiceId ?? ''}
-              onChangeText={v => setSettings(prev => ({ ...prev, elevenLabsVoiceId: v }))}
-              placeholder="e.g. EXAVITQu4vr4xnSDxMaL"
-              placeholderTextColor="rgba(152, 212, 250, 0.40)"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            {!!settings.elevenLabsVoiceId && (
-              <TouchableOpacity
-                style={styles.eyeButton}
-                onPress={() => setSettings(prev => ({ ...prev, elevenLabsVoiceId: '' }))}
-              >
-                <Feather name="x" size={15} color="rgba(152, 212, 250, 0.50)" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Load from API */}
-          <TouchableOpacity
-            style={styles.loadVoicesBtn}
-            onPress={() => loadElVoices(settings.elevenLabsApiKey ?? '')}
-            disabled={loadingElVoices || !settings.elevenLabsApiKey?.trim()}
-          >
-            {loadingElVoices
-              ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.80)" />
-              : <Text style={styles.loadVoicesBtnText}>Load voices from API</Text>
-            }
-          </TouchableOpacity>
-
-          {elVoiceError && <Text style={styles.elError}>{elVoiceError}</Text>}
-
-          {elVoices.length > 0 && (
-            <>
-              <Text style={[styles.hint, { marginTop: 10 }]}>Tap a voice to use its ID ↓</Text>
-              {elVoices.map(voice => {
-                const isSelected = settings.elevenLabsVoiceId === voice.voice_id;
-                return (
-                  <TouchableOpacity
-                    key={voice.voice_id}
-                    style={[styles.voiceRow, isSelected && styles.voiceRowSelected]}
-                    onPress={() => setSettings(prev => ({ ...prev, elevenLabsVoiceId: voice.voice_id }))}
-                    activeOpacity={0.75}
-                  >
-                    <View style={styles.voiceInfo}>
-                      <Text style={[styles.voiceName, isSelected && styles.voiceNameSelected]}>{voice.name}</Text>
-                      <Text style={styles.voiceMeta}>{voice.category} · {voice.voice_id}</Text>
-                    </View>
-                    {isSelected && (
-                      <Feather name="check" size={14} color="rgba(152, 212, 250, 0.90)" />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </>
-          )}
         </View>
 
         {/* App Lock */}
@@ -434,51 +317,80 @@ export default function SettingsScreen() {
           ))}
 
           <Text style={styles.hint}>
-            Changes apply after you tap "Save Settings" below.
+            Changes apply immediately.
           </Text>
         </View>
 
-        {/* Publisher Mode */}
+        {/* Storage */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Publisher Mode</Text>
+          <Text style={styles.sectionTitle}>Storage</Text>
           <Text style={styles.sectionSubtitle}>
-            Enable this to add your own Wisdom Shorts to the feed. Custom shorts are
-            visible to all users on this device.
+            Wisdom Short images are generated by AI and cached on-device. They auto-expire after 30 days, but you can clear them manually to free space now.
           </Text>
-
-          <View style={styles.lockRow}>
-            <View style={styles.lockRowLeft}>
-              <Feather name="edit" size={16} color="rgba(152, 212, 250, 0.75)" />
-              <Text style={styles.lockRowLabel}>Publisher mode</Text>
-            </View>
-            <Switch
-              value={publisherMode}
-              onValueChange={async (val) => {
-                await StorageService.setPublisherMode(val);
-                setPublisherMode(val);
-              }}
-              trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
-              thumbColor={publisherMode ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
-            />
-          </View>
-
-          {publisherMode && (
-            <Text style={styles.hint}>
-              A + button will appear on the Wisdom screen. Tap it to add or edit your custom shorts.
-            </Text>
-          )}
+          <TouchableOpacity
+            style={styles.clearCacheBtn}
+            onPress={() => {
+              Alert.alert(
+                'Clear Image Cache',
+                'This will delete all locally cached Wisdom Short images. They will be re-generated when you next view each short.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Clear',
+                    style: 'destructive',
+                    onPress: async () => {
+                      await clearImageCache();
+                      Alert.alert('Done', 'Image cache cleared.');
+                    },
+                  },
+                ],
+              );
+            }}
+          >
+            <Feather name="trash-2" size={14} color="rgba(252,165,165,0.80)" />
+            <Text style={styles.clearCacheText}>Clear wisdom image cache</Text>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
           <Text style={styles.saveButtonText}>Save Settings</Text>
         </TouchableOpacity>
 
+        {/* Legal */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Legal</Text>
+          <TouchableOpacity
+            style={styles.legalRow}
+            onPress={() => Linking.openURL('https://untangle.app/privacy')}
+          >
+            <Feather name="shield" size={15} color="rgba(152, 212, 250, 0.65)" />
+            <Text style={styles.legalLink}>Privacy Policy</Text>
+            <Feather name="external-link" size={13} color="rgba(152, 212, 250, 0.40)" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.legalRow}
+            onPress={() => Linking.openURL('https://untangle.app/terms')}
+          >
+            <Feather name="file-text" size={15} color="rgba(152, 212, 250, 0.65)" />
+            <Text style={styles.legalLink}>Terms of Service</Text>
+            <Feather name="external-link" size={13} color="rgba(152, 212, 250, 0.40)" />
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            API keys are stored locally on your device only.
-          </Text>
+          <Text style={styles.footerText}>untangle v1.3.0</Text>
         </View>
       </ScrollView>
+
+      <PaywallModal
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        onSuccess={() => {
+          setShowPaywall(false);
+          setIsPro(true);
+          setIsTrialing(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -508,6 +420,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontFamily: 'Baskerville',
   },
+  subRow:         { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  subStatus:      { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', flex: 1 },
+  proBadge:       { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(9,41,173,0.60)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: 'rgba(152,212,250,0.30)' },
+  trialBadge:     { backgroundColor: 'rgba(9,41,173,0.30)' },
+  proBadgeText:   { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.90)', letterSpacing: 0.5 },
+  upgradeBtn:     { backgroundColor: 'rgba(9,41,173,0.70)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.35)', paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  upgradeBtnText: { fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.95)' },
+  manageBtn:      { paddingVertical: 8, alignItems: 'flex-start', marginTop: 2 },
+  manageBtnText:  { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)', textDecorationLine: 'underline' },
   sectionSubtitle: {
     fontSize: 13,
     color: 'rgba(152, 212, 250, 0.65)',
@@ -523,26 +444,6 @@ const styles = StyleSheet.create({
     fontFamily: 'GillSans-Light',
   },
   hint: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', marginBottom: 10, fontFamily: 'GillSans-Light' },
-
-  // ── Input rows ─────────────────────────────────────────────────────────────
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(1, 8, 18, 0.8)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.13)',
-    paddingRight: 12,
-  },
-  input: {
-    flex: 1,
-    color: 'rgba(224, 242, 254, 0.95)',
-    fontSize: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontFamily: 'GillSans-Light',
-  },
-  eyeButton: { padding: 4 },
 
   // ── Threshold buttons ──────────────────────────────────────────────────────
   thresholdButtons: {
@@ -567,62 +468,6 @@ const styles = StyleSheet.create({
   thresholdButtonText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
   thresholdButtonTextSelected: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '500' },
 
-  // ── Voice picker ───────────────────────────────────────────────────────────
-  voiceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    marginTop: 6,
-    backgroundColor: 'rgba(9, 41, 173, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.10)',
-  },
-  voiceRowSelected: {
-    backgroundColor: 'rgba(9, 41, 173, 0.20)',
-    borderColor: 'rgba(152, 212, 250, 0.40)',
-  },
-  voiceInfo: { flex: 1 },
-  voiceName: {
-    fontSize: 14,
-    color: 'rgba(224, 242, 254, 0.75)',
-    fontFamily: 'GillSans-Light',
-  },
-  voiceNameSelected: {
-    color: 'rgba(224, 242, 254, 0.95)',
-  },
-  voiceMeta: {
-    fontSize: 11,
-    color: 'rgba(152, 212, 250, 0.50)',
-    fontFamily: 'GillSans-Light',
-    marginTop: 2,
-  },
-  previewBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(152, 212, 250, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // ── ElevenLabs ─────────────────────────────────────────────────────────────
-  loadVoicesBtn: {
-    marginTop: 12,
-    paddingVertical: 9,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(9, 41, 173, 0.12)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.22)',
-    alignSelf: 'flex-start',
-    alignItems: 'center',
-    minWidth: 110,
-  },
-  loadVoicesBtnText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 13, fontFamily: 'GillSans-Light' },
-  elError: { fontSize: 12, color: '#e63946', marginTop: 8, fontFamily: 'GillSans-Light' },
-
   // ── Save button ────────────────────────────────────────────────────────────
   saveButton: {
     backgroundColor: 'rgba(9, 41, 173, 0.22)',
@@ -639,6 +484,20 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   saveButtonText: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 17, fontWeight: '500', fontFamily: 'GillSans-Light' },
+
+  clearCacheBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(252,165,165,0.25)',
+    backgroundColor: 'rgba(252,165,165,0.05)',
+  },
+  clearCacheText: { fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(252,165,165,0.80)' },
 
   // ── App Lock ───────────────────────────────────────────────────────────────
   lockRow: {
@@ -673,6 +532,20 @@ const styles = StyleSheet.create({
   },
   changePinText: {
     fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152, 212, 250, 0.80)',
+  },
+
+  // ── Legal ──────────────────────────────────────────────────────────────────
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+  },
+  legalLink: {
+    flex: 1,
+    fontSize: 14,
     fontFamily: 'GillSans-Light',
     color: 'rgba(152, 212, 250, 0.80)',
   },

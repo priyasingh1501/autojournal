@@ -47,6 +47,34 @@ export interface ReentryPending {
 const ENABLED_KEY  = 'wellbeing_enabled';
 const EVENTS_KEY   = 'wellbeing_events';
 const REENTRY_KEY  = 'wellbeing_reentry';
+const LOG_KEY      = 'wellbeing_log';
+
+// ── Logging ────────────────────────────────────────────────────────────────────
+
+export interface WellbeingLogEntry {
+  timestamp: number;
+  date: string;
+  tier: DistressTier;
+  score: number;
+  source: 'entry' | 'call';
+  transcriptId?: string;
+  tier3Confirmed?: boolean; // Sonnet agreed with Haiku's Tier 3 call
+}
+
+async function appendLog(entry: WellbeingLogEntry): Promise<void> {
+  try {
+    const json = await AsyncStorage.getItem(LOG_KEY);
+    let log: WellbeingLogEntry[] = json ? JSON.parse(json) : [];
+    log.push(entry);
+    if (log.length > 200) log = log.slice(-200);
+    await AsyncStorage.setItem(LOG_KEY, JSON.stringify(log));
+  } catch { /* never throw from logging */ }
+}
+
+export async function getWellbeingLog(): Promise<WellbeingLogEntry[]> {
+  const json = await AsyncStorage.getItem(LOG_KEY);
+  return json ? JSON.parse(json) : [];
+}
 
 // ── Settings ───────────────────────────────────────────────────────────────────
 
@@ -143,6 +171,15 @@ Return ONLY: {"tier":1} or {"tier":2} or {"tier":3}`,
     if (start === -1 || end === -1) return 1;
     const parsed = JSON.parse(raw.slice(start, end + 1));
     const tier = ([1, 2, 3] as const).includes(parsed.tier) ? parsed.tier as DistressTier : 1;
+
+    appendLog({
+      timestamp: Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      tier,
+      score: 0, // call turns don't return a score
+      source: 'call',
+    });
+
     return tier;
   } catch {
     return null;
@@ -161,8 +198,9 @@ export async function analyzeEntry(
   date: string,
 ): Promise<WellbeingAnalysis | null> {
   try {
-    // ── Guard: disabled or no text ───────────────────────────────────────────
+    // ── Guard: disabled, no text, or too short to classify ──────────────────
     if (!entry.text.trim()) return null;
+    if (entry.text.trim().split(/\s+/).length < 10) return null;
 
     const enabled = await isWellbeingEnabled();
     if (!enabled) return null;
@@ -234,9 +272,45 @@ Return ONLY valid JSON — no explanation, no markdown:
     const score = typeof parsed.score === 'number'
       ? Math.max(0, Math.min(100, Math.round(parsed.score)))
       : 0;
-    const tier: DistressTier = ([1, 2, 3] as const).includes(parsed.tier as DistressTier)
+    let tier: DistressTier = ([1, 2, 3] as const).includes(parsed.tier as DistressTier)
       ? (parsed.tier as DistressTier)
       : 1;
+
+    // ── Tier 3: Sonnet confirmation (prevent false positives on crisis modal) ─
+    let tier3Confirmed: boolean | undefined;
+    if (tier === 3) {
+      try {
+        const confirmResponse = await claudeProxy.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 40,
+          system: `A previous model classified this journal entry as Tier 3 (acute crisis — suicidal/self-harm language or expressions of wanting to permanently disappear). Review it and confirm or downgrade.
+
+• Return {"tier":3} if you also see clear crisis signals. Indirect language like "I've thought about not being here" counts.
+• Return {"tier":2} if the entry is genuinely concerning but not an acute crisis.
+• Return {"tier":1} if the classification seems incorrect.
+
+Return ONLY valid JSON: {"tier":1|2|3}`,
+          messages: [{
+            role: 'user',
+            content: `Entry to review:\n"""\n${entry.text.slice(0, 3000)}\n"""`,
+          }],
+        });
+        const cRaw = confirmResponse.content[0]?.type === 'text'
+          ? confirmResponse.content[0].text.trim() : '';
+        const cStart = cRaw.indexOf('{');
+        const cEnd   = cRaw.lastIndexOf('}');
+        if (cStart !== -1 && cEnd !== -1) {
+          const cParsed = JSON.parse(cRaw.slice(cStart, cEnd + 1));
+          const confirmedTier = ([1, 2, 3] as const).includes(cParsed.tier)
+            ? cParsed.tier as DistressTier : tier;
+          tier3Confirmed = confirmedTier === 3;
+          if (confirmedTier !== 3) {
+            // Sonnet downgraded — trust it
+            tier = confirmedTier;
+          }
+        }
+      } catch { /* confirmation is best-effort — keep original tier */ }
+    }
 
     const analysis: WellbeingAnalysis = { tier, score };
 
@@ -247,6 +321,17 @@ Return ONLY valid JSON — no explanation, no markdown:
       tier,
       score,
       transcriptId: entry.id,
+    });
+
+    // ── Log for observability ────────────────────────────────────────────────
+    appendLog({
+      timestamp: Date.now(),
+      date,
+      tier,
+      score,
+      source: 'entry',
+      transcriptId: entry.id,
+      ...(tier3Confirmed !== undefined ? { tier3Confirmed } : {}),
     });
 
     // ── Queue re-entry check-in for Tier 2+ ─────────────────────────────────

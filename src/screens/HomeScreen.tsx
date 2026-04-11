@@ -12,9 +12,10 @@ import {
   Platform,
   ImageBackground,
   AppState,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { audioRecorderService, RecordingStatus } from '../services/AudioRecorderService';
 import { transcribePendingClips, BatchProgress } from '../services/BatchTranscriptionService';
@@ -31,38 +32,48 @@ import { PendingClip, TranscriptEntry } from '../types';
 import ComposeModal from '../components/ComposeModal';
 import MonthlyInsightCard from '../components/MonthlyInsightCard';
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
+import TalkScreen from './TalkScreen';
+import ChatScreen from './ChatScreen';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
 // import { syncSMSTransactionsToNotes } from '../services/SMSSpendService';
 
 export default function HomeScreen() {
+  const route = useRoute<any>();
   const [status, setStatus] = useState<RecordingStatus>('idle');
   const [pendingClips, setPendingClips] = useState<PendingClip[]>([]);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
   const [showCompose, setShowCompose] = useState(false);
+  const [showCall,    setShowCall]    = useState(false);
+  const [showChat,    setShowChat]    = useState(false);
   const [cardRefreshKey, setCardRefreshKey] = useState(0);
   const isTranscribingRef = React.useRef(false);
+  // Prevents multiple wellbeing alerts firing from a single batch
+  const batchWellbeingFiredRef = React.useRef(false);
   // Holds the pending auto-generate timer so additional notes reset the countdown
   const autoGenerateTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Wellbeing ────────────────────────────────────────────────────────────
   const [wellbeingAlert, setWellbeingAlert] = useState<WellbeingAnalysis | null>(null);
   const [reentryPending, setReentryPending] = useState<ReentryPending | null>(null);
-  const [reentryDismissed, setReentryDismissed] = useState(false);
+  // Ref (not state) so dismissal survives tab-switch re-focus without resetting
+  const reentryDismissedRef = React.useRef(false);
 
   useFocusEffect(
     useCallback(() => {
       loadData();
       syncWidgetMonitoringIntent();
-      // Check for a pending re-entry check-in from a prior Tier 2/3 session
+      // Re-read tracker/settings changes made on the Settings screen
+      setCardRefreshKey(k => k + 1);
+      // Check for a pending re-entry check-in from a prior Tier 2/3 session.
+      // Guard with the ref so re-focusing (tab switch, back nav) doesn't
+      // re-show the card after the user has already dismissed it this session.
       getPendingReentry().then(r => {
-        if (r) {
+        if (r && !reentryDismissedRef.current) {
           const today = new Date().toISOString().split('T')[0];
-          // Only surface if the event was from a previous day (not this session)
           if (r.date < today) {
             setReentryPending(r);
-            setReentryDismissed(false);
           }
         }
       });
@@ -72,6 +83,13 @@ export default function HomeScreen() {
       // }
     }, [])
   );
+
+  // Open compose modal when arriving via the widget "Type a note" deeplink
+  useEffect(() => {
+    if (route.params?.openCompose) {
+      setShowCompose(true);
+    }
+  }, [route.params?.openCompose]);
 
   // Cancel the auto-generate debounce timer when the component unmounts so we
   // don't call setState on an unmounted component or do unnecessary API work.
@@ -112,12 +130,17 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (status === 'recording') {
-      Animated.loop(
+      const anim = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
           Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
         ])
-      ).start();
+      );
+      anim.start();
+      return () => {
+        anim.stop();
+        pulseAnim.setValue(1);
+      };
     } else {
       pulseAnim.setValue(1);
     }
@@ -129,10 +152,14 @@ export default function HomeScreen() {
   };
 
   // ── Wellbeing check ───────────────────────────────────────────────────────
-  const checkWellbeing = async (entry: TranscriptEntry) => {
+  const checkWellbeing = async (entry: TranscriptEntry, batchGuard = false) => {
+    // During batch transcription, stop after the first alert to avoid
+    // re-triggering the modal for every remaining entry in the batch
+    if (batchGuard && batchWellbeingFiredRef.current) return;
     const date = new Date(entry.timestamp).toISOString().split('T')[0];
     const analysis = await analyzeEntry(entry, date);
     if (analysis && analysis.tier >= 2) {
+      if (batchGuard) batchWellbeingFiredRef.current = true;
       setWellbeingAlert(analysis);
     }
   };
@@ -181,13 +208,15 @@ export default function HomeScreen() {
   const handleTranscribeNow = async () => {
     if (isTranscribingRef.current) return;
     isTranscribingRef.current = true;
+    batchWellbeingFiredRef.current = false; // reset per batch
     setBatchProgress({ total: 0, completed: 0, failed: 0 });
     try {
       await transcribePendingClips(
         (progress) => setBatchProgress(progress),
         (entry) => {
           // Entry saved to storage — run wellbeing check fire-and-forget
-          checkWellbeing(entry).catch(() => {});
+          // batchGuard=true so only the first alert fires per batch
+          checkWellbeing(entry, true).catch(() => {});
         },
       );
     } finally {
@@ -198,6 +227,11 @@ export default function HomeScreen() {
       setCardRefreshKey(k => k + 1);
       // After each batch, schedule (or debounce) an auto-generate if no summary yet
       scheduleAutoGenerateIfNeeded();
+      // Re-trigger for any clips that arrived while this batch was running
+      // (new clips fire onPendingClip but are blocked by isTranscribingRef)
+      StorageService.getPendingClips().then(remaining => {
+        if (remaining.length > 0) handleTranscribeNow();
+      }).catch(() => {});
     }
   };
 
@@ -237,17 +271,21 @@ export default function HomeScreen() {
     }
   };
 
-  const getStatusText = () => {
+  const getStatusText = (): string => {
     switch (status) {
-      case 'idle':      return 'Tap to record';
-      case 'recording': return 'Recording — tap to stop';
+      case 'idle':       return 'Tap to record';
+      case 'monitoring': return 'Listening…';
+      case 'recording':  return 'Recording — tap to stop';
+      default:           return '';
     }
   };
 
-  const getStatusColor = () => {
+  const getStatusColor = (): string => {
     switch (status) {
-      case 'idle':      return 'rgba(152, 212, 250, 0.65)';
-      case 'recording': return 'rgba(224, 242, 254, 0.95)';
+      case 'idle':       return 'rgba(152, 212, 250, 0.65)';
+      case 'monitoring': return 'rgba(152, 212, 250, 0.80)';
+      case 'recording':  return 'rgba(224, 242, 254, 0.95)';
+      default:           return 'rgba(152, 212, 250, 0.65)';
     }
   };
 
@@ -263,7 +301,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Re-entry check-in — shown after a Tier 2/3 session from a prior day */}
-        {reentryPending && !reentryDismissed && (
+        {reentryPending && (
           <View style={styles.reentryCard}>
             <View style={styles.reentryRow}>
               <Feather name="heart" size={15} color="rgba(152, 212, 250, 0.70)" />
@@ -275,6 +313,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 style={styles.reentryBtn}
                 onPress={() => {
+                  reentryDismissedRef.current = true;
                   clearPendingReentry();
                   setReentryPending(null);
                   setShowCompose(true);
@@ -285,8 +324,9 @@ export default function HomeScreen() {
               <TouchableOpacity
                 style={styles.reentrySkipBtn}
                 onPress={() => {
+                  reentryDismissedRef.current = true;
                   clearPendingReentry();
-                  setReentryDismissed(true);
+                  setReentryPending(null);
                 }}
               >
                 <Text style={styles.reentrySkipText}>I'm okay today</Text>
@@ -345,14 +385,30 @@ export default function HomeScreen() {
         <MonthlyInsightCard refreshKey={cardRefreshKey} />
       </ScrollView>
 
-      {/* Compose FAB */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setShowCompose(true)}
-        activeOpacity={0.85}
-      >
-        <Feather name="edit-2" size={18} color="rgba(224, 242, 254, 0.8)" />
-      </TouchableOpacity>
+      {/* FAB cluster */}
+      <View style={styles.fabCluster}>
+        <TouchableOpacity
+          style={styles.fabSecondary}
+          onPress={() => setShowCall(true)}
+          activeOpacity={0.85}
+        >
+          <Feather name="phone" size={17} color="rgba(224, 242, 254, 0.75)" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.fabSecondary}
+          onPress={() => setShowChat(true)}
+          activeOpacity={0.85}
+        >
+          <Feather name="message-circle" size={17} color="rgba(224, 242, 254, 0.75)" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => setShowCompose(true)}
+          activeOpacity={0.85}
+        >
+          <Feather name="edit-2" size={18} color="rgba(224, 242, 254, 0.8)" />
+        </TouchableOpacity>
+      </View>
 
       <ComposeModal
         visible={showCompose}
@@ -373,6 +429,30 @@ export default function HomeScreen() {
           onDismiss={() => setWellbeingAlert(null)}
         />
       )}
+
+      {/* Call modal — no day context */}
+      <Modal
+        visible={showCall}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowCall(false)}
+      >
+        {showCall && (
+          <TalkScreen onClose={() => setShowCall(false)} />
+        )}
+      </Modal>
+
+      {/* Chat modal — no day context */}
+      <Modal
+        visible={showChat}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowChat(false)}
+      >
+        {showChat && (
+          <ChatScreen onClose={() => setShowChat(false)} />
+        )}
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -443,7 +523,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(152, 212, 250, 0.22)',
     shadowColor: '#98D4FA',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.28,
     shadowRadius: 28,
     elevation: 10,
   },
@@ -461,15 +541,15 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: 'rgba(152, 212, 250, 0.05)',
+    backgroundColor: 'rgba(152, 212, 250, 0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.20)',
+    borderColor: 'rgba(152, 212, 250, 0.28)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   glowRingActive: {
-    backgroundColor: 'rgba(152, 212, 250, 0.10)',
-    borderColor: 'rgba(152, 212, 250, 0.45)',
+    backgroundColor: 'rgba(152, 212, 250, 0.12)',
+    borderColor: 'rgba(152, 212, 250, 0.55)',
   },
 
   mainButton: {
@@ -549,15 +629,20 @@ const styles = StyleSheet.create({
   scrollArea: { flex: 1 },
   scrollContent: { paddingBottom: 100 },
 
-  // ── FAB ───────────────────────────────────────────────────────────────────
-  fab: {
+  // ── FAB cluster ───────────────────────────────────────────────────────────
+  fabCluster: {
     position: 'absolute',
     bottom: 28,
     right: 24,
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
+  fab: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#0929AD',
+    backgroundColor: 'rgba(9, 41, 173, 0.65)',
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.40)',
     alignItems: 'center',
@@ -565,7 +650,22 @@ const styles = StyleSheet.create({
     elevation: 6,
     shadowColor: '#98D4FA',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.30,
+    shadowOpacity: 0.28,
     shadowRadius: 10,
+  },
+  fabSecondary: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(3, 18, 40, 0.80)',
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#98D4FA',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
 });

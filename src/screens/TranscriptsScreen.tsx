@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   View,
@@ -10,7 +10,6 @@ import {
   Alert,
   ActivityIndicator,
   Image,
-  Animated,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -49,9 +48,6 @@ type JournalItem =
 
 type DaySection = { date: string; title: string; data: JournalItem[] };
 
-// Entry being moved between days
-type MovingEntry = { entry: TranscriptEntry; fromDate: string };
-
 export default function TranscriptsScreen() {
   const [sections, setSections]         = useState<DaySection[]>([]);
   const [search, setSearch]             = useState('');
@@ -59,10 +55,6 @@ export default function TranscriptsScreen() {
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [loading, setLoading]           = useState(false);
   const [editingEntry, setEditingEntry] = useState<(TranscriptEntry & { date: string }) | null>(null);
-
-  // ── Drag-to-move state ─────────────────────────────────────────────────────
-  const [movingEntry, setMovingEntry]   = useState<MovingEntry | null>(null);
-  const liftAnim = useRef(new Animated.Value(0)).current; // 0 = resting, 1 = lifted
 
   useFocusEffect(
     useCallback(() => {
@@ -134,59 +126,6 @@ export default function TranscriptsScreen() {
       }))
       .filter((s) => s.data.length > 0);
   }, [sections, search]);
-
-  // ── Lift animation ─────────────────────────────────────────────────────────
-  const animateLift = (up: boolean) => {
-    Animated.spring(liftAnim, {
-      toValue: up ? 1 : 0,
-      useNativeDriver: true,
-      speed: 30,
-      bounciness: 4,
-    }).start();
-  };
-
-  const startMove = (entry: TranscriptEntry, fromDate: string) => {
-    setMovingEntry({ entry, fromDate });
-    animateLift(true);
-  };
-
-  const cancelMove = () => {
-    animateLift(false);
-    setTimeout(() => setMovingEntry(null), 200);
-  };
-
-  // ── Drop onto a target date section ───────────────────────────────────────
-  const dropOnto = async (toDate: string) => {
-    if (!movingEntry) return;
-    const { entry, fromDate } = movingEntry;
-
-    if (toDate === fromDate) {
-      cancelMove();
-      return;
-    }
-
-    // Animate down first, then do the move
-    animateLift(false);
-    setMovingEntry(null);
-    setLoading(true);
-
-    try {
-      // 1. Remove from old date
-      await StorageService.deleteTranscript(entry.id, fromDate);
-
-      // 2. Re-add with noon timestamp on new date (preserves all other fields)
-      const newTimestamp = new Date(toDate + 'T12:00:00').getTime();
-      const movedEntry: TranscriptEntry = { ...entry, timestamp: newTimestamp };
-      await StorageService.addTranscript(movedEntry);
-
-      await loadAll();
-    } catch {
-      Alert.alert('Error', 'Could not move the note. Please try again.');
-      await loadAll();
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // ── Select mode ────────────────────────────────────────────────────────────
   const toggleSelect = (id: string) => {
@@ -291,7 +230,7 @@ export default function TranscriptsScreen() {
   };
 
   const formatTime = (ts: number) =>
-    new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const ICON_NAME: Record<JournalItem['kind'], string> = {
     transcript: 'mic', manual: 'edit-3', clip: 'music',
@@ -307,32 +246,13 @@ export default function TranscriptsScreen() {
     if (manualCount > 0) parts.push(`${manualCount} manual`);
     if (clipCount   > 0) parts.push(`${clipCount} clip${clipCount !== 1 ? 's' : ''}`);
 
-    const isDroppingHere = !!movingEntry && movingEntry.fromDate !== section.date;
-    const isSource       = !!movingEntry && movingEntry.fromDate === section.date;
-
     return (
-      <TouchableOpacity
-        activeOpacity={isDroppingHere ? 0.6 : 1}
-        onPress={() => isDroppingHere ? dropOnto(section.date) : undefined}
-        style={[
-          styles.sectionHeader,
-          isDroppingHere && styles.sectionHeaderDropTarget,
-          isSource       && styles.sectionHeaderSource,
-        ]}
-      >
+      <View style={styles.sectionHeader}>
         <View style={styles.sectionHeaderLeft}>
           <Text style={styles.sectionTitle}>{section.title}</Text>
-          {isDroppingHere ? (
-            <Text style={styles.dropHereLabel}>
-              <Feather name="corner-down-right" size={11} color="rgba(152, 212, 250, 0.8)" /> Drop here
-            </Text>
-          ) : isSource ? (
-            <Text style={styles.sourceLabel}>Moving from here…</Text>
-          ) : (
-            <Text style={styles.sectionCount}>{parts.join(' · ')}</Text>
-          )}
+          <Text style={styles.sectionCount}>{parts.join(' · ')}</Text>
         </View>
-        {!selectMode && !movingEntry && (
+        {!selectMode && (
           <TouchableOpacity
             onPress={() => handleDeleteDay(section)}
             style={styles.deleteDayBtn}
@@ -340,12 +260,7 @@ export default function TranscriptsScreen() {
             <Text style={styles.deleteDayBtnText}>Delete day</Text>
           </TouchableOpacity>
         )}
-        {movingEntry && (
-          <TouchableOpacity onPress={cancelMove} style={styles.cancelMoveBtn}>
-            <Feather name="x" size={13} color="rgba(152, 212, 250, 0.55)" />
-          </TouchableOpacity>
-        )}
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -356,89 +271,71 @@ export default function TranscriptsScreen() {
     const isClip     = item.kind === 'clip';
     const isManual   = item.kind === 'manual';
     const entry      = item.kind !== 'clip' ? (item.data as TranscriptEntry) : null;
-    const isMoving   = movingEntry?.entry.id === id;
-
-    const cardStyle = [
-      styles.card,
-      isSelected && styles.cardSelected,
-      isMoving   && styles.cardMoving,
-    ];
 
     return (
-      <Animated.View
-        style={[
-          { transform: isMoving ? [{ scale: liftAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.025] }) }] : [] },
-        ]}
+      <TouchableOpacity
+        style={[styles.card, isSelected && styles.cardSelected]}
+        onPress={() => { if (selectMode) toggleSelect(id); }}
+        activeOpacity={selectMode ? 0.6 : 0.92}
       >
-        <TouchableOpacity
-          style={cardStyle}
-          onPress={() => {
-            if (movingEntry) return; // ignore taps on cards while moving
-            if (selectMode) toggleSelect(id);
-          }}
-          onLongPress={() => {
-            if (selectMode || isClip || movingEntry) return;
-            startMove(item.data as TranscriptEntry, item.date);
-          }}
-          delayLongPress={350}
-          activeOpacity={movingEntry ? 1 : (selectMode ? 0.6 : 0.92)}
-        >
-          {selectMode && (
-            <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-              {isSelected && <Feather name="check" size={11} color="rgba(224, 242, 254, 0.95)" />}
-            </View>
-          )}
+        {selectMode && (
+          <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+            {isSelected && <Feather name="check" size={11} color="rgba(224, 242, 254, 0.95)" />}
+          </View>
+        )}
 
-          {/* Drag handle indicator — shown when this card is lifted */}
-          {isMoving && (
-            <View style={styles.dragHandle}>
-              <Feather name="move" size={13} color="rgba(152, 212, 250, 0.8)" />
-            </View>
-          )}
-
-          <View style={styles.cardBody}>
-            <View style={styles.cardHeader}>
-              <View style={styles.cardHeaderLeft}>
-                <Feather name={ICON_NAME[item.kind] as any} size={11} color="rgba(152, 212, 250, 0.65)" />
-                <Text style={styles.cardTime}>{formatTime(item.data.timestamp)}</Text>
-                {!isManual && (
-                  <Text style={styles.cardDuration}> · {item.data.duration.toFixed(1)}s</Text>
-                )}
-              </View>
-              {!selectMode && !movingEntry && (
-                <View style={styles.cardActions}>
-                  {!isClip && (
-                    <TouchableOpacity
-                      onPress={() => setEditingEntry({ ...(item.data as TranscriptEntry), date: item.date })}
-                      style={styles.editBtn}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Feather name="edit-2" size={10} color="rgba(152, 212, 250, 0.85)" />
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    onPress={() => handleDeleteSingle(item)}
-                    style={styles.deleteBtn}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Feather name="x" size={9} color="#e63946" />
-                  </TouchableOpacity>
-                </View>
+        <View style={styles.cardBody}>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardHeaderLeft}>
+              <Feather name={ICON_NAME[item.kind] as any} size={11} color="rgba(152, 212, 250, 0.65)" />
+              <Text style={styles.cardTime}>{formatTime(item.data.timestamp)}</Text>
+              {!isManual && (
+                <Text style={styles.cardDuration}> · {item.data.duration.toFixed(1)}s</Text>
               )}
             </View>
-
-            {isClip && <Text style={styles.clipLabel}>Pending · not yet transcribed</Text>}
-
-            {entry && entry.text.length > 0 && (
-              <HighlightText text={entry.text} query={search} style={styles.cardText} />
-            )}
-
-            {entry?.photoUri && (
-              <Image source={{ uri: entry.photoUri }} style={styles.photoThumb} resizeMode="cover" />
+            {!selectMode && (
+              <View style={styles.cardActions}>
+                {!isClip && (
+                  <TouchableOpacity
+                    onPress={() => setEditingEntry({ ...(item.data as TranscriptEntry), date: item.date })}
+                    style={styles.editBtn}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="edit-2" size={10} color="rgba(152, 212, 250, 0.85)" />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={() => handleDeleteSingle(item)}
+                  style={styles.deleteBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="x" size={9} color="#e63946" />
+                </TouchableOpacity>
+              </View>
             )}
           </View>
-        </TouchableOpacity>
-      </Animated.View>
+
+          {isClip && <Text style={styles.clipLabel}>Pending · not yet transcribed</Text>}
+
+          {entry && entry.text.length > 0 && (
+            <HighlightText text={entry.text} query={search} style={styles.cardText} />
+          )}
+
+          {entry?.emotionTags && entry.emotionTags.length > 0 && (
+            <View style={styles.emotionRow}>
+              {entry.emotionTags.map(tag => (
+                <View key={tag} style={styles.emotionPill}>
+                  <Text style={styles.emotionPillText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {entry?.photoUri && (
+            <Image source={{ uri: entry.photoUri }} style={styles.photoThumb} resizeMode="cover" />
+          )}
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -464,11 +361,7 @@ export default function TranscriptsScreen() {
             </TouchableOpacity>
           )}
         </View>
-        {movingEntry ? (
-          <TouchableOpacity onPress={cancelMove}>
-            <Text style={styles.actionBtn}>Cancel</Text>
-          </TouchableOpacity>
-        ) : selectMode ? (
+        {selectMode ? (
           <TouchableOpacity onPress={exitSelectMode}>
             <Text style={styles.actionBtn}>Cancel</Text>
           </TouchableOpacity>
@@ -478,19 +371,6 @@ export default function TranscriptsScreen() {
           </TouchableOpacity>
         )}
       </View>
-
-      {/* Moving mode banner */}
-      {movingEntry && (
-        <View style={styles.movingBanner}>
-          <Feather name="move" size={13} color="rgba(152, 212, 250, 0.85)" />
-          <Text style={styles.movingBannerText} numberOfLines={1}>
-            Moving note — tap a day header to drop it there
-          </Text>
-          <TouchableOpacity onPress={cancelMove}>
-            <Feather name="x" size={15} color="rgba(152, 212, 250, 0.55)" />
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* Select-mode toolbar */}
       {selectMode && (
@@ -555,18 +435,6 @@ const styles = StyleSheet.create({
   actionBtn: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '500', fontFamily: 'GillSans-Light' },
   disabled: { opacity: 0.35 },
 
-  // ── Moving banner ─────────────────────────────────────────────────────────
-  movingBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 16, paddingVertical: 10,
-    backgroundColor: 'rgba(9, 41, 173, 0.18)',
-    borderBottomWidth: 1, borderBottomColor: 'rgba(152, 212, 250, 0.15)',
-  },
-  movingBannerText: {
-    flex: 1, color: 'rgba(152, 212, 250, 0.85)', fontSize: 13,
-    fontFamily: 'GillSans-Light',
-  },
-
   // ── Select bar ────────────────────────────────────────────────────────────
   selectBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -582,32 +450,18 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     backgroundColor: 'rgba(1, 12, 26, 0.95)',
-    paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8,
+    paddingHorizontal: 16, paddingTop: 24, paddingBottom: 10,
     borderBottomWidth: 1, borderBottomColor: 'rgba(9, 41, 173, 0.08)',
   },
-  sectionHeaderDropTarget: {
-    backgroundColor: 'rgba(9, 41, 173, 0.55)',
-    borderBottomColor: 'rgba(152, 212, 250, 0.70)',
-    borderBottomWidth: 2,
-    borderTopWidth: 2,
-    borderTopColor: 'rgba(152, 212, 250, 0.70)',
-  },
-  sectionHeaderSource: {
-    backgroundColor: 'rgba(3, 18, 40, 0.98)',
-    borderBottomColor: 'rgba(152, 212, 250, 0.10)',
-  },
   sectionHeaderLeft: { flex: 1, minWidth: 0 },
-  sectionTitle: { fontSize: 16, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
-  sectionCount: { fontSize: 12, color: 'rgba(152, 212, 250, 0.60)', marginTop: 2, fontFamily: 'GillSans-Light' },
-  dropHereLabel: { fontSize: 12, color: 'rgba(224, 242, 254, 0.95)', marginTop: 2, fontFamily: 'GillSans-Light', fontWeight: '700', letterSpacing: 0.3 },
-  sourceLabel:   { fontSize: 12, color: 'rgba(152, 212, 250, 0.45)', marginTop: 2, fontFamily: 'GillSans-Light', fontStyle: 'italic' },
+  sectionTitle: { fontSize: 17, fontWeight: '500', color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville' },
+  sectionCount: { fontSize: 12, color: 'rgba(152, 212, 250, 0.55)', marginTop: 3, fontFamily: 'GillSans-Light', letterSpacing: 0.2 },
   deleteDayBtn: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
     backgroundColor: 'rgba(230, 57, 70, 0.18)',
     borderWidth: 1, borderColor: 'rgba(230, 57, 70, 0.35)',
   },
   deleteDayBtnText: { color: '#e63946', fontSize: 12, fontWeight: '500', fontFamily: 'GillSans-Light' },
-  cancelMoveBtn: { padding: 6 },
 
   // ── Cards ─────────────────────────────────────────────────────────────────
   listContent: { paddingBottom: 32 },
@@ -620,23 +474,6 @@ const styles = StyleSheet.create({
   cardSelected: {
     backgroundColor: 'rgba(9, 41, 173, 0.08)',
     borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.30)',
-  },
-  cardMoving: {
-    backgroundColor: 'rgba(9, 41, 173, 0.15)',
-    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.45)',
-    borderRadius: 16,
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  dragHandle: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: 'rgba(152, 212, 250, 0.12)',
-    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.25)',
-    alignItems: 'center', justifyContent: 'center',
-    marginRight: 10, marginTop: 1, flexShrink: 0,
   },
   checkbox: {
     width: 22, height: 22, borderRadius: 11,
@@ -664,7 +501,15 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   clipLabel: { fontSize: 13, color: '#f4a261', fontStyle: 'italic', fontFamily: 'GillSans-Light' },
-  cardText: { fontSize: 14, color: 'rgba(152, 212, 250, 0.65)', lineHeight: 20, fontFamily: 'GillSans-Light' },
+  cardText: { fontSize: 14, color: 'rgba(152, 212, 250, 0.78)', lineHeight: 21, fontFamily: 'GillSans-Light' },
+  emotionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 7 },
+  emotionPill: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(196, 181, 253, 0.10)',
+    borderWidth: 1, borderColor: 'rgba(196, 181, 253, 0.25)',
+  },
+  emotionPillText: { fontSize: 11, color: 'rgba(196, 181, 253, 0.85)', fontFamily: 'GillSans-Light' },
   photoThumb: { width: '100%', height: 160, borderRadius: 8, marginTop: 8 },
   emptyText: {
     color: 'rgba(152, 212, 250, 0.60)', textAlign: 'center',

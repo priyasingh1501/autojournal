@@ -6,14 +6,12 @@ import { NavigationContainer, NavigationContainerRef } from '@react-navigation/n
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import HomeScreen from './src/screens/HomeScreen';
 import TranscriptsScreen from './src/screens/TranscriptsScreen';
 import SummaryScreen from './src/screens/SummaryScreen';
 import InsightsScreen from './src/screens/InsightsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import OnboardingScreen from './src/screens/OnboardingScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
 import WisdomScreen from './src/screens/WisdomScreen';
 import { StorageService } from './src/services/StorageService';
@@ -23,6 +21,18 @@ import {
   checkAndAutoGenerate,
   generateIfNeeded,
 } from './src/services/AutoSummaryService';
+import Purchases, { LOG_LEVEL } from 'react-native-purchases';
+
+try {
+  Purchases.setLogLevel(LOG_LEVEL.DEBUG); // remove before production
+  Purchases.configure({
+    apiKey: Platform.OS === 'ios'
+      ? 'test_foX0GZ0SexqOQDuqHtMzrjCIjyC'
+      : 'sk_OXaoQGNbDRvWqbUVPRdtPQAwAzPAD',
+  });
+} catch (e) {
+  console.warn('[RevenueCat] Not available in this environment (Expo Go):', e);
+}
 
 // Register the widget task handler (Android only).
 // This must be called at the top of App so the background service can invoke
@@ -87,8 +97,8 @@ export default function App() {
   // Track whether the app has finished mounting so we can route deeplinks correctly
   const isReady = useRef(false);
 
-  // null = still checking, false = show onboarding, true = go straight to app
-  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  // null = still checking PIN, true = ready
+  const [ready, setReady] = useState<boolean | null>(null);
 
   // PIN lock: true = show lock screen (PIN set + not yet verified this session)
   const [isLocked, setIsLocked] = useState(false);
@@ -96,33 +106,16 @@ export default function App() {
   // Track previous AppState so we only re-lock on genuine background→foreground transitions
   const appStateRef = useRef(AppState.currentState);
 
-  // Check onboarding state before rendering anything
+  // Check PIN state before rendering
   useEffect(() => {
     (async () => {
       try {
-        // Fast path: already completed onboarding
-        const flag = await AsyncStorage.getItem('onboarding_complete');
-        if (flag === '1') {
-          setOnboardingDone(true);
-          // Check if a PIN has been set — lock immediately on launch
-          const pinSet = await StorageService.hasPinSet();
-          if (pinSet) setIsLocked(true);
-          return;
-        }
-        // Existing-user upgrade path: if API keys are already saved, skip onboarding
-        const settings = await StorageService.getSettings();
-        if (settings?.anthropicApiKey && settings?.openaiApiKey) {
-          await AsyncStorage.setItem('onboarding_complete', '1');
-          setOnboardingDone(true);
-          const pinSet = await StorageService.hasPinSet();
-          if (pinSet) setIsLocked(true);
-          return;
-        }
-        // New user — show onboarding
-        setOnboardingDone(false);
+        const pinSet = await StorageService.hasPinSet();
+        if (pinSet) setIsLocked(true);
       } catch {
-        // Storage error — default to showing the app so we don't brick it
-        setOnboardingDone(true);
+        // ignore
+      } finally {
+        setReady(true);
       }
     })();
   }, []);
@@ -135,14 +128,19 @@ export default function App() {
   // starts / stops monitoring accordingly.
   // ------------------------------------------------------------------
   const handleDeepLink = (url: string) => {
-    if (url.includes('untangle://home') && isReady.current) {
+    if (!isReady.current) return;
+    if (url.includes('untangle://home')) {
       navigationRef.current?.navigate('Journal');
+    }
+    if (url.includes('untangle://compose')) {
+      // Navigate to Journal tab, then open the compose modal via params
+      navigationRef.current?.navigate('Journal', { openCompose: true } as any);
     }
   };
 
-  // Deeplink + notifications + mic permission — only after onboarding is done
+  // Deeplink + notifications + mic permission — only after ready
   useEffect(() => {
-    if (!onboardingDone) return;
+    if (!ready) return;
 
     // Request microphone permission at app startup so the OS dialog appears
     // on first launch rather than only when the user taps the mic button.
@@ -189,14 +187,11 @@ export default function App() {
       }
     });
 
-    // When the 11:59 PM notification is DELIVERED (not tapped), generate the summary.
-    // This fires whether the app is in the foreground or background.
-    const notifReceivedSub = Notifications.addNotificationReceivedListener(notification => {
-      const action = notification.request.content.data?.action;
-      if (action === 'generate-summary') {
-        const today = new Date().toISOString().split('T')[0];
-        generateIfNeeded(today); // fire-and-forget; sends a "ready" notification when done
-      }
+    // Nightly "generate-summary" notification removed — generation now happens on
+    // morning app-open via checkAndAutoGenerate. Listener kept as a no-op stub so
+    // any residual scheduled notifications from older builds don't cause errors.
+    const notifReceivedSub = Notifications.addNotificationReceivedListener(_notification => {
+      // no-op — nightly trigger notification is no longer scheduled
     });
 
     // When the user taps the "summary ready" notification → navigate to Summary tab
@@ -213,27 +208,15 @@ export default function App() {
       notifReceivedSub.remove();
       notifSub.remove();
     };
-  }, [onboardingDone]);
+  }, [ready]);
 
-  // Still determining if onboarding is needed — render a blank splash
-  if (onboardingDone === null) {
+  // Still checking PIN state — render blank splash
+  if (!ready) {
     return (
       <SafeAreaProvider>
         <StatusBar style="light" />
         <View style={{ flex: 1, backgroundColor: '#02060E' }} />
       </SafeAreaProvider>
-    );
-  }
-
-  // New user — show onboarding
-  if (onboardingDone === false) {
-    return (
-      <ErrorBoundary>
-        <SafeAreaProvider>
-          <StatusBar style="light" />
-          <OnboardingScreen onComplete={() => setOnboardingDone(true)} />
-        </SafeAreaProvider>
-      </ErrorBoundary>
     );
   }
 
@@ -260,7 +243,7 @@ export default function App() {
               },
               tabBarActiveTintColor: 'rgba(224, 242, 254, 0.95)',
               tabBarInactiveTintColor: 'rgba(152, 212, 250, 0.55)',
-              tabBarLabelStyle: { fontSize: 10 },
+              tabBarLabelStyle: { fontSize: 11 },
               headerStyle: { backgroundColor: '#02060E', elevation: 0, shadowOpacity: 0 },
               headerTintColor: 'rgba(224, 242, 254, 0.95)',
               headerShadowVisible: false,

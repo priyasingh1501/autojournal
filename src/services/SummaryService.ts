@@ -1,8 +1,9 @@
 import { claudeProxy } from './AIProxy';
 import * as FileSystem from 'expo-file-system/legacy';
-import { TranscriptEntry, DailySummary } from '../types';
+import { TranscriptEntry, DailySummary, DayMacros } from '../types';
 import { StorageService } from './StorageService';
 import { generateSummaryImage } from './SummaryImageService';
+import { extractJournalSignal } from './WisdomService';
 
 const MAX_PHOTOS = 8; // Claude handles up to ~20 but keep cost/latency reasonable
 
@@ -44,7 +45,7 @@ export async function generateDailySummary(
   // Sort chronologically
   const sorted = [...transcripts].sort((a, b) => a.timestamp - b.timestamp);
 
-  // Build the text log — label voice vs manual, placeholder for photo-only
+  // Build the text log — label voice vs manual, add tone tags from emotion detection
   const photoEntries = sorted.filter(t => t.photoUri);
   const hasPhotos = photoEntries.length > 0;
 
@@ -52,8 +53,9 @@ export async function generateDailySummary(
     .map(t => {
       const time = formatTime(t.timestamp);
       const label = t.kind === 'manual' ? '[Note]' : '[Voice]';
+      const tone  = t.emotionTags?.length ? ` [Tone: ${t.emotionTags.join(', ')}]` : '';
       if (t.text.trim()) {
-        return `${label} [${time}] ${t.text.trim()}`;
+        return `${label}${tone} [${time}] ${t.text.trim()}`;
       } else if (t.photoUri) {
         return `[Photo] [${time}] (see attached image)`;
       }
@@ -83,6 +85,7 @@ PART 1 — Categorised daily summary (strict markdown):
 ## Highlights
 
 Under each header, use short bullet points (- item). Be concise.
+Entries may include a [Tone: tag, tag] marker — these are emotional tone signals detected from voice recordings. Factor them into the Emotional check-in and overall interpretation of the entry.
 If an entry mentions a price, amount, or purchase → Spends & Expenses.
 If an entry mentions food, eating, drinking, restaurant → Meals & Food.
 If an entry mentions exercise, gym, steps, sport → Health & Fitness.
@@ -112,10 +115,18 @@ Rules:
 - For Spending: give a short qualitative note — high/low/unusual. Say "No spending logged" if nothing mentioned.
 - For Recurring thoughts: name actual themes or concerns that appear more than once, or say "None that stood out today."
 - For Learnings: note anything the person read, studied, learned at work, a new skill practised, or a meaningful new observation. Say "Nothing specific logged today" if nothing stands out.
-- Write in second person ("You...").`;
+- Write in second person ("You...").
+
+Then output exactly this line on its own:
+===MACROS===
+
+PART 3 — Meal macro estimates (single JSON object, no other text):
+If any food or drink was mentioned today, estimate totals and output ONLY:
+{"calories": <kcal number>, "protein": <grams number>, "carbs": <grams number>, "fat": <grams number>}
+If no meals were mentioned at all, output: null`;
 
   // Build multimodal content
-  const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
+  const content: any[] = [];
 
   content.push({
     type: 'text',
@@ -170,18 +181,45 @@ Rules:
   });
 
   const fullText = response.content
-    .filter(b => b.type === 'text')
-    .map(b => (b as any).text)
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
     .join('');
 
-  const SENTINEL = '===INSIGHTS===';
+  const SENTINEL        = '===INSIGHTS===';
+  const MACROS_SENTINEL = '===MACROS===';
+
   const sentinelIdx = fullText.indexOf(SENTINEL);
+  const macrosIdx   = fullText.indexOf(MACROS_SENTINEL);
+
   const summaryText = sentinelIdx !== -1
     ? fullText.slice(0, sentinelIdx).trim()
     : fullText.trim();
+
+  const insightEnd  = macrosIdx !== -1 ? macrosIdx : fullText.length;
   const insightText = sentinelIdx !== -1
-    ? fullText.slice(sentinelIdx + SENTINEL.length).trim()
+    ? fullText.slice(sentinelIdx + SENTINEL.length, insightEnd).trim()
     : undefined;
+
+  // Parse structured macro estimates from Part 3
+  let dailyMacros: DayMacros | undefined;
+  if (macrosIdx !== -1) {
+    const macrosRaw = fullText.slice(macrosIdx + MACROS_SENTINEL.length).trim();
+    try {
+      const jsonStr = macrosRaw.match(/\{[\s\S]*?\}/)?.[0];
+      if (jsonStr) {
+        const parsed = JSON.parse(jsonStr);
+        if (parsed && typeof parsed === 'object') {
+          dailyMacros = {
+            date,
+            calories: parsed.calories ?? null,
+            protein:  parsed.protein  ?? null,
+            carbs:    parsed.carbs    ?? null,
+            fat:      parsed.fat      ?? null,
+          };
+        }
+      }
+    } catch { /* ignore malformed JSON */ }
+  }
 
   // Collect image result — may already be done since it ran in parallel with Claude
   const imageUri = await imagePromise.catch(() => null);
@@ -193,8 +231,14 @@ Rules:
     transcriptCount: transcripts.length,
     createdAt: Date.now(),
     imageUri: imageUri ?? undefined,
+    dailyMacros,
   };
 
   await StorageService.saveSummary(summary);
+
+  // Extract journal signal for wisdom feed contextualisation — awaited so
+  // the signal is ready before the user navigates to the Wisdom screen.
+  await extractJournalSignal(summaryText).catch(() => {});
+
   return summary;
 }

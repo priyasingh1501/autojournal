@@ -23,7 +23,9 @@ import { renderInsightSections } from '../components/InsightSections';
 import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
 import { generateIfNeeded } from '../services/AutoSummaryService';
-import { DailySummary } from '../types';
+import { SubscriptionService } from '../services/SubscriptionService';
+import PaywallModal from '../components/PaywallModal';
+import { DailySummary, DayMacros, UserGoals } from '../types';
 import TalkScreen from './TalkScreen';
 import ChatScreen from './ChatScreen';
 
@@ -63,6 +65,14 @@ function formatCreatedAt(ts: number) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatShortDate(date: string): string {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
+  if (date === todayStr) return 'Today';
+  if (date === yesterdayStr) return 'Yesterday';
+  return new Date(date + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 function toPlainText(md: string) {
   return md
     .replace(/^##\s+/gm, '')
@@ -75,27 +85,14 @@ function toPlainText(md: string) {
 // ── stale entries banner ──────────────────────────────────────────────────────
 
 function StaleBanner({
-  item,
+  newCount,
   onRegenerate,
   generating,
 }: {
-  item: DailySummary;
+  newCount: number;
   onRegenerate: () => void;
   generating: boolean;
 }) {
-  const [newCount, setNewCount] = useState(0);
-
-  useEffect(() => {
-    StorageService.getTranscriptsForDate(item.date).then(transcripts => {
-      // If createdAt is missing (old summary), fall back to the latest transcript
-      // timestamp so we don't falsely flag all entries as newer
-      const createdAt = item.createdAt
-        ?? Math.max(...transcripts.map(t => t.timestamp), 0);
-      const newer = transcripts.filter(t => t.timestamp > createdAt).length;
-      setNewCount(newer);
-    }).catch(() => {});
-  }, [item.date, item.createdAt]);
-
   if (newCount === 0) return null;
 
   return (
@@ -119,33 +116,42 @@ function StaleBanner({
 const sb = StyleSheet.create({
   wrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingVertical: 9,
-    backgroundColor: 'rgba(9,41,173,0.14)',
-    borderBottomWidth: 1, borderBottomColor: 'rgba(152,212,250,0.10)',
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: 'rgba(9,41,173,0.18)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(152,212,250,0.14)',
   },
   text: {
-    flex: 1, fontSize: 11, fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.65)',
+    flex: 1, fontSize: 12, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.80)',
   },
   btn: {
-    paddingHorizontal: 10, paddingVertical: 4,
-    backgroundColor: 'rgba(9,41,173,0.40)',
+    paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: 'rgba(9,41,173,0.50)',
     borderRadius: 8, borderWidth: 1,
-    borderColor: 'rgba(152,212,250,0.28)',
+    borderColor: 'rgba(152,212,250,0.35)',
   },
-  btnText: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.90)' },
+  btnText: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.90)' },
 });
 
 // ── main component ────────────────────────────────────────────────────────────
 export default function SummaryScreen() {
   const route = useRoute<any>();
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
+  const [staleCounts, setStaleCounts] = useState<Record<string, number>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [generatingDate, setGeneratingDate] = useState<string | null>(null);
   const [callSummary, setCallSummary] = useState<DailySummary | null>(null);
   const [chatSummary, setChatSummary] = useState<DailySummary | null>(null);
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paywallHint, setPaywallHint] = useState<string | undefined>();
+  const pendingCallRef = useRef<DailySummary | null>(null);
+  const pendingChatRef = useRef<DailySummary | null>(null);
+  const pendingGenerateDateRef = useRef<string | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
   const [enabledTrackers, setEnabledTrackers] = useState<Set<string> | null>(null);
+  const [mealMacrosByDate, setMealMacrosByDate] = useState<Record<string, DayMacros>>({});
+  const [goals, setGoals] = useState<UserGoals | null>(null);
+  const [expandedBreakdowns, setExpandedBreakdowns] = useState<Set<string>>(new Set());
 
   const flatListRef = useRef<FlatList<DailySummary>>(null);
   const currentIndexRef = useRef(0);
@@ -174,10 +180,15 @@ export default function SummaryScreen() {
           setEnabledTrackers(null); // null = show all
         }
       }).catch(() => {});
-      // Catch-up generation: generate yesterday's summary if missing, then reload.
+      // Load goals and meal macros from monthly insights
+      StorageService.getGoals().then(g => setGoals(g)).catch(() => {});
+      loadMealMacros().catch(() => {});
+      // Catch-up generation: generate yesterday's summary if missing OR stale, then
+      // reload. regenerate=true means it also picks up entries recorded after an
+      // earlier auto-summary (e.g. notes added after the 5-min auto-generate).
       // Preserve the date the user is currently viewing so the index doesn't jump
       // when the new summary is prepended at position 0.
-      generateIfNeeded(yesterday).then(generated => {
+      generateIfNeeded(yesterday, true).then(generated => {
         if (generated) {
           const viewingDate = summariesRef.current[currentIndexRef.current]?.date;
           loadSummaries().then(() => {
@@ -200,6 +211,31 @@ export default function SummaryScreen() {
     const clamped = valid.length === 0 ? 0 : Math.min(currentIndexRef.current, valid.length - 1);
     currentIndexRef.current = clamped;
     setCurrentIndex(clamped);
+
+    // Compute stale counts fresh on every load so the banner reflects current state
+    // regardless of whether the summary object has changed since last render.
+    const counts: Record<string, number> = {};
+    await Promise.all(valid.map(async (s) => {
+      const transcripts = await StorageService.getTranscriptsForDate(s.date);
+      const createdAt = s.createdAt ?? Math.max(...transcripts.map(t => t.timestamp), 0);
+      const newer = transcripts.filter(t => t.timestamp > createdAt).length;
+      if (newer > 0) counts[s.date] = newer;
+    }));
+    setStaleCounts(counts);
+  };
+
+  // Build a date→DayMacros lookup from stored monthly insights
+  const loadMealMacros = async () => {
+    const dates = await StorageService.getSummaryDates();
+    const monthKeys = [...new Set(dates.map(d => d.slice(0, 7)))];
+    const lookup: Record<string, DayMacros> = {};
+    await Promise.all(monthKeys.map(async mk => {
+      const insight = await StorageService.getMonthlyInsight(mk);
+      insight?.weeklyData?.mealMacrosByDay?.forEach(m => {
+        lookup[m.date] = m;
+      });
+    }));
+    setMealMacrosByDate(lookup);
   };
 
   const scrollToIndex = (idx: number, animated = true) => {
@@ -212,7 +248,10 @@ export default function SummaryScreen() {
   };
 
   // ── generate / download ──────────────────────────────────────────────────
-  const today = new Date().toISOString().split('T')[0];
+  // Recompute on every render so it stays correct after midnight without needing
+  // a timer. useMemo with no deps gives a stable value per mount but refreshes
+  // on the next focus (useFocusEffect re-renders the component).
+  const today = React.useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const handleGenerate = useCallback(async (date: string) => {
     // Use a ref guard (not state) so this callback stays stable and renderItem
@@ -236,6 +275,8 @@ export default function SummaryScreen() {
         if (newIdx !== -1) setTimeout(() => scrollToIndex(newIdx), 50);
         return next;
       });
+      // Refresh meal macros in case monthly insight was updated alongside
+      loadMealMacros().catch(() => {});
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Something went wrong. Please try again.');
     } finally {
@@ -243,6 +284,44 @@ export default function SummaryScreen() {
       setGeneratingDate(null);
     }
   }, []);
+
+  // Soft gate: 3 summaries/week free, paywall on 4th+. On success, retry the pending date.
+  const gatedHandleGenerate = async (date: string) => {
+    const allowed = await SubscriptionService.canGenerateSummary();
+    if (!allowed) {
+      pendingGenerateDateRef.current = date;
+      setPaywallHint(`You've used your ${SubscriptionService.FREE_SUMMARIES_PER_WEEK} free summaries this week. Upgrade to generate unlimited summaries.`);
+      setShowPaywall(true);
+      return;
+    }
+    await SubscriptionService.recordSummaryGenerated();
+    handleGenerate(date);
+  };
+
+  // Conversation gates — first session (Call or Chat) is free; subsequent sessions require Pro.
+  const handleCallPress = async (item: DailySummary) => {
+    const allowed = await SubscriptionService.canUseConversation();
+    if (!allowed) {
+      pendingCallRef.current = item;
+      setPaywallHint('Unlimited AI Call & Chat conversations are a Pro feature.');
+      setShowPaywall(true);
+      return;
+    }
+    await SubscriptionService.recordConversationUsed();
+    setCallSummary(item);
+  };
+
+  const handleChatPress = async (item: DailySummary) => {
+    const allowed = await SubscriptionService.canUseConversation();
+    if (!allowed) {
+      pendingChatRef.current = item;
+      setPaywallHint('Unlimited AI Call & Chat conversations are a Pro feature.');
+      setShowPaywall(true);
+      return;
+    }
+    await SubscriptionService.recordConversationUsed();
+    setChatSummary(item);
+  };
 
   const handleDownload = async (item: DailySummary) => {
     try {
@@ -308,7 +387,7 @@ export default function SummaryScreen() {
                 <Feather name="download" size={13} color="rgba(152, 212, 250, 0.85)" />
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => handleGenerate(item.date)}
+                onPress={() => gatedHandleGenerate(item.date)}
                 disabled={!!generatingDate}
                 style={styles.actionBtn}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -338,7 +417,7 @@ export default function SummaryScreen() {
               <Feather name="download" size={13} color="rgba(152, 212, 250, 0.85)" />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => handleGenerate(item.date)}
+              onPress={() => gatedHandleGenerate(item.date)}
               disabled={!!generatingDate}
               style={styles.actionBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -352,8 +431,8 @@ export default function SummaryScreen() {
       )}
 
       <StaleBanner
-        item={item}
-        onRegenerate={() => handleGenerate(item.date)}
+        newCount={staleCounts[item.date] ?? 0}
+        onRegenerate={() => gatedHandleGenerate(item.date)}
         generating={generatingDate === item.date}
       />
 
@@ -363,29 +442,61 @@ export default function SummaryScreen() {
         showsVerticalScrollIndicator={false}
         directionalLockEnabled={true}
       >
-        {item.insightText ? (
-          <View style={styles.insightSection}>
-            {renderInsightSections(item.insightText, enabledTrackers)}
+        {/* Reflection — elevated to top since it's the most personal content */}
+        {item.reflectionText ? (
+          <View style={styles.reflectionBlock}>
+            <Text style={styles.reflectionText}>"{item.reflectionText}"</Text>
           </View>
         ) : null}
 
-        {item.reflectionText ? (
-          <>
-            <View style={styles.divider} />
-            <Text style={styles.breakdownLabel}>REFLECTION</Text>
-            <Text style={styles.reflectionText}>{item.reflectionText}</Text>
-          </>
-        ) : null}
+        {/* Insight sections */}
+        {item.insightText ? (
+          <View style={[styles.insightSection, item.reflectionText ? { marginTop: 10 } : null]}>
+            {renderInsightSections(
+              item.insightText,
+              enabledTrackers,
+              item.dailyMacros ?? mealMacrosByDate[item.date],
+              goals,
+              !!item.dailyMacros,
+            )}
+          </View>
+        ) : (
+          // Legacy summary — generated before section views existed
+          <View style={styles.legacyNudge}>
+            <Feather name="refresh-cw" size={12} color="rgba(152,212,250,0.45)" />
+            <Text style={styles.legacyNudgeText}>
+              Regenerate to see section breakdown
+            </Text>
+          </View>
+        )}
 
+        {/* Full breakdown — collapsed by default */}
         <View style={styles.divider} />
-        <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
-        <Markdown style={markdownStyles}>{item.summary}</Markdown>
+        <TouchableOpacity
+          style={styles.breakdownToggleRow}
+          onPress={() => setExpandedBreakdowns(prev => {
+            const next = new Set(prev);
+            next.has(item.date) ? next.delete(item.date) : next.add(item.date);
+            return next;
+          })}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
+          <Feather
+            name={expandedBreakdowns.has(item.date) ? 'chevron-up' : 'chevron-down'}
+            size={13}
+            color="rgba(152,212,250,0.50)"
+          />
+        </TouchableOpacity>
+        {expandedBreakdowns.has(item.date) && (
+          <Markdown style={markdownStyles}>{item.summary}</Markdown>
+        )}
       </ScrollView>
 
       <View style={styles.ctaRow}>
         <TouchableOpacity
           style={[styles.ctaBtn, styles.ctaBtnCall]}
-          onPress={() => setCallSummary(item)}
+          onPress={() => handleCallPress(item)}
           activeOpacity={0.85}
         >
           <Feather name="phone" size={15} color="rgba(224, 242, 254, 0.95)" />
@@ -394,7 +505,7 @@ export default function SummaryScreen() {
         <View style={styles.ctaDivider} />
         <TouchableOpacity
           style={[styles.ctaBtn, styles.ctaBtnChat]}
-          onPress={() => setChatSummary(item)}
+          onPress={() => handleChatPress(item)}
           activeOpacity={0.85}
         >
           <Feather name="message-circle" size={15} color="rgba(224, 242, 254, 0.95)" />
@@ -411,10 +522,16 @@ export default function SummaryScreen() {
         {renderCardContent(item)}
       </View>
     </View>
-  ), [containerHeight, generatingDate, handleGenerate]);
+  ), [containerHeight, generatingDate, handleGenerate, staleCounts, mealMacrosByDate, goals, enabledTrackers, expandedBreakdowns]);
 
   const todaySummary = summaries.find(s => s.date === today);
   const isGeneratingToday = generatingDate === today;
+  const currentSummary = summaries[currentIndex];
+  const isViewingToday = currentSummary?.date === today;
+  const currentIsStale = currentSummary ? (staleCounts[currentSummary.date] ?? 0) > 0 : false;
+  // Hide top-bar Regenerate when viewing today's stale card — stale banner is the CTA
+  const showTopBarGenerate = !(isViewingToday && currentIsStale);
+  const todayIdx = summaries.findIndex(s => s.date === today);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -423,20 +540,34 @@ export default function SummaryScreen() {
         <Text style={styles.screenTitle}>Summaries</Text>
         <View style={styles.topBarRight}>
           {summaries.length > 0 && (
-            <Text style={styles.counter}>{currentIndex + 1} / {summaries.length}</Text>
+            <TouchableOpacity
+              onPress={() => todayIdx !== -1 && todayIdx !== currentIndex && scrollToIndex(todayIdx)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.counter}>
+                {isViewingToday ? '● ' : ''}{currentIndex + 1} / {summaries.length}
+              </Text>
+            </TouchableOpacity>
           )}
-          <TouchableOpacity
-            onPress={() => handleGenerate(today)}
-            disabled={isGeneratingToday}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            {isGeneratingToday
-              ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.70)" />
-              : <Text style={styles.generateLink}>
-                  {todaySummary ? 'Regenerate' : '+ Generate'}
-                </Text>
-            }
-          </TouchableOpacity>
+          {showTopBarGenerate && (
+            <TouchableOpacity
+              onPress={() => gatedHandleGenerate(today)}
+              disabled={isGeneratingToday}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              {isGeneratingToday
+                ? <ActivityIndicator size="small" color="rgba(152, 212, 250, 0.70)" />
+                : <View style={styles.generateWrapper}>
+                    <Text style={styles.generateLink}>
+                      {todaySummary ? 'Regenerate' : '+ Generate'}
+                    </Text>
+                    {!todaySummary && (
+                      <Text style={styles.autoHint}>auto-generates tonight</Text>
+                    )}
+                  </View>
+              }
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -490,18 +621,20 @@ export default function SummaryScreen() {
               style={styles.navBtn}
               onPress={() => scrollToIndex(currentIndex - 1)}
             >
-              <Text style={styles.navBtnText}>← Newer</Text>
+              <Feather name="chevron-left" size={14} color="rgba(152, 212, 250, 0.85)" />
+              <Text style={styles.navBtnText}>{formatShortDate(summaries[currentIndex - 1].date)}</Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.navPlaceholder} />
           )}
-          <Text style={styles.swipeHint}>swipe to go back in time</Text>
+          <Text style={styles.swipeHint}>swipe to navigate</Text>
           {currentIndex < summaries.length - 1 ? (
             <TouchableOpacity
               style={styles.navBtn}
               onPress={() => scrollToIndex(currentIndex + 1)}
             >
-              <Text style={styles.navBtnText}>Older →</Text>
+              <Text style={styles.navBtnText}>{formatShortDate(summaries[currentIndex + 1].date)}</Text>
+              <Feather name="chevron-right" size={14} color="rgba(152, 212, 250, 0.85)" />
             </TouchableOpacity>
           ) : (
             <View style={styles.navPlaceholder} />
@@ -538,6 +671,33 @@ export default function SummaryScreen() {
           />
         )}
       </Modal>
+
+      <PaywallModal
+        visible={showPaywall}
+        featureHint={paywallHint}
+        onClose={() => {
+          setShowPaywall(false);
+          pendingGenerateDateRef.current = null;
+          pendingCallRef.current = null;
+          pendingChatRef.current = null;
+        }}
+        onSuccess={() => {
+          setShowPaywall(false);
+          if (pendingGenerateDateRef.current) {
+            const d = pendingGenerateDateRef.current;
+            pendingGenerateDateRef.current = null;
+            handleGenerate(d);
+          } else if (pendingCallRef.current) {
+            const s = pendingCallRef.current;
+            pendingCallRef.current = null;
+            setCallSummary(s);
+          } else if (pendingChatRef.current) {
+            const s = pendingChatRef.current;
+            pendingChatRef.current = null;
+            setChatSummary(s);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -577,7 +737,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#02060E',
     borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.13)',
+    borderColor: 'rgba(152, 212, 250, 0.15)',
+    shadowColor: '#98D4FA',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 18,
+    elevation: 4,
   },
 
   // ── Empty state ───────────────────────────────────────────────────────────
@@ -635,15 +800,38 @@ const styles = StyleSheet.create({
     height: 1, backgroundColor: 'rgba(9, 41, 173, 0.08)',
     marginBottom: 12, marginTop: 4,
   },
+  breakdownToggleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 12, marginHorizontal: -18, paddingHorizontal: 18,
+  },
   breakdownLabel: {
     fontSize: 10, fontWeight: '500',
     color: 'rgba(152, 212, 250, 0.60)', letterSpacing: 0.8,
-    marginBottom: 8, fontFamily: 'GillSans-Light',
+    fontFamily: 'GillSans-Light',
+  },
+  reflectionBlock: {
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(152,212,250,0.25)',
+    paddingLeft: 14,
+    marginBottom: 4,
   },
   reflectionText: {
     fontSize: 14, lineHeight: 22,
-    color: 'rgba(224, 242, 254, 0.75)',
-    fontFamily: 'Baskerville', fontStyle: 'italic', marginBottom: 4,
+    color: 'rgba(224, 242, 254, 0.80)',
+    fontFamily: 'Baskerville', fontStyle: 'italic',
+  },
+  legacyNudge: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 12, paddingHorizontal: 4,
+  },
+  legacyNudgeText: {
+    fontSize: 13, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.50)', fontStyle: 'italic',
+  },
+  generateWrapper: { alignItems: 'flex-end', gap: 2 },
+  autoHint: {
+    fontSize: 10, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.40)', letterSpacing: 0.2,
   },
 
   // ── Bottom nav ─────────────────────────────────────────────────────────────
@@ -652,9 +840,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 10,
   },
   navBtn: {
-    paddingHorizontal: 14, paddingVertical: 7,
-    backgroundColor: 'rgba(9, 41, 173, 0.08)',
-    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.20)',
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 7,
+    backgroundColor: 'rgba(9, 41, 173, 0.10)',
+    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.22)',
   },
   navBtnText: {
     color: 'rgba(152, 212, 250, 0.85)', fontSize: 13,
@@ -672,7 +861,7 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center',
     justifyContent: 'center', gap: 7, paddingVertical: 15,
   },
-  ctaBtnCall: { backgroundColor: '#0929AD' },
+  ctaBtnCall: { backgroundColor: 'rgba(9, 41, 173, 0.70)' },
   ctaBtnChat: { backgroundColor: 'rgba(9, 41, 173, 0.45)' },
   ctaDivider: { width: 1, backgroundColor: 'rgba(152, 212, 250, 0.15)' },
   ctaBtnText: {

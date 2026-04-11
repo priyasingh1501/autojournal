@@ -9,7 +9,7 @@
  *     while the mood is selected; reverts when cleared.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,19 +20,21 @@ import {
   StatusBar,
   Modal,
   Platform,
+  Dimensions,
 } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 import { useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 
-import { WisdomShort, JournalSignal } from '../types';
+import { WisdomShort, JournalSignal, TranscriptEntry } from '../types';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
 import { StorageService } from '../services/StorageService';
-import { buildFeed, flattenFeed, MOODS, Mood } from '../services/WisdomService';
+import { buildFeed, flattenFeed, MOODS, Mood, extractJournalSignal } from '../services/WisdomService';
 import { getShortsLibrary } from '../services/SupabaseService';
 import ShortCard from '../components/ShortCard';
 import ReflectPromptModal from '../components/ReflectPromptModal';
-import AddShortModal from '../components/AddShortModal';
 import ShareModal from '../components/ShareModal';
 
 // All available emotion filters
@@ -234,30 +236,57 @@ export default function WisdomScreen() {
   const [reflectShort, setReflectShort]       = useState<WisdomShort | null>(null);
   const [shareShort, setShareShort]           = useState<WisdomShort | null>(null);
   const [customShorts, setCustomShorts]       = useState<WisdomShort[]>([]);
-  const [isPublisher, setIsPublisher]         = useState(false);
-  const [showAddShort, setShowAddShort]       = useState(false);
-  const [editShort, setEditShort]             = useState<WisdomShort | null>(null);
   // Supabase library — starts with bundled shorts for instant display, refreshes from remote
   const [remoteLibrary, setRemoteLibrary]     = useState<WisdomShort[]>(SHORTS_LIBRARY);
+  // Pagination
+  const [currentIndex, setCurrentIndex]       = useState(0);
+  const currentIndexRef                       = useRef(0);
+  const flatListRef                           = useRef<FlatList<WisdomShort>>(null);
+
+  // ── Pagination helpers ────────────────────────────────────────────────────
+  const scrollToIndex = useCallback((idx: number, animated = true) => {
+    currentIndexRef.current = idx;
+    setCurrentIndex(idx);
+    setTimeout(() => {
+      flatListRef.current?.scrollToIndex({ index: idx, animated, viewPosition: 0 });
+    }, 50);
+  }, []);
 
   // ── Load stored state + remote library on focus ───────────────────────────
   useFocusEffect(
     useCallback(() => {
       let active = true;
       (async () => {
-        const [saved, seen, sig, customs, publisher] = await Promise.all([
+        const [saved, seen, sig, customs] = await Promise.all([
           StorageService.getSavedShorts(),
           StorageService.getSeenShortIds(),
           StorageService.getJournalSignal(),
           StorageService.getCustomShorts(),
-          StorageService.isPublisherMode(),
         ]);
         if (!active) return;
         setSavedIds(new Set(saved.map(s => s.shortId)));
         setSeenIds(new Set(seen));
-        setJournalSignal(sig);
         setCustomShorts(customs);
-        setIsPublisher(publisher);
+
+        const SIGNAL_TTL = 24 * 60 * 60 * 1000; // 24 hours
+        const signalStale = !sig?.extractedAt || (Date.now() - sig.extractedAt > SIGNAL_TTL);
+
+        if (sig && !signalStale) {
+          // Fresh signal — use immediately
+          setJournalSignal(sig);
+        } else {
+          // Stale or missing — use what we have (may be null) and refresh in background
+          setJournalSignal(sig);
+          const summaries = await StorageService.getSummaryDates();
+          if (summaries.length > 0 && active) {
+            const latest = await StorageService.getSummaryForDate(summaries[0]);
+            if (latest?.summary && active) {
+              extractJournalSignal(latest.summary)
+                .then(fresh => { if (active && fresh) setJournalSignal(fresh); })
+                .catch(() => {});
+            }
+          }
+        }
 
         // Load library from Supabase (cache-first, background refresh)
         const lib = await getShortsLibrary((fresh) => {
@@ -307,34 +336,24 @@ export default function WisdomScreen() {
     });
   }, []);
 
-  const handleReflect = useCallback((short: WisdomShort) => {
-    setReflectShort(short);
+  const handleRead = useCallback((short: WisdomShort) => {
     StorageService.markShortSeen(short.id).catch(() => {});
     setSeenIds(prev => new Set([...prev, short.id]));
+  }, []);
+
+  const handleReflect = useCallback((short: WisdomShort) => {
+    setReflectShort(short);
   }, []);
 
   const handleShare = useCallback((short: WisdomShort) => {
     setShareShort(short);
   }, []);
 
-  const handleShortSaved = useCallback((short: WisdomShort) => {
-    setCustomShorts(prev => {
-      const idx = prev.findIndex(s => s.id === short.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = short;
-        return next;
-      }
-      return [...prev, short];
-    });
-    setShowAddShort(false);
-    setEditShort(null);
-  }, []);
-
   const handleMoodPress = useCallback((mood: Mood) => {
     setSelectedMoodId(prev => prev === mood.id ? null : mood.id);
     setSelectedEmotion(null); // clear emotion filter when mood changes
-  }, []);
+    scrollToIndex(0, false);
+  }, [scrollToIndex]);
 
   const selectedMood = MOODS.find(m => m.id === selectedMoodId) ?? null;
 
@@ -374,7 +393,7 @@ export default function WisdomScreen() {
               {selectedEmotion && (
                 <TouchableOpacity
                   hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  onPress={() => setSelectedEmotion(null)}
+                  onPress={() => { setSelectedEmotion(null); scrollToIndex(0, false); }}
                 >
                   <Feather name="x" size={11} color="#0a1223" style={{ marginLeft: 2 }} />
                 </TouchableOpacity>
@@ -384,7 +403,7 @@ export default function WisdomScreen() {
           {/* Saved toggle */}
           <TouchableOpacity
             style={[styles.savedToggle, showSaved && styles.savedToggleActive]}
-            onPress={() => setShowSaved(v => !v)}
+            onPress={() => { setShowSaved(v => !v); scrollToIndex(0, false); }}
           >
             <Feather
               name="bookmark"
@@ -398,7 +417,8 @@ export default function WisdomScreen() {
         </View>
       </View>
 
-      {/* ── Feed ── */}
+
+      {/* ── Paginated feed ── */}
       {feed.length === 0 ? (
         <View style={styles.emptyState}>
           {showSaved ? (
@@ -431,83 +451,74 @@ export default function WisdomScreen() {
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={feed}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
-            <ShortCard
-              short={item}
-              isSaved={savedIds.has(item.id)}
-              onSave={handleSave}
-              onUnsave={handleUnsave}
-              onReflect={handleReflect}
-              onShare={handleShare}
-            />
+            <ScrollView
+              style={{ width: SCREEN_WIDTH }}
+              contentContainerStyle={styles.page}
+              showsVerticalScrollIndicator={false}
+              directionalLockEnabled
+            >
+              <ShortCard
+                short={item}
+                isSaved={savedIds.has(item.id)}
+                onSave={handleSave}
+                onUnsave={handleUnsave}
+                onReflect={handleReflect}
+                onShare={handleShare}
+                onRead={handleRead}
+              />
+            </ScrollView>
           )}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <>
-              {/* ── Mood picker scrolls with the feed ── */}
-              {!showSaved && (
-                <View style={styles.moodSection}>
-                  <Text style={styles.moodLabel}>How are you feeling?</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.moodRow}
-                  >
-                    {MOODS.map(mood => {
-                      const active = selectedMoodId === mood.id;
-                      return (
-                        <TouchableOpacity
-                          key={mood.id}
-                          style={[styles.moodChip, active && styles.moodChipActive]}
-                          onPress={() => handleMoodPress(mood)}
-                        >
-                          <Text style={styles.moodEmoji}>{mood.emoji}</Text>
-                          <Text style={[styles.moodChipText, active && styles.moodChipTextActive]}>
-                            {mood.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* ── Match banner ── */}
-              {feedLabel && !showSaved && (
-                <View style={styles.matchBanner}>
-                  <Feather
-                    name={selectedMood ? 'heart' : 'zap'}
-                    size={12}
-                    color="rgba(251, 191, 36, 0.7)"
-                  />
-                  <Text style={styles.matchBannerText}>{feedLabel}</Text>
-                  {(selectedMood || selectedEmotion) && (
-                    <TouchableOpacity
-                      onPress={() => { setSelectedMoodId(null); setSelectedEmotion(null); }}
-                      style={styles.clearBannerBtn}
-                    >
-                      <Feather name="x" size={11} color="rgba(251, 191, 36, 0.6)" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            </>
-          }
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          initialScrollIndex={0}
+          getItemLayout={(_, index) => ({
+            length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index,
+          })}
+          onMomentumScrollEnd={e => {
+            const newIdx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+            currentIndexRef.current = newIdx;
+            setCurrentIndex(newIdx);
+          }}
+          onScrollToIndexFailed={info => {
+            setTimeout(() => {
+              flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+            }, 100);
+          }}
+          style={styles.feedList}
         />
       )}
 
-      {/* ── Publisher FAB ── */}
-      {isPublisher && (
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={() => { setEditShort(null); setShowAddShort(true); }}
-          activeOpacity={0.85}
-        >
-          <Feather name="plus" size={22} color="rgba(224, 242, 254, 0.95)" />
-        </TouchableOpacity>
+      {/* ── Bottom nav ── */}
+      {feed.length > 0 && (
+        <View style={styles.navRow}>
+          {currentIndex > 0 ? (
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => scrollToIndex(currentIndex - 1)}
+            >
+              <Text style={styles.navBtnText}>← Newer</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.navPlaceholder} />
+          )}
+          <Text style={styles.swipeHint}>swipe to explore</Text>
+          {currentIndex < feed.length - 1 ? (
+            <TouchableOpacity
+              style={styles.navBtn}
+              onPress={() => scrollToIndex(currentIndex + 1)}
+            >
+              <Text style={styles.navBtnText}>Older →</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.navPlaceholder} />
+          )}
+        </View>
       )}
 
       {/* ── Reflect modal ── */}
@@ -515,6 +526,17 @@ export default function WisdomScreen() {
         short={reflectShort}
         visible={reflectShort !== null}
         onClose={() => setReflectShort(null)}
+        onSave={async (shortId, text) => {
+          if (!text.trim()) return;
+          const entry: TranscriptEntry = {
+            id: `reflect_${shortId}_${Date.now()}`,
+            text: text.trim(),
+            timestamp: Date.now(),
+            duration: 0,
+            kind: 'manual',
+          };
+          await StorageService.addTranscript(entry).catch(() => {});
+        }}
       />
 
       {/* ── Share modal ── */}
@@ -522,14 +544,6 @@ export default function WisdomScreen() {
         short={shareShort}
         visible={shareShort !== null}
         onClose={() => setShareShort(null)}
-      />
-
-      {/* ── Add / Edit short (publisher) ── */}
-      <AddShortModal
-        visible={showAddShort}
-        editShort={editShort}
-        onClose={() => { setShowAddShort(false); setEditShort(null); }}
-        onSaved={handleShortSaved}
       />
 
       {/* ── Filter sheet ── */}
@@ -682,9 +696,41 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  list: {
+  feedList: {
+    flex: 1,
+  },
+  page: {
     paddingTop: 8,
-    paddingBottom: 32,
+    paddingBottom: 24,
+  },
+
+  // ── Bottom nav ──
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  navBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(9, 41, 173, 0.08)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.20)',
+  },
+  navBtnText: {
+    color: 'rgba(152, 212, 250, 0.85)',
+    fontSize: 13,
+    fontWeight: '500',
+    fontFamily: 'GillSans-Light',
+  },
+  navPlaceholder: { width: 80 },
+  swipeHint: {
+    fontSize: 12,
+    color: 'rgba(152, 212, 250, 0.60)',
+    fontFamily: 'GillSans-Light',
   },
 
   matchBanner: {
@@ -736,22 +782,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 28,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(9, 41, 173, 0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.40)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 10,
-  },
 });

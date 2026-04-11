@@ -48,7 +48,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
       break;
     }
 
-    // ── User tapped the mic button ───────────────────────────────────────────
+    // ── User tapped the mic button ─────────────────────��─────────────────────
     case 'WIDGET_CLICK': {
       if (clickAction === 'TOGGLE_MONITORING') {
         const wasMonitoring = await getIsMonitoring();
@@ -68,6 +68,13 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
         } catch {
           // App might already be in foreground; ignore launch errors.
         }
+      }
+
+      if (clickAction === 'OPEN_COMPOSE') {
+        // Open the app directly to the compose/type modal
+        try {
+          await Linking.openURL('untangle://compose');
+        } catch { /* ignore */ }
       }
       break;
     }

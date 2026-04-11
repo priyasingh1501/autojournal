@@ -16,6 +16,8 @@ import {
 import { MonthlyInsight, MonthlyData, SpendCategory, EmotionCount, UserGoals, DayMacros, ExpenseEntry } from '../types';
 import { generateMonthlyInsight, NOT_ENOUGH_DATA } from '../services/MonthlyInsightService';
 import { StorageService } from '../services/StorageService';
+import { SubscriptionService } from '../services/SubscriptionService';
+import PaywallModal from './PaywallModal';
 import { groupByCategory, formatINR } from '../services/ExpenseService';
 // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
 // import { getSMSSpendCategories } from '../services/SMSSpendService';
@@ -71,7 +73,8 @@ function parseSections(text: string): Array<{ key: string; body: string }> {
 }
 
 function firstSentence(body: string): string {
-  return body.match(/[^.!?]+[.!?]+/)?.[0]?.trim() ?? body;
+  const s = body.match(/[^.!?]+[.!?]+/)?.[0]?.trim() ?? body;
+  return s.length > 110 ? s.slice(0, 110).trimEnd() + '…' : s;
 }
 
 // ── Infographic components ────────────────────────────────────────────────────
@@ -261,9 +264,12 @@ const mealSectionLabel = StyleSheet.create({
 });
 
 const expStyles = StyleSheet.create({
-  sourceTag:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  sourceText: { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(147,197,253,0.55)', letterSpacing: 0.3 },
-  txCount:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)' },
+  sourceTag:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  sourceText:  { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(147,197,253,0.55)', letterSpacing: 0.3 },
+  txCount:     { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)' },
+  totalRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 },
+  totalLabel:  { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', letterSpacing: 0.5 },
+  totalAmount: { fontSize: 16, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.90)' },
 });
 
 const mealGridStyles = StyleSheet.create({
@@ -376,22 +382,60 @@ function SpendCategoryList({ categories }: { categories: SpendCategory[] }) {
   );
 }
 
-/** Word cloud for recurring topics — size + opacity scale with frequency */
+/** Deterministic pseudo-random from a string seed — stable across renders */
+function seededRand(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+/** Recurring thoughts — ranked list with glow accent bar scaling to frequency */
 function WordCloud({ topics }: { topics: { word: string; count: number }[] }) {
-  const maxCount = Math.max(...topics.map(t => t.count), 1);
-  // Shuffle slightly so it doesn't look like a ranked list
-  const shuffled = [...topics].sort(() => Math.random() - 0.5);
+  const maxCount = React.useMemo(
+    () => Math.max(...topics.map(t => t.count), 1),
+    [topics],
+  );
+
+  const sorted = React.useMemo(
+    () => [...topics].sort((a, b) => b.count - a.count).slice(0, 8),
+    [topics],
+  );
+
   return (
     <View style={cloudStyles.container}>
-      {shuffled.map(t => {
-        const ratio    = t.count / maxCount;
-        const fontSize = Math.round(11 + ratio * 12);      // 11 – 23 px
-        const opacity  = 0.40 + ratio * 0.60;              // 0.40 – 1.0
-        const bg       = `rgba(147,197,253,${(0.05 + ratio * 0.12).toFixed(2)})`;
-        const border   = `rgba(147,197,253,${(0.15 + ratio * 0.30).toFixed(2)})`;
+      {sorted.map((t, i) => {
+        const ratio      = t.count / maxCount;
+        const textOpacity = 0.38 + ratio * 0.62;           // 0.38 → 1.0
+        const barOpacity  = 0.18 + ratio * 0.72;           // 0.18 → 0.90
+        const barWidth    = Math.round(3 + ratio * 2);     // 3–5 px thick
+        const rankOpacity = 0.22 + ratio * 0.38;           // rank number fades with rank
+
         return (
-          <View key={t.word} style={[cloudStyles.chip, { backgroundColor: bg, borderColor: border }]}>
-            <Text style={[cloudStyles.word, { fontSize, opacity }]}>{t.word}</Text>
+          <View key={t.word} style={cloudStyles.row}>
+            {/* Left accent bar */}
+            <View style={[cloudStyles.bar, {
+              width: barWidth,
+              opacity: barOpacity,
+            }]} />
+
+            {/* Rank number */}
+            <Text style={[cloudStyles.rank, { opacity: rankOpacity }]}>
+              {String(i + 1).padStart(2, '0')}
+            </Text>
+
+            {/* Topic word */}
+            <Text style={[cloudStyles.word, { opacity: textOpacity }]} numberOfLines={1}>
+              {t.word}
+            </Text>
+
+            {/* Occurrence count pill */}
+            {t.count > 1 && (
+              <View style={[cloudStyles.countPill, { opacity: barOpacity }]}>
+                <Text style={cloudStyles.countText}>×{t.count}</Text>
+              </View>
+            )}
           </View>
         );
       })}
@@ -409,17 +453,47 @@ const mealGoalStyles = StyleSheet.create({
 
 const cloudStyles = StyleSheet.create({
   container: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    gap: 7, marginTop: 8,
+    marginTop: 8,
+    gap: 2,
   },
-  chip: {
-    borderRadius: 20, borderWidth: 1,
-    paddingHorizontal: 10, paddingVertical: 4,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    gap: 10,
+  },
+  bar: {
+    height: 16,
+    borderRadius: 2,
+    backgroundColor: 'rgba(152,212,250,1)',
+  },
+  rank: {
+    fontSize: 10,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.90)',
+    letterSpacing: 0.5,
+    width: 20,
   },
   word: {
+    flex: 1,
+    fontSize: 14,
     fontFamily: 'GillSans-Light',
-    color: 'rgba(224,242,254,0.90)',
-    lineHeight: 20,
+    color: 'rgba(224,242,254,1)',
+    letterSpacing: 0.1,
+  },
+  countPill: {
+    backgroundColor: 'rgba(152,212,250,0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.18)',
+  },
+  countText: {
+    fontSize: 10,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.80)',
+    letterSpacing: 0.3,
   },
 });
 
@@ -700,69 +774,13 @@ function SectionRow({
 
       case 'Meals': {
         const macrosByDay = monthlyData?.mealMacrosByDay ?? [];
-
-        // Build dayIdx → DayMacros lookup (same logic as MealDayGrid)
-        const macroByIdx: Record<number, DayMacros> = {};
-        macrosByDay.forEach(m => {
-          const d = new Date(m.date + 'T12:00:00');
-          macroByIdx[d.getDate() - 1] = m;
-        });
-
-        const handleDayPress = (idx: number) => {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setSelectedMealDayIdx(prev => prev === idx ? null : idx);
-        };
-
         const monthlyGrid = monthlyData?.mealDays?.length
-          ? (
-            <MealDayGrid
-              days={monthlyData.mealDays}
-              mealMacrosByDay={macrosByDay}
-              selectedDayIdx={selectedMealDayIdx}
-              onDayPress={handleDayPress}
-            />
-          )
+          ? <MealDayGrid days={monthlyData.mealDays} mealMacrosByDay={macrosByDay} selectedDayIdx={null} onDayPress={() => {}} />
           : monthlyData?.mealWeeks?.length
             ? <MealWeekStrip weeks={monthlyData.mealWeeks as any} />
             : null;
-
-        // Macros to show — selected day first, then last recorded day as default
-        const selectedMacros = selectedMealDayIdx !== null ? macroByIdx[selectedMealDayIdx] : undefined;
-        const lastMacros = macrosByDay.length ? macrosByDay[macrosByDay.length - 1] : undefined;
-        const displayMacros = selectedMacros ?? lastMacros;
-
-        // Date label for the currently displayed day
-        const displayDate = displayMacros
-          ? new Date(displayMacros.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })
-          : null;
-
-        const hasAnyMealData = !!(monthlyGrid || displayMacros);
-        if (!hasAnyMealData) return null;
-
-        return (
-          <View style={{ gap: 14, marginTop: 6 }}>
-            {/* Day macro panel — updates when a day dot is tapped */}
-            <View style={{ gap: 6 }}>
-              <Text style={mealSectionLabel.label}>
-                {displayDate ? displayDate.toUpperCase() : 'DAY'}
-              </Text>
-              <DailyMacroView macros={displayMacros} goals={goals} />
-              {/* Meal summary text for the selected/default day */}
-              {displayMacros?.mealSummary ? (
-                <Text style={mealGridStyles.dayDetailSummary}>{displayMacros.mealSummary}</Text>
-              ) : null}
-            </View>
-            {/* Monthly grid — each day is now tappable */}
-            {monthlyGrid && (
-              <View style={{ gap: 6 }}>
-                <Text style={mealSectionLabel.label}>
-                  MONTH{selectedMealDayIdx !== null ? ' — TAP DAY TO DESELECT' : ' — TAP DAY FOR DETAILS'}
-                </Text>
-                {monthlyGrid}
-              </View>
-            )}
-          </View>
-        );
+        if (!monthlyGrid) return null;
+        return <View style={{ marginTop: 6 }}>{monthlyGrid}</View>;
       }
 
       case 'Spending': {
@@ -778,15 +796,20 @@ function SectionRow({
 
           return (
             <View style={{ gap: 10, marginTop: 6 }}>
-              {/* Budget progress bar — only if goal is set */}
-              {budget && total > 0 && (
-                <GoalProgressBar
-                  label="SPENT THIS MONTH"
-                  current={total}
-                  target={budget}
-                  unit="₹"
-                  color="rgba(74,222,128,0.70)"
-                />
+              {/* Total spend row — always shown; becomes a progress bar if a budget goal is set */}
+              {total > 0 && (
+                budget
+                  ? <GoalProgressBar
+                      label="SPENT THIS MONTH"
+                      current={total}
+                      target={budget}
+                      unit="₹"
+                      color="rgba(74,222,128,0.70)"
+                    />
+                  : <View style={expStyles.totalRow}>
+                      <Text style={expStyles.totalLabel}>TOTAL THIS MONTH</Text>
+                      <Text style={expStyles.totalAmount}>{formatINR(total)}</Text>
+                    </View>
               )}
               {/* Source label */}
               <View style={expStyles.sourceTag}>
@@ -829,17 +852,17 @@ function SectionRow({
         // Fallback: AI-estimated categories from monthly insight
         const cats = monthlyData?.spendCategories ?? [];
         const total = cats.reduce((s, c) => s + (c.amount ?? 0), 0);
-        const budgetBar = goals?.monthlySpendBudget && total > 0
-          ? <GoalProgressBar
-              label="SPENT THIS MONTH"
-              current={total}
-              target={goals.monthlySpendBudget}
-              unit="₹"
-              color="rgba(74,222,128,0.70)"
-            />
+        const budget = goals?.monthlySpendBudget;
+        const totalEl = total > 0
+          ? budget
+            ? <GoalProgressBar label="SPENT THIS MONTH" current={total} target={budget} unit="₹" color="rgba(74,222,128,0.70)" />
+            : <View style={expStyles.totalRow}>
+                <Text style={expStyles.totalLabel}>TOTAL THIS MONTH</Text>
+                <Text style={expStyles.totalAmount}>{formatINR(total)}</Text>
+              </View>
           : null;
         const catList = cats.length ? <SpendCategoryList categories={cats} /> : null;
-        return budgetBar || catList ? <>{budgetBar}{catList}</> : null;
+        return totalEl || catList ? <>{totalEl}{catList}</> : null;
       }
 
       case 'Recurring thoughts':
@@ -947,6 +970,7 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   const [notEnoughData,     setNotEnoughData]     = useState(false);
   const [error,             setError]             = useState<string | null>(null);
   const [refreshing,        setRefreshing]        = useState(false);
+  const [showPaywall,       setShowPaywall]       = useState(false);
   const [goals,             setGoals]             = useState<UserGoals | null>(null);
   const [showGoals,         setShowGoals]         = useState(false);
   const [trackedExpenses,   setTrackedExpenses]   = useState<ExpenseEntry[]>([]);
@@ -1005,6 +1029,15 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
     }
   };
 
+  // Soft gate: first monthly insight is free (auto-load). Manual refresh requires Pro.
+  const gatedLoadInsight = async (force: boolean) => {
+    if (force && insight !== null) {
+      const allowed = await SubscriptionService.hasPro();
+      if (!allowed) { setShowPaywall(true); return; }
+    }
+    loadInsight(force);
+  };
+
   // Month label e.g. "March 2026"
   const monthLabel = insight
     ? new Date(insight.weekStart + 'T12:00:00').toLocaleDateString([], { month: 'long', year: 'numeric' })
@@ -1014,14 +1047,18 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   // Filter out tracker sections the user hasn't opted into
   const sections = allSections.filter(s => {
     if (ALWAYS_SHOWN_SECTIONS.has(s.key)) return true;
-    // Find which tracker key maps to this section
     const trackerKey = Object.entries(TRACKER_SECTION_MAP).find(([, v]) => v === s.key)?.[0];
-    if (!trackerKey) return true; // unknown section → show it
+    if (!trackerKey) return true;
     return enabledTrackers.has(trackerKey);
   });
 
+  const TRACKER_SECTION_KEYS = new Set(Object.values(TRACKER_SECTION_MAP));
+  const trackerSections = sections.filter(s => TRACKER_SECTION_KEYS.has(s.key));
+  const otherSections   = sections.filter(s => !TRACKER_SECTION_KEYS.has(s.key));
+
   return (
-    <View style={styles.card}>
+    <>
+    <View style={styles.cardless}>
       {/* ── Heading ── */}
       <View style={styles.headingRow}>
         <View>
@@ -1037,7 +1074,7 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
             <Feather name="target" size={13} color={goals ? 'rgba(74,222,128,0.80)' : 'rgba(152,212,250,0.55)'} />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => loadInsight(true)}
+            onPress={() => gatedLoadInsight(true)}
             disabled={refreshing || loading}
             style={styles.refreshBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1077,7 +1114,7 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
       {/* ── Loaded ── */}
       {!loading && insight && (
         <>
-          {/* Stats row */}
+          {/* Stats row — days active + entries */}
           <View style={styles.statsRow}>
             <View style={styles.statBlock}>
               <Text style={styles.statNum}>{insight.daysActive}</Text>
@@ -1090,41 +1127,87 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
             </View>
           </View>
 
-          {/* Section accordion */}
-          <View style={styles.sections}>
-            {sections.map(s => (
-              <SectionRow
-                key={s.key}
-                sectionKey={s.key}
-                body={s.body}
-                monthlyData={insight.weeklyData}
-                goals={goals ?? undefined}
-                trackedExpenses={s.key === 'Spending' ? trackedExpenses : undefined}
-              />
-            ))}
-          </View>
+          {/* Tracker sections — one card, horizontally scrollable */}
+          {trackerSections.length > 0 && (
+            <View style={styles.trackerOuterCard}>
+              <ScrollView
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.trackerScroll}
+                style={styles.trackerScrollWrap}
+              >
+                {trackerSections.map(s => (
+                  <View key={s.key} style={styles.trackerPage}>
+                    <SectionRow
+                      sectionKey={s.key}
+                      body={s.body}
+                      monthlyData={insight.weeklyData}
+                      goals={goals ?? undefined}
+                      trackedExpenses={s.key === 'Spending' ? trackedExpenses : undefined}
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* Other sections — vertical (Emotional check-in, Recurring thoughts, Learnings) */}
+          {otherSections.length > 0 && (
+            <View style={styles.sections}>
+              {otherSections.map(s => (
+                <SectionRow
+                  key={s.key}
+                  sectionKey={s.key}
+                  body={s.body}
+                  monthlyData={insight.weeklyData}
+                  goals={goals ?? undefined}
+                  trackedExpenses={undefined}
+                />
+              ))}
+            </View>
+          )}
 
           <Text style={styles.lastUpdated}>Updated {formatRelativeTime(insight.generatedAt)}</Text>
         </>
       )}
     </View>
+
+    <PaywallModal
+      visible={showPaywall}
+      featureHint="Refresh your monthly insights as often as you like with Pro."
+      onClose={() => setShowPaywall(false)}
+      onSuccess={() => { setShowPaywall(false); loadInsight(true); }}
+    />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 20, padding: 16, marginBottom: 16, backgroundColor: 'transparent' },
+  card: {
+    borderRadius: 20, padding: 16, marginBottom: 16, marginTop: 4,
+    marginHorizontal: 20,
+    backgroundColor: 'rgba(3, 18, 40, 0.65)',
+    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.12)',
+    shadowColor: '#98D4FA', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10, shadowRadius: 18, elevation: 4,
+  },
+
+  cardless: {
+    marginBottom: 16, marginTop: 4, marginHorizontal: 20,
+  },
 
   headingRow: {
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
     marginBottom: 14,
   },
   heading: {
-    fontSize: 15, fontWeight: '500',
+    fontSize: 19, fontWeight: '500',
     color: 'rgba(224,242,254,0.95)', fontFamily: 'Baskerville',
   },
   headingSub: {
-    fontSize: 11, fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.50)', marginTop: 2,
+    fontSize: 12, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.52)', marginTop: 3,
   },
   refreshBtn: {
     width: 30, height: 30, borderRadius: 15,
@@ -1136,8 +1219,8 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: 'rgba(152,212,250,0.05)',
-    borderRadius: 14, borderWidth: 1, borderColor: 'rgba(152,212,250,0.10)',
-    paddingHorizontal: 16, paddingVertical: 12, marginBottom: 12,
+    borderRadius: 16, borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)',
+    paddingHorizontal: 18, paddingVertical: 14, marginBottom: 12,
   },
   statBlock: { alignItems: 'center' },
   statNum: {
@@ -1149,11 +1232,28 @@ const styles = StyleSheet.create({
     fontFamily: 'GillSans-Light', marginTop: 1, letterSpacing: 0.3,
   },
 
+  trackerOuterCard: {
+    borderRadius: 20,
+    backgroundColor: 'rgba(3, 18, 40, 0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.12)',
+    shadowColor: '#98D4FA',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.10,
+    shadowRadius: 18,
+    elevation: 4,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  trackerScrollWrap: { },
+  trackerScroll: { },
+  trackerPage: { width: Dimensions.get('window').width - 40, padding: 16 },
+
   sections: { gap: 6 },
   sectionRow: {
     backgroundColor: 'rgba(152,212,250,0.04)',
-    borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.09)',
-    paddingHorizontal: 14, paddingVertical: 11,
+    borderRadius: 16, borderWidth: 1, borderColor: 'rgba(152,212,250,0.10)',
+    paddingHorizontal: 16, paddingVertical: 13,
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionLeft:   { flexDirection: 'row', alignItems: 'center', gap: 6 },

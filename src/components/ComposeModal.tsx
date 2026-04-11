@@ -18,6 +18,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { StorageService } from '../services/StorageService';
 import { extractAndSaveExpenses } from '../services/ExpenseService';
+import { generateDailySummary } from '../services/SummaryService';
+import { generateIfNeeded } from '../services/AutoSummaryService';
 import { TranscriptEntry } from '../types';
 
 interface Props {
@@ -66,11 +68,22 @@ async function copyPhotoToApp(uri: string): Promise<string> {
 }
 
 /** Format YYYY-MM-DD as a short human-readable label, e.g. "Mon, 12 May" */
-function formatTargetDate(date: string): string {
+function formatDateLabel(date: string): string {
+  const today     = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  if (date === today)     return 'Today';
+  if (date === yesterday) return 'Yesterday';
   return new Date(date + 'T12:00:00').toLocaleDateString([], {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
+    weekday: 'short', day: 'numeric', month: 'short',
+  });
+}
+
+/** Returns the last `count` calendar days as YYYY-MM-DD strings, newest first. */
+function getPastDates(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    return d.toISOString().split('T')[0];
   });
 }
 
@@ -79,6 +92,8 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   // Pre-fill when opening in edit mode
@@ -86,6 +101,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
     if (visible && editEntry) {
       setText(editEntry.text);
       setPhotoUri(editEntry.photoUri ?? null);
+      setSelectedDate(editEntry.date);
     }
   }, [visible, editEntry]);
 
@@ -93,6 +109,8 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
     setText('');
     setPhotoUri(null);
     setSaving(false);
+    setSelectedDate('');
+    setShowDatePicker(false);
   };
 
   const handleClose = () => {
@@ -172,12 +190,36 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
       }
 
       if (isEditing && editEntry) {
+        const dateChanged = selectedDate && selectedDate !== editEntry.date;
         const updated: TranscriptEntry = {
           ...editEntry,
           text: text.trim(),
           photoUri: savedPhotoUri,
+          // If date changed, move timestamp to noon on the new day
+          timestamp: dateChanged
+            ? new Date(selectedDate + 'T12:00:00').getTime()
+            : editEntry.timestamp,
         };
-        await StorageService.updateTranscript(updated, editEntry.date);
+
+        if (dateChanged) {
+          await StorageService.deleteTranscript(editEntry.id, editEntry.date);
+          await StorageService.addTranscript(updated);
+          // Regenerate summaries for both days fire-and-forget
+          const [fromT, toT] = await Promise.all([
+            StorageService.getTranscriptsForDate(editEntry.date),
+            StorageService.getTranscriptsForDate(selectedDate),
+          ]);
+          if (fromT.length > 0) {
+            generateDailySummary(fromT, editEntry.date).catch((err) =>
+              console.error('[ComposeModal] summary regen failed for', editEntry.date, err)
+            );
+          }
+          generateDailySummary(toT, selectedDate).catch((err) =>
+            console.error('[ComposeModal] summary regen failed for', selectedDate, err)
+          );
+        } else {
+          await StorageService.updateTranscript(updated, editEntry.date);
+        }
         onSaved(updated);
       } else {
         // Use noon on targetDate if provided; otherwise now.
@@ -194,9 +236,11 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
         };
         await StorageService.addTranscript(entry);
         onSaved(entry);
-        // Fire-and-forget expense extraction — passes photo for OCR if one is attached
         const date = new Date(entry.timestamp).toISOString().split('T')[0];
+        // Fire-and-forget expense extraction — passes photo for OCR if one is attached
         extractAndSaveExpenses(entry.text, date, entry.id, savedPhotoUri).catch(() => {});
+        // First-entry trigger: generate an initial summary if none exists for this day yet
+        generateIfNeeded(date).catch(() => {});
       }
 
       reset();
@@ -235,12 +279,21 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
               <Text style={styles.title}>
                 {isEditing ? 'Edit Entry' : 'New Entry'}
               </Text>
-              {!isEditing && targetDate && (
+              {isEditing && selectedDate ? (
+                <TouchableOpacity
+                  style={styles.datePill}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Feather name="calendar" size={10} color="rgba(152, 212, 250, 0.55)" />
+                  <Text style={styles.datePillText}>{formatDateLabel(selectedDate)}</Text>
+                  <Feather name="chevron-down" size={10} color="rgba(152, 212, 250, 0.40)" />
+                </TouchableOpacity>
+              ) : (!isEditing && targetDate) ? (
                 <View style={styles.datePill}>
                   <Feather name="calendar" size={10} color="rgba(152, 212, 250, 0.55)" />
-                  <Text style={styles.datePillText}>{formatTargetDate(targetDate)}</Text>
+                  <Text style={styles.datePillText}>{formatDateLabel(targetDate)}</Text>
                 </View>
-              )}
+              ) : null}
             </View>
             {saving ? (
               <ActivityIndicator color="rgba(152, 212, 250, 0.85)" style={styles.headerBtn} />
@@ -302,6 +355,45 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
           </ScrollView>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Date picker sheet — edit mode only */}
+      <Modal
+        visible={showDatePicker}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.datePickerBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowDatePicker(false)}
+        />
+        <View style={styles.datePickerSheet}>
+          <View style={styles.datePickerHandle} />
+          <Text style={styles.datePickerTitle}>Move to date</Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {getPastDates(30).map(date => {
+              const active = date === selectedDate;
+              return (
+                <TouchableOpacity
+                  key={date}
+                  style={[styles.dateRow, active && styles.dateRowActive]}
+                  onPress={() => {
+                    setSelectedDate(date);
+                    setShowDatePicker(false);
+                  }}
+                >
+                  <Text style={[styles.dateRowText, active && styles.dateRowTextActive]}>
+                    {formatDateLabel(date)}
+                  </Text>
+                  {active && <Feather name="check" size={14} color="rgba(152, 212, 250, 0.85)" />}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <View style={{ height: 24 }} />
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -349,6 +441,46 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   datePillText: { fontSize: 11, color: 'rgba(152, 212, 250, 0.55)', fontFamily: 'GillSans-Light' },
+
+  // ── Date picker sheet ─────────────────────────────────────────────────────
+  datePickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.60)',
+  },
+  datePickerSheet: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    backgroundColor: '#040d1e',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(152, 212, 250, 0.15)',
+    maxHeight: '60%',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  datePickerHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: 'rgba(152, 212, 250, 0.25)',
+    alignSelf: 'center', marginBottom: 14,
+  },
+  datePickerTitle: {
+    fontSize: 15, fontWeight: '600',
+    color: 'rgba(224, 242, 254, 0.85)',
+    fontFamily: 'Baskerville',
+    marginBottom: 10,
+  },
+  dateRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 13,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(152, 212, 250, 0.07)',
+  },
+  dateRowActive: { borderBottomColor: 'transparent' },
+  dateRowText: {
+    fontSize: 15, color: 'rgba(152, 212, 250, 0.60)',
+    fontFamily: 'GillSans-Light',
+  },
+  dateRowTextActive: { color: 'rgba(224, 242, 254, 0.95)', fontWeight: '500' },
   cancelText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 15, fontFamily: 'GillSans-Light' },
   saveText: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '500', textAlign: 'right', fontFamily: 'GillSans-Light' },
   saveTextDisabled: { opacity: 0.35 },

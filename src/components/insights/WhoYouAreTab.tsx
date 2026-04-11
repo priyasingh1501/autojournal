@@ -1,37 +1,15 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity,
   LayoutAnimation, UIManager, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { WhoYouAreAnalysis, EnneagramResponse } from '../../types';
+import { WhoYouAreAnalysis, EnneagramResponse, MotivationEntry } from '../../types';
 import { StorageService } from '../../services/StorageService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-const TRAIT_LABELS: Record<string, { label: string; left: string; right: string; color: string }> = {
-  openness:          { label: 'Openness',          left: 'Conventional', right: 'Curious',      color: 'rgba(167,139,250,0.85)' },
-  conscientiousness: { label: 'Conscientiousness', left: 'Flexible',     right: 'Disciplined',  color: 'rgba(94,234,212,0.85)'  },
-  extraversion:      { label: 'Extraversion',      left: 'Introverted',  right: 'Extraverted',  color: 'rgba(147,197,253,0.85)' },
-  agreeableness:     { label: 'Agreeableness',     left: 'Direct',       right: 'Harmonious',   color: 'rgba(110,231,183,0.85)' },
-  neuroticism:       { label: 'Neuroticism',       left: 'Steady',       right: 'Reactive',     color: 'rgba(252,165,165,0.85)' },
-};
-
-const DIRECTION_ICON: Record<string, { icon: 'arrow-up' | 'arrow-down' | 'minus'; color: string }> = {
-  rising:  { icon: 'arrow-up',   color: 'rgba(110,231,183,0.80)' },
-  falling: { icon: 'arrow-down', color: 'rgba(252,165,165,0.80)' },
-  stable:  { icon: 'minus',      color: 'rgba(152,212,250,0.50)' },
-};
-
-const ENNEAGRAM_NAMES: Record<number, string> = {
-  1: 'The Reformer',   2: 'The Helper',     3: 'The Achiever',
-  4: 'The Individualist', 5: 'The Investigator', 6: 'The Loyalist',
-  7: 'The Enthusiast', 8: 'The Challenger', 9: 'The Peacemaker',
-};
 
 // ── Source expand ─────────────────────────────────────────────────────────────
 
@@ -70,67 +48,13 @@ const src = StyleSheet.create({
   chipText: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.70)' },
 });
 
-// ── Big Five bar ──────────────────────────────────────────────────────────────
-
-function TraitBar({
-  traitKey, trait, narrative, onJump, sourceEntries,
-}: {
-  traitKey: string;
-  trait: { score: number; direction: 'rising' | 'stable' | 'falling' };
-  narrative?: string;
-  onJump?: (date: string) => void;
-  sourceEntries?: string[];
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const meta = TRAIT_LABELS[traitKey];
-  const dir  = DIRECTION_ICON[trait.direction];
-  if (!meta) return null;
-  return (
-    <TouchableOpacity
-      onPress={() => { LayoutAnimation.easeInEaseOut(); setExpanded(v => !v); }}
-      style={tb.wrap}
-      activeOpacity={0.85}
-    >
-      <View style={tb.headerRow}>
-        <Text style={tb.traitName}>{meta.label}</Text>
-        <View style={tb.dirRow}>
-          <Feather name={dir.icon} size={11} color={dir.color} />
-          <Text style={[tb.dirLabel, { color: dir.color }]}>{trait.direction}</Text>
-        </View>
-      </View>
-      <View style={tb.track}>
-        <View style={[tb.fill, { width: `${trait.score}%`, backgroundColor: meta.color }]} />
-        <View style={tb.midline} />
-      </View>
-      <View style={tb.poleRow}>
-        <Text style={tb.pole}>{meta.left}</Text>
-        <Text style={tb.pole}>{meta.right}</Text>
-      </View>
-      {expanded && narrative && (
-        <Text style={tb.narrative}>{narrative}</Text>
-      )}
-      {expanded && sourceEntries?.length ? (
-        <SourceExpand dates={sourceEntries} onJump={onJump} />
-      ) : null}
-    </TouchableOpacity>
-  );
-}
-
-const tb = StyleSheet.create({
-  wrap:      { gap: 5 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  traitName: { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.85)' },
-  dirRow:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  dirLabel:  { fontSize: 10, fontFamily: 'GillSans-Light' },
-  track:     { height: 6, borderRadius: 3, backgroundColor: 'rgba(152,212,250,0.08)', overflow: 'visible', position: 'relative' },
-  fill:      { height: '100%', borderRadius: 3 },
-  midline:   { position: 'absolute', left: '50%', top: -2, width: 1, height: 10, backgroundColor: 'rgba(152,212,250,0.20)' },
-  poleRow:   { flexDirection: 'row', justifyContent: 'space-between' },
-  pole:      { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)' },
-  narrative: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.70)', lineHeight: 18, marginTop: 4, fontStyle: 'italic' },
-});
-
 // ── Enneagram hypothesis card ─────────────────────────────────────────────────
+
+const ENNEAGRAM_NAMES: Record<number, string> = {
+  1: 'The Reformer',   2: 'The Helper',     3: 'The Achiever',
+  4: 'The Individualist', 5: 'The Investigator', 6: 'The Loyalist',
+  7: 'The Enthusiast', 8: 'The Challenger', 9: 'The Peacemaker',
+};
 
 function EnneagramCard({
   enneagram, response, onRespond, onJump, sourceEntries,
@@ -226,6 +150,92 @@ const eg = StyleSheet.create({
   rowVal:       { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.80)', lineHeight: 18 },
 });
 
+// ── Motivation & Avoidance Drivers ────────────────────────────────────────────
+
+const DRIVER_META: Record<string, { icon: string; color: string }> = {
+  status:   { icon: 'award',    color: 'rgba(251,191,36,0.85)'  },
+  security: { icon: 'shield',   color: 'rgba(94,234,212,0.85)'  },
+  freedom:  { icon: 'wind',     color: 'rgba(147,197,253,0.85)' },
+  love:     { icon: 'heart',    color: 'rgba(249,168,212,0.85)' },
+  mastery:  { icon: 'zap',      color: 'rgba(167,139,250,0.85)' },
+  control:  { icon: 'sliders',  color: 'rgba(110,231,183,0.85)' },
+  meaning:  { icon: 'compass',  color: 'rgba(196,181,253,0.85)' },
+  pleasure: { icon: 'sun',      color: 'rgba(252,165,165,0.85)' },
+};
+
+function DriverRow({ entry }: { entry: MotivationEntry }) {
+  const meta  = DRIVER_META[entry.driver] ?? { icon: 'circle', color: 'rgba(152,212,250,0.60)' };
+  const isAway = entry.type === 'away';
+  const barColor = isAway
+    ? meta.color.replace(/[\d.]+\)$/, '0.45)')
+    : meta.color;
+
+  return (
+    <View style={md.row}>
+      <View style={[md.iconWrap, { backgroundColor: meta.color.replace(/[\d.]+\)$/, '0.08)'), borderColor: meta.color.replace(/[\d.]+\)$/, '0.18)') }]}>
+        <Feather name={meta.icon as any} size={13} color={meta.color} />
+      </View>
+      <View style={md.info}>
+        <View style={md.labelRow}>
+          <Text style={md.driverName}>{entry.driver.charAt(0).toUpperCase() + entry.driver.slice(1)}</Text>
+          <Text style={[md.badge, isAway ? md.badgeAway : md.badgeToward]}>
+            {isAway ? 'avoids' : 'moves toward'}
+          </Text>
+        </View>
+        <View style={md.track}>
+          <View style={[md.fill, { width: `${entry.strength}%`, backgroundColor: barColor }]} />
+        </View>
+        <Text style={md.observation}>{entry.observation}</Text>
+      </View>
+    </View>
+  );
+}
+
+function MotivationSection({ drivers }: { drivers: MotivationEntry[] }) {
+  const toward = drivers.filter(d => d.type === 'toward').slice(0, 3);
+  const away   = drivers.filter(d => d.type === 'away').slice(0, 3);
+
+  return (
+    <View style={md.card}>
+      <Text style={md.headline}>Motivation & Avoidance</Text>
+      <Text style={md.sub}>What pulls you forward and what you instinctively move away from</Text>
+
+      {toward.length > 0 && (
+        <View style={md.group}>
+          <Text style={md.groupLabel}>MOVES TOWARD</Text>
+          {toward.map((d, i) => <DriverRow key={i} entry={d} />)}
+        </View>
+      )}
+
+      {away.length > 0 && (
+        <View style={md.group}>
+          <Text style={md.groupLabel}>AVOIDS</Text>
+          {away.map((d, i) => <DriverRow key={i} entry={d} />)}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const md = StyleSheet.create({
+  card:        { backgroundColor: 'rgba(251,191,36,0.03)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(251,191,36,0.12)', padding: 16, gap: 14 },
+  headline:    { fontSize: 14, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.92)' },
+  sub:         { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)', lineHeight: 16, marginTop: -8 },
+  group:       { gap: 12 },
+  groupLabel:  { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.38)', letterSpacing: 0.5, textTransform: 'uppercase' },
+  row:         { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  iconWrap:    { width: 34, height: 34, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  info:        { flex: 1, gap: 5 },
+  labelRow:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  driverName:  { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.88)' },
+  badge:       { fontSize: 9, fontFamily: 'GillSans-Light', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, borderWidth: 1, overflow: 'hidden' },
+  badgeToward: { color: 'rgba(110,231,183,0.80)', borderColor: 'rgba(110,231,183,0.22)', backgroundColor: 'rgba(110,231,183,0.06)' },
+  badgeAway:   { color: 'rgba(252,165,165,0.80)', borderColor: 'rgba(252,165,165,0.22)', backgroundColor: 'rgba(252,165,165,0.06)' },
+  track:       { height: 4, borderRadius: 2, backgroundColor: 'rgba(152,212,250,0.07)' },
+  fill:        { height: '100%', borderRadius: 2 },
+  observation: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', lineHeight: 16 },
+});
+
 // ── Main tab ───────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -236,8 +246,6 @@ interface Props {
 }
 
 export default function WhoYouAreTab({ data, enneagramResponse, onEnneagramRespond, onJump }: Props) {
-  const traits = ['openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism'] as const;
-
   const handleRespond = async (typeId: number, response: 'confirmed' | 'partly' | 'rejected') => {
     const r: EnneagramResponse = { typeId, response, date: new Date().toISOString().split('T')[0] };
     await StorageService.saveEnneagramResponse(r);
@@ -246,27 +254,7 @@ export default function WhoYouAreTab({ data, enneagramResponse, onEnneagramRespo
 
   return (
     <View style={s.root}>
-      {/* Narrative hero */}
-      <Text style={s.narrative}>{data.narrative}</Text>
-
-      {/* Big Five */}
-      <View style={s.section}>
-        <Text style={s.sectionLabel}>BIG FIVE · tap a trait to expand</Text>
-        <View style={s.traitList}>
-          {traits.map(k => (
-            <TraitBar
-              key={k}
-              traitKey={k}
-              trait={data.bigFive[k]}
-              narrative={data.bigFiveNarratives[k]}
-              sourceEntries={data.sourceEntries}
-              onJump={onJump}
-            />
-          ))}
-        </View>
-      </View>
-
-      {/* Enneagram */}
+      {/* Enneagram — top */}
       <EnneagramCard
         enneagram={data.enneagram}
         response={enneagramResponse}
@@ -275,6 +263,16 @@ export default function WhoYouAreTab({ data, enneagramResponse, onEnneagramRespo
         onJump={onJump}
       />
 
+      {/* Motivation & Avoidance Drivers */}
+      {data.motivationDrivers?.length ? (
+        <MotivationSection drivers={data.motivationDrivers} />
+      ) : (
+        <View style={s.pending}>
+          <Feather name="clock" size={12} color="rgba(152,212,250,0.30)" />
+          <Text style={s.pendingText}>Motivation drivers — generating from your entries…</Text>
+        </View>
+      )}
+
       {/* Global source */}
       <SourceExpand dates={data.sourceEntries} onJump={onJump} />
     </View>
@@ -282,9 +280,7 @@ export default function WhoYouAreTab({ data, enneagramResponse, onEnneagramRespo
 }
 
 const s = StyleSheet.create({
-  root:         { gap: 20 },
-  narrative:    { fontSize: 16, fontFamily: 'Baskerville', fontStyle: 'italic', color: 'rgba(224,242,254,0.88)', lineHeight: 26 },
-  section:      { gap: 10 },
-  sectionLabel: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', letterSpacing: 0.5, textTransform: 'uppercase' },
-  traitList:    { gap: 16 },
+  root:        { gap: 20 },
+  pending:     { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(152,212,250,0.03)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.08)', padding: 14 },
+  pendingText: { flex: 1, fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)', fontStyle: 'italic' },
 });

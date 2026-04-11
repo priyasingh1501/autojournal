@@ -14,12 +14,15 @@ import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DailySummary, ConversationMessage } from '../types';
-import { sendMessage, getOpeningMessage, generateReflection } from '../services/ConversationService';
+import {
+  sendMessage, getOpeningMessage, generateReflection,
+  detectIntent, ConversationIntent, ConversationContext,
+} from '../services/ConversationService';
 import { MINDS } from '../services/MindService';
 import { StorageService } from '../services/StorageService';
 
 interface Props {
-  summary: DailySummary;
+  summary?: DailySummary;
   onClose: () => void;
 }
 
@@ -52,7 +55,7 @@ function MindPicker({
         {/* Header */}
         <View style={styles.pickerHeader}>
           <View>
-            <Text style={styles.pickerTitle}>Reflect with</Text>
+            <Text style={styles.pickerTitle}>Start a conversation with</Text>
             <Text style={styles.pickerSub}>{formatDate(date)}</Text>
           </View>
           <TouchableOpacity
@@ -77,17 +80,17 @@ function MindPicker({
           >
             <View style={styles.defaultLeft}>
               <Text style={styles.defaultSymbol}>✦</Text>
-              <View>
-                <Text style={styles.defaultName}>untangle companion</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.defaultName}>My Untangle Companion</Text>
                 <Text style={styles.defaultDesc}>
-                  CBT · Stoicism · Eastern philosophy · depth psychology
+                  Your personal AI, here to help you with decisions, reflection, and life.
                 </Text>
               </View>
             </View>
             <Feather name="arrow-right" size={16} color="rgba(152,212,250,0.50)" />
           </TouchableOpacity>
 
-          <Text style={styles.orLabel}>— or choose a mind —</Text>
+          <Text style={styles.orLabel}>— or reflect with a mind —</Text>
 
           {/* 2-col grid of minds */}
           <View style={styles.pickerGrid}>
@@ -107,6 +110,7 @@ function MindPicker({
                       onPress={() => onSelect(mind.id)}
                       activeOpacity={0.8}
                     >
+                      <Text style={[styles.mindReflectWith, { color: mind.accent.replace(/[\d.]+\)$/, '0.45)') }]}>Reflect with</Text>
                       <Text style={styles.mindName}>{mind.name}</Text>
                       <Text style={styles.mindEra}>{mind.era}</Text>
                       <Text style={styles.mindPhil} numberOfLines={2}>{mind.philosophy}</Text>
@@ -126,6 +130,12 @@ function MindPicker({
 // ── Main chat screen ──────────────────────────────────────────────────────────
 
 export default function ChatScreen({ summary, onClose }: Props) {
+  // Standalone chats (no summary) get a minimal stub so ConversationService always has context
+  const effectiveSummary: DailySummary = summary ?? {
+    date: new Date().toISOString().split('T')[0],
+    summary: 'No journal entries today — open conversation.',
+    transcriptCount: 0,
+  };
   const [messages,         setMessages]  = useState<ConversationMessage[]>([]);
   const [convState,        setConvState] = useState<ConvState>('selecting');
   const [draft,            setDraft]     = useState('');
@@ -141,13 +151,16 @@ export default function ChatScreen({ summary, onClose }: Props) {
     setSelectedMindId(null);
     setConvState('selecting');
     messagesRef.current = [];
+    detectedIntentRef.current = null;
   };
 
-  const activeRef   = useRef(true);
-  const messagesRef = useRef<ConversationMessage[]>([]);
-  const scrollRef   = useRef<ScrollView>(null);
-  const inputRef    = useRef<TextInput>(null);
-  const apiKeyRef   = useRef('');
+  const activeRef       = useRef(true);
+  const messagesRef     = useRef<ConversationMessage[]>([]);
+  const scrollRef       = useRef<ScrollView>(null);
+  const inputRef        = useRef<TextInput>(null);
+  const apiKeyRef       = useRef('');
+  const convContextRef  = useRef<ConversationContext>({});
+  const detectedIntentRef = useRef<ConversationIntent | null>(null);
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
   useEffect(() => { return () => { activeRef.current = false; }; }, []);
@@ -163,7 +176,23 @@ export default function ChatScreen({ summary, onClose }: Props) {
       const settings = await StorageService.getSettings();
       apiKeyRef.current = settings?.anthropicApiKey?.trim() ?? '';
 
-      const opening = await getOpeningMessage(summary, apiKeyRef.current || undefined, mindId);
+      // Load context data in parallel for intent-aware responses
+      const now = new Date();
+      const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const [goals, monthlyInsight, whoYouAre, whatYouCare] = await Promise.allSettled([
+        StorageService.getGoals(),
+        StorageService.getMonthlyInsight(monthKey),
+        StorageService.getWhoYouAre(),
+        StorageService.getWhatYouCare(),
+      ]);
+      convContextRef.current = {
+        goals:       goals.status === 'fulfilled' ? goals.value ?? undefined : undefined,
+        monthlyData: monthlyInsight.status === 'fulfilled' ? monthlyInsight.value?.weeklyData ?? undefined : undefined,
+        whoYouAre:   whoYouAre.status === 'fulfilled' ? whoYouAre.value ?? undefined : undefined,
+        whatYouCare: whatYouCare.status === 'fulfilled' ? whatYouCare.value ?? undefined : undefined,
+      };
+
+      const opening = await getOpeningMessage(effectiveSummary, apiKeyRef.current || undefined, mindId);
       if (!activeRef.current) return;
 
       const msg: ConversationMessage = {
@@ -199,12 +228,21 @@ export default function ChatScreen({ summary, onClose }: Props) {
 
     try {
       const history = updatedMsgs.slice(1);
+
+      // Intent detection + context injection apply to untangle companion only
+      const isCompanion = selectedMindId === null;
+      if (isCompanion && detectedIntentRef.current === null) {
+        detectedIntentRef.current = await detectIntent(text);
+      }
+
       const aiText = await sendMessage(
-        summary,
+        effectiveSummary,
         history.slice(0, -1),
         text,
         apiKeyRef.current || undefined,
         selectedMindId,
+        isCompanion ? detectedIntentRef.current ?? undefined : undefined,
+        isCompanion ? convContextRef.current : undefined,
       );
       if (!activeRef.current) return;
 
@@ -230,9 +268,12 @@ export default function ChatScreen({ summary, onClose }: Props) {
       setSaving(true);
       try {
         const reflection = await generateReflection(
-          summary, messagesRef.current, apiKeyRef.current, 'chat',
+          effectiveSummary, messagesRef.current, apiKeyRef.current, 'chat',
         );
-        await StorageService.saveSummary({ ...summary, reflectionText: reflection });
+        // Only persist reflection if a real summary exists (not a stub)
+        if (summary) {
+          await StorageService.saveSummary({ ...effectiveSummary, reflectionText: reflection });
+        }
       } catch { /* reflection is best-effort */ }
     }
     onClose();
@@ -244,7 +285,7 @@ export default function ChatScreen({ summary, onClose }: Props) {
       <MindPicker
         onSelect={startConversation}
         onClose={onClose}
-        date={summary.date}
+        date={effectiveSummary.date}
       />
     );
   }
@@ -257,8 +298,8 @@ export default function ChatScreen({ summary, onClose }: Props) {
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={insets.top}
     >
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
@@ -281,7 +322,7 @@ export default function ChatScreen({ summary, onClose }: Props) {
                 {activeMind ? activeMind.name : 'Reflection'}
               </Text>
             </View>
-            <Text style={styles.headerSub}>{formatDate(summary.date)}</Text>
+            <Text style={styles.headerSub}>{formatDate(effectiveSummary.date)}</Text>
           </View>
           {savingReflection ? (
             <View style={styles.savingRow}>
@@ -427,14 +468,14 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   defaultLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  defaultSymbol: { fontSize: 26, color: 'rgba(152,212,250,0.80)' },
+  defaultSymbol: { fontSize: 36, color: 'rgba(152,212,250,0.90)' },
   defaultName: {
-    fontSize: 16, fontFamily: 'Baskerville', fontWeight: '500',
-    color: 'rgba(224,242,254,0.90)',
+    fontSize: 17, fontFamily: 'Baskerville', fontWeight: '500',
+    color: 'rgba(224,242,254,0.95)',
   },
   defaultDesc: {
-    fontSize: 11, fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.55)', marginTop: 2, lineHeight: 16,
+    fontSize: 12, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.65)', marginTop: 3, lineHeight: 17,
   },
 
   orLabel: {
@@ -449,6 +490,7 @@ const styles = StyleSheet.create({
     flex: 1, borderRadius: 18, borderWidth: 1,
     padding: 16, minHeight: 140, gap: 4,
   },
+  mindReflectWith: { fontSize: 9, fontFamily: 'GillSans-Light', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 2 },
   mindName: { fontSize: 14, fontFamily: 'Baskerville', fontWeight: '500', lineHeight: 20, color: 'rgba(224,242,254,0.95)' },
   mindEra: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', lineHeight: 14 },
   mindPhil: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.55)', lineHeight: 16, marginTop: 2 },

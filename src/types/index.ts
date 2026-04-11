@@ -5,6 +5,7 @@ export interface TranscriptEntry {
   duration: number; // seconds; 0 for manual entries
   kind?: 'voice' | 'manual'; // undefined treated as 'voice' for backward-compat
   photoUri?: string; // local file path, manual entries only
+  emotionTags?: string[]; // 1–3 emotion labels inferred from voice transcript, e.g. ["anxious", "hopeful"]
 }
 
 export interface PendingClip {
@@ -21,7 +22,8 @@ export interface DailySummary {
   reflectionText?: string; // generated after a Call or Chat session ends
   transcriptCount: number;
   createdAt: number;
-  imageUri?: string; // local file path of generated jellyfish card image
+  imageUri?: string;       // local file path of generated jellyfish card image
+  dailyMacros?: DayMacros; // meal macro estimates extracted during summary generation
 }
 
 export interface AppSettings {
@@ -255,6 +257,7 @@ export interface JournalSignal {
   values_in_tension: string[];
   enneagram_hints: number[];
   depth_preference: 'entry' | 'mid' | 'deep';
+  extractedAt?: number; // Unix ms — used for freshness checks
 }
 
 export interface FeedSelection {
@@ -275,6 +278,18 @@ export interface BigFiveTrait {
   score: number;                               // 0–100
   direction: 'rising' | 'stable' | 'falling';
 }
+
+export type MotivationDriver =
+  'status' | 'security' | 'freedom' | 'love' |
+  'mastery' | 'control' | 'meaning' | 'pleasure';
+
+export interface MotivationEntry {
+  driver: MotivationDriver;
+  type: 'toward' | 'away';                    // motivation vs avoidance
+  strength: number;                           // 0–100
+  observation: string;                        // one-line inference
+}
+
 export interface WhoYouAreAnalysis {
   generatedAt: number;
   entryCountAtGeneration: number;
@@ -294,6 +309,7 @@ export interface WhoYouAreAnalysis {
     coreDesire:     string;
     growthDirection: string;
   };
+  motivationDrivers?: MotivationEntry[];       // top 3 toward + top 3 away
   sourceEntries: string[];                     // YYYY-MM-DD dates
 }
 export interface EnneagramResponse {
@@ -332,14 +348,56 @@ export interface CognitiveDimension {
   observation:  string;   // one-line inference — not a label
   sourceEntries: string[];
 }
+
+export interface BiasPattern {
+  name:        string;                                     // e.g. "Confirmation bias"
+  observation: string;                                     // one-line inference from journal
+  frequency:   'occasional' | 'frequent' | 'dominant';
+}
+
+export interface ExecutionPatterns {
+  startsFinishesRatio: number;   // 0–100 (100 = always finishes)
+  consistencyScore:    number;   // 0–100 (100 = perfectly consistent vs 0 = pure bursts)
+  planningActionScore: number;   // 0–100 (100 = all planning, 0 = pure action)
+  observations:        string[]; // 1–3 supporting inferences
+}
+
+export interface RepeatingLoop {
+  name:           string;  // e.g. "Procrastination cycle"
+  description:    string;
+  triggerPattern: string;  // what tends to start it
+}
+
 export interface HowYouThinkAnalysis {
   generatedAt: number;
   entryCountAtGeneration: number;
-  dimensions:  CognitiveDimension[];
+  dimensions:         CognitiveDimension[];
+  decisionStyle?:     { primaryStyle: string; description: string; patterns: string[] };
+  biasPatterns?:      BiasPattern[];
+  executionPatterns?: ExecutionPatterns;
+  repeatingLoops?:    RepeatingLoop[];
 }
 
 // Tab 4: Your Story
 export type ArcType = 'Seeker' | 'Builder' | 'Witness' | 'Transformer' | 'Returner';
+
+export interface SelfLabel {
+  label:     string;   // e.g. "I am always the one who holds it together"
+  frequency: number;   // how often this pattern appears
+  valence:   'positive' | 'negative' | 'neutral';
+}
+
+export interface NarrativePattern {
+  pattern:     string;   // e.g. "Victim of circumstance"
+  observation: string;   // one-line inference
+}
+
+export interface InternalContradiction {
+  statement1: string;
+  statement2: string;
+  tension:    string;  // brief description of the tension
+}
+
 export interface YourStoryAnalysis {
   generatedAt: number;
   entryCountAtGeneration: number;
@@ -349,13 +407,18 @@ export interface YourStoryAnalysis {
     narrative: string;   // 2–3 sentences, written like an opening line
   };
   recurringCast: Array<{
-    archetype:  string;  // e.g. "A relationship where you hold back"
-    frequency:  number;
+    archetype:         string;  // e.g. "A relationship where you hold back"
+    frequency:         number;
+    interactionStyle?: string;  // e.g. "You tend to over-explain yourself to this person"
+    conflictStyle?:    string;  // e.g. "Avoids direct confrontation, withdraws instead"
   }>;
   arcPattern: {
     type:        ArcType;
     description: string;
     history:     Array<{ type: string; dateRange: string }>;
   };
+  selfLabels?:             SelfLabel[];
+  narrativePatterns?:      NarrativePattern[];
+  internalContradictions?: InternalContradiction[];
   sourceEntries: string[];
 }

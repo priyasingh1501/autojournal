@@ -75,10 +75,11 @@ interface Props {
   onUnsave:  (id: string) => void;
   onReflect: (short: WisdomShort) => void;
   onShare:   (short: WisdomShort) => void;
+  onRead?:   (short: WisdomShort) => void;
 }
 
 export default function ShortCard({
-  short, isSaved, onSave, onUnsave, onReflect, onShare,
+  short, isSaved, onSave, onUnsave, onReflect, onShare, onRead,
 }: Props) {
   const [imageUri,     setImageUri]     = useState<string | null>(short.imageUri ?? null);
   const [generating,   setGenerating]   = useState(false);
@@ -298,7 +299,7 @@ export default function ShortCard({
             style={[styles.reflectBtn, styles.shareBtn]}
             onPress={() => onShare(short)}
           >
-            <Feather name="share-2" size={13} color="rgba(255,255,255,0.55)" />
+            <Feather name="share-2" size={13} color="rgba(255,255,255,0.75)" />
           </TouchableOpacity>
         </View>
 
@@ -480,15 +481,15 @@ const styles = StyleSheet.create({
   chip: {
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 11,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   chipText: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: 'GillSans-Light',
-    color: 'rgba(255,255,255,0.40)',
+    color: 'rgba(255,255,255,0.52)',
   },
 
   divider: {
@@ -522,8 +523,8 @@ const styles = StyleSheet.create({
     gap: 5,
     borderWidth: 1,
     borderRadius: 20,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
@@ -531,7 +532,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     fontFamily: 'GillSans-Light',
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(255,255,255,0.75)',
   },
   shareBtn: {
     marginLeft: 8,

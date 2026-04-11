@@ -131,7 +131,7 @@ export async function generateEmotionAnalysis(
     }],
   });
 
-  const raw = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
+  const raw = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
   const jsonStr = extractJson(raw);
   let parsed: any;
   try {
@@ -213,7 +213,7 @@ export async function generateThoughtPatternAnalysis(
     }],
   });
 
-  const raw = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
+  const raw = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
   const jsonStr = extractJson(raw);
   let parsed: any;
   try {
@@ -298,7 +298,7 @@ export async function generatePersonalityAnalysis(forceRefresh = false): Promise
     }],
   });
 
-  const raw = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
+  const raw = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
   const jsonStr = extractJson(raw);
   let parsed: any;
   try {
@@ -398,7 +398,7 @@ export async function generateGrowthTips(forceRefresh = false): Promise<GrowthTi
     }],
   });
 
-  const raw = response.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
+  const raw = response.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
   const jsonStr = extractJson(raw);
   let parsed: any;
   try {

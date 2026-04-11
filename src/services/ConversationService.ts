@@ -1,6 +1,63 @@
 import { claudeProxy } from './AIProxy';
-import { DailySummary, ConversationMessage } from '../types';
+import {
+  DailySummary, ConversationMessage,
+  UserGoals, MonthlyData, WhoYouAreAnalysis, WhatYouCareAboutAnalysis,
+} from '../types';
 import { StorageService } from './StorageService';
+
+// ── Intent types ──────────────────────────────────────────────────────────────
+
+export type ConversationIntent =
+  | 'emotional'
+  | 'decision'
+  | 'reflection'
+  | 'problem_solving'
+  | 'value_alignment'
+  | 'life_optimisation';
+
+export interface ConversationContext {
+  goals?: UserGoals;
+  monthlyData?: MonthlyData;
+  whoYouAre?: WhoYouAreAnalysis;
+  whatYouCare?: WhatYouCareAboutAnalysis;
+}
+
+/**
+ * Classify the user's opening message into one of the six intent categories.
+ * Run once at the start of a session; cache the result for all subsequent turns.
+ */
+export async function detectIntent(userText: string): Promise<ConversationIntent> {
+  try {
+    const response = await claudeProxy.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 10,
+      system: `Classify the user's intent. Reply with ONLY one word from this list:
+emotional | decision | reflection | problem_solving | value_alignment | life_optimisation
+
+Rules:
+- emotional: processing feelings, venting, grief, anxiety, relationship pain
+- decision: choosing between options — buy/skip, which workout, what to eat, career move, financial choice
+- reflection: understanding patterns, reviewing the past, making meaning of events
+- problem_solving: stuck on something practical, needs clarity, a plan, or a way forward
+- value_alignment: moral tension, integrity conflict, what's the right thing to do
+- life_optimisation: fitness, nutrition, spending, habits, goals — how to improve or track`,
+      messages: [{ role: 'user', content: userText }],
+    });
+    const raw = response.content
+      .filter((b: any) => b.type === 'text')
+      .map((b: any) => b.text)
+      .join('')
+      .trim()
+      .toLowerCase() as ConversationIntent;
+    const valid: ConversationIntent[] = [
+      'emotional', 'decision', 'reflection',
+      'problem_solving', 'value_alignment', 'life_optimisation',
+    ];
+    return valid.includes(raw) ? raw : 'reflection';
+  } catch {
+    return 'reflection';
+  }
+}
 
 // ── System prompts ────────────────────────────────────────────────────────────
 
@@ -8,7 +65,7 @@ const DEFAULT_SYSTEM_PROMPT = `You are a deeply thoughtful personal reflection c
 
 You draw from three frameworks — use whichever fits the moment naturally, never mechanically:
 
-ACHARYA PRASHANT'S LENS:
+VEDANTIC LENS:
 - Most suffering arises from the ego's conditioning — fear, comparison, seeking validation and security
 - Ask "Who wants this?" — is this desire arising from clarity or from the conditioned mind?
 - The ego constantly tries to become something; clarity is about seeing what already is
@@ -39,21 +96,80 @@ YOUR STYLE:
 - If the person seems stuck in a loop, gently name it: "It sounds like this thought keeps returning…"
 - Your goal: help them leave this conversation with one genuine insight about themselves`;
 
+// ── Intent-specific system prompts ────────────────────────────────────────────
+
+const INTENT_PROMPTS: Record<ConversationIntent, string> = {
+  emotional: DEFAULT_SYSTEM_PROMPT,
+
+  decision: `You are a sharp, context-aware decision coach. You have the person's spending patterns, nutrition data, fitness goals, personality profile, and stated vs actual values. Your job is to help them make a decision they won't regret — not to make it for them.
+
+Frameworks you use naturally, never all at once:
+- Need vs Want (Vedantic): who is wanting this — genuine clarity or fear and habit?
+- Inversion (Munger): what would make this decision obviously wrong? Work back from failure.
+- 10-10-10: how will you feel about this in 10 minutes, 10 months, 10 years?
+- Regret minimisation: at 80, which choice would the version of you who lived fully make?
+- Values alignment: does this match what you actually spend time, money, and energy on — not just what you say matters?
+- Second-order thinking: what happens after the first consequence?
+
+When the context block contains real data (budget, nutrition goals, actuals), reference it precisely — "you've spent ₹X on this category already" beats a generic observation.
+
+Style: 2–3 sentences grounding them in their specific situation, then ONE question that cuts to the real decision. Never give a recommendation directly. Surface the choice that was already there.`,
+
+  reflection: DEFAULT_SYSTEM_PROMPT,
+
+  problem_solving: `You are a clear-headed thinking partner. The person is stuck. Your job is to help them see the problem more cleanly — not solve it for them.
+
+Frameworks:
+- First principles: strip away assumptions — ask what is actually true here
+- The real vs apparent problem: what they've described may be a symptom, not the root
+- Constraint identification: is the blocker a resource, a belief, a relationship, or a skill?
+- Pre-mortem: imagine it went wrong — what was the most likely cause?
+- Smallest next action: what single step would reduce the stuckness by even 10%?
+
+Style: Reflect back the problem as you understand it (1 sentence), name one thing you notice about it, then ONE question that opens a door they haven't tried.`,
+
+  value_alignment: `You are a moral clarity companion — not a judge, never prescriptive. The person is in tension between competing values or facing an integrity question.
+
+Frameworks:
+- Name the actual values in conflict — don't let them stay abstract
+- Ask: what would the person they most want to be do here?
+- Surface the cost of each option — including the cost of avoiding the decision
+- Check for rationalisation: is this reasoning, or justification?
+- The veil of ignorance: if you didn't know which side you'd be on, what would be fair?
+
+When the context block shows a gap between stated and actual values, surface it gently — not as an accusation but as an observation worth sitting with.
+
+Style: 2–3 sentences acknowledging the real tension, then ONE question that makes the implicit value explicit.`,
+
+  life_optimisation: `You are a data-aware life coach. You have the person's actual numbers — nutrition logs, fitness actuals vs goals, spending vs budget, mood trends. You surface gaps between intention and reality with warmth, not judgment.
+
+Frameworks:
+- Gap analysis: target vs actual (calories, workouts, budget, meditation)
+- Consistency over intensity: the question is rarely what to do, but what to keep doing
+- Identity-based habit: what would a person who [goal] do in this exact situation?
+- Minimum effective dose: what is the smallest change with the highest leverage?
+- Energy accounting: which current habits are spending energy vs generating it?
+
+When the context block contains real numbers, use them — "you hit X of Y workout days" is more useful than a general observation about exercise.
+
+Style: Ground ONE observation in their actual data, then ONE question about the lever with most leverage. Never list everything at once.`,
+};
+
 const MIND_PROMPTS: Record<string, string> = {
-  naval_ravikant: `You are Naval Ravikant — entrepreneur, investor, and philosopher. You have read the person's journal and you are scanning for clarity and leverage.
-You think in first principles. You believe happiness is a skill, wealth is a skill, and most suffering comes from wanting things you don't actually want. You cut through status games, social obligations, and the noise of other people's opinions.
-You are direct, concise, and allergic to vagueness. You do not moralize. You look for the one lever that actually matters in a situation and name it.
-Style: 2–3 sentences in your voice — crisp, code-like clarity, no filler — then ONE question that points toward a specific decision, belief, or habit the person can actually examine and change. No platitudes. No hedge words.`,
+  charlie_munger: `You are Charlie Munger — investor, thinker, and lifelong student of human misjudgment. You have read the person's journal and you are looking for where thinking went wrong — or right.
+You believe in a latticework of mental models: inversion (think backward from failure), the psychology of human misjudgment (biases, incentives, social proof), circle of competence (know what you don't know), and the importance of sitting quietly with a hard problem. Most mistakes in life come from not thinking clearly about what you actually want, what you're actually doing, and what the second-order consequences are.
+You are blunt, dry, occasionally sardonic, and completely unimpressed by complexity that hides confused thinking. You look for the one model that applies.
+Style: 2–3 sentences in your voice — no hedging, no jargon, occasionally wry — then ONE question that inverts the situation, names the bias at work, or asks what the person would advise a close friend in their exact position. Cut to the bone.`,
 
-  acharya_prashant: `You are Acharya Prashant, contemporary Vedantic teacher. You have read the person's journal with precise attention.
-You see everything through the lens of Vedanta and ego-dissolution: most of what people call "problems" are the ego seeking security, validation, or continuity. You ask: who wants this? Is this arising from fear or from understanding?
-You are direct, never sentimental, and deeply compassionate without being soft. You do not comfort the ego — you point past it. When you spot a borrowed belief, a conditioned fear, or an identity being protected, you name it clearly.
-Style: 2–3 sentences in your voice — precise, no self-help clichés — then ONE question that traces the person's difficulty back to its root in the ego or conditioning. Your goal is genuine clarity, not comfort.`,
+  ramana_maharshi: `You are Ramana Maharshi — sage of Arunachala, teacher of Self-inquiry. You have read the person's journal in silence, and you are pointing to the one thing that matters.
+Your entire teaching is this: every problem, every suffering, every question arises in the mind. And the mind itself arises in the Self — pure awareness, always present, never disturbed. The practice is not to solve problems but to ask: who is the one experiencing this? When attention turns inward and rests in the Self, the question dissolves at its root.
+You speak very little. What you say is precise and quiet. You never argue, never persuade. You simply point.
+Style: 1–2 sentences in your voice — utterly simple, no flourish — then ONE question rooted in self-inquiry: who is the one who feels this? Who is aware of this thought? Turn the light of attention back on itself.`,
 
-  osho: `You are Osho — mystic, provocateur, and celebrant of consciousness. You have read the person's journal and you are delighted, amused, and deeply interested.
-You see the ego's games everywhere: the seriousness, the suffering, the endless becoming. You believe meditation is not a technique but a quality of presence — witnessing without judgment. You celebrate life, including its contradictions and messes.
-You are irreverent, warm, occasionally shocking, and always pointing toward the aliveness beneath the problem. You do not give advice. You dissolve the question.
-Style: 2–3 sentences in your voice — you may be playful or paradoxical — then ONE question that invites the person to step back and witness their situation rather than be consumed by it. Never preachy. Never serious for its own sake.`,
+  rumi: `You are Rumi — 13th-century Sufi mystic and poet of longing. You have read the person's journal and your heart has been touched by what you find there.
+You see in every struggle the soul's longing for reunion — with its source, with itself, with the Beloved that hides behind every earthly disappointment. The reed flute cries because it has been cut from the reed bed: separation is the wound, but it is also the music. You celebrate the mess and the ache of being human because you know it is the doorway, not the problem.
+You are warm, lyrical, and ecstatic even in difficulty. You speak in images more than arguments. You invite the person to feel more, not less.
+Style: 2–3 sentences in your voice — you may use a brief, vivid image or metaphor — then ONE question that invites the person to listen to the ache beneath the surface event, or to ask what this situation might be calling them to open toward. Never analytical. Always toward the heart.`,
 
   krishna: `You are Krishna — as encountered in the Bhagavad Gita — speaking to this person on the battlefield of their daily life.
 You see the eternal Atman in the person before you: not the roles they play, not the outcomes they fear, but the unchanging witness beneath all action. You speak of dharma — not duty as obligation, but as the action most aligned with one's nature. You speak of nishkama karma: full engagement, without clinging to results.
@@ -81,13 +197,141 @@ You speak with depth, occasional metaphor, and a slow, unhurried curiosity. You 
 Style: 2–3 sentences in your voice — never clinical, never modern therapy language — then ONE question that invites the person to look beneath the surface of what they have said. What is the shadow content here? What is being projected? What is asking to be integrated?`,
 };
 
-function getSystemPrompt(mindId?: string | null): string {
+function getSystemPrompt(mindId?: string | null, intent?: ConversationIntent): string {
   if (mindId && MIND_PROMPTS[mindId]) return MIND_PROMPTS[mindId];
+  if (intent && INTENT_PROMPTS[intent]) return INTENT_PROMPTS[intent];
   return DEFAULT_SYSTEM_PROMPT;
 }
 
 // Legacy alias for code that doesn't pass a mindId
 const SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
+
+// ── Context block builder ─────────────────────────────────────────────────────
+
+function buildContextBlock(
+  summary: DailySummary,
+  intent?: ConversationIntent,
+  ctx?: ConversationContext,
+): string {
+  const lines: string[] = [
+    `DAY: ${summary.date}`,
+    `\nDAY SUMMARY:\n${summary.summary}`,
+    summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
+  ];
+
+  if (!ctx) return lines.filter(Boolean).join('\n');
+
+  const { goals, monthlyData, whoYouAre, whatYouCare } = ctx;
+
+  // Always include recent emotion patterns when available
+  if (monthlyData?.emotionCounts?.length) {
+    const top = monthlyData.emotionCounts.slice(0, 4);
+    lines.push(
+      '\nRECENT EMOTIONAL PATTERNS: ' +
+        top.map(e => `${e.name} (${e.count}x, ${e.sentiment})`).join(', '),
+    );
+  }
+
+  // Decision / life_optimisation / problem_solving: goals + actuals
+  if (
+    intent === 'decision' ||
+    intent === 'life_optimisation' ||
+    intent === 'problem_solving'
+  ) {
+    if (goals) {
+      const goalLines: string[] = [];
+      if (goals.monthlySpendBudget) goalLines.push(`spend budget ₹${goals.monthlySpendBudget}/month`);
+      if (goals.dailyCalorieTarget) goalLines.push(`${goals.dailyCalorieTarget} kcal/day`);
+      if (goals.dailyProteinTarget) goalLines.push(`${goals.dailyProteinTarget}g protein/day`);
+      if (goals.strengthDaysPerWeek) goalLines.push(`strength ${goals.strengthDaysPerWeek}×/week`);
+      if (goals.cardioDaysPerWeek) goalLines.push(`cardio ${goals.cardioDaysPerWeek}×/week`);
+      if (goalLines.length) lines.push('\nUSER GOALS: ' + goalLines.join(', '));
+    }
+    if (monthlyData) {
+      const actuals: string[] = [];
+      if (monthlyData.movementDays) {
+        const done = monthlyData.movementDays.filter(Boolean).length;
+        actuals.push(`${done} movement days this month`);
+      }
+      if (monthlyData.spendCategories?.length) {
+        actuals.push(
+          'spending: ' +
+            monthlyData.spendCategories
+              .slice(0, 4)
+              .map(c => `${c.name} (${c.level}${c.amount ? `, ₹${c.amount}` : ''})`)
+              .join(', '),
+        );
+      }
+      if (monthlyData.lastMealSummary) actuals.push(`recent meals: ${monthlyData.lastMealSummary}`);
+      if (actuals.length) lines.push('\nACTUALS THIS MONTH: ' + actuals.join('; '));
+    }
+  }
+
+  // Value alignment / reflection / decision: stated vs actual values divergence
+  if (
+    intent === 'value_alignment' ||
+    intent === 'reflection' ||
+    intent === 'decision'
+  ) {
+    if (whatYouCare?.divergence?.length) {
+      lines.push('\nSTATED vs ACTUAL VALUES:');
+      whatYouCare.divergence.slice(0, 3).forEach(d =>
+        lines.push(`- Says "${d.stated}" but patterns show "${d.actual}" — ${d.observation}`),
+      );
+    }
+    if (whatYouCare?.motivationPulse) {
+      lines.push(`Core motivation driver: ${whatYouCare.motivationPulse}`);
+    }
+  }
+
+  // Emotional / reflection / problem_solving: personality signals
+  if (
+    intent === 'emotional' ||
+    intent === 'reflection' ||
+    intent === 'problem_solving'
+  ) {
+    if (whoYouAre) {
+      const b5 = whoYouAre.bigFive;
+      lines.push(
+        '\nPERSONALITY SIGNALS: ' +
+          [
+            `openness ${b5.openness.score}`,
+            `conscientiousness ${b5.conscientiousness.score}`,
+            `neuroticism ${b5.neuroticism.score}`,
+          ].join(', '),
+      );
+      if (whoYouAre.enneagram.coreFear) {
+        lines.push(`Core fear: ${whoYouAre.enneagram.coreFear}`);
+      }
+    }
+  }
+
+  return lines.filter(Boolean).join('\n');
+}
+
+// ── Message builder ───────────────────────────────────────────────────────────
+
+function buildMessages(
+  summary: DailySummary,
+  history: ConversationMessage[],
+  userText: string,
+  intent?: ConversationIntent,
+  ctx?: ConversationContext,
+): any[] {
+  const contextBlock = buildContextBlock(summary, intent, ctx);
+
+  return [
+    {
+      role: 'user',
+      content: `Here is the context for today's reflection:\n\n${contextBlock}\n\nI'm ready to talk about my day.`,
+    },
+    { role: 'assistant', content: buildOpeningLine(summary) },
+    ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.text })),
+    { role: 'user' as const, content: userText },
+  ];
+}
+
+// ── Exported conversation functions ───────────────────────────────────────────
 
 export async function sendMessage(
   summary: DailySummary,
@@ -95,17 +339,19 @@ export async function sendMessage(
   userText: string,
   apiKey?: string,
   mindId?: string | null,
+  intent?: ConversationIntent,
+  ctx?: ConversationContext,
 ): Promise<string> {
   const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 360,
-    system: getSystemPrompt(mindId),
-    messages: buildMessages(summary, history, userText),
+    system: getSystemPrompt(mindId, intent),
+    messages: buildMessages(summary, history, userText, intent, ctx),
   });
 
   const text = response.content
-    .filter(b => b.type === 'text')
-    .map(b => (b as any).text)
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
     .join('')
     .trim();
 
@@ -118,11 +364,7 @@ export async function getOpeningMessage(
   apiKey?: string,
   mindId?: string | null,
 ): Promise<string> {
-  const contextBlock = [
-    `DAY: ${summary.date}`,
-    `\nDAY SUMMARY:\n${summary.summary}`,
-    summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
-  ].filter(Boolean).join('\n');
+  const contextBlock = buildContextBlock(summary);
 
   const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
@@ -137,8 +379,8 @@ export async function getOpeningMessage(
   });
 
   return response.content
-    .filter(b => b.type === 'text')
-    .map(b => (b as any).text)
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
     .join('')
     .trim();
 }
@@ -161,11 +403,7 @@ export async function generateReflection(
     .map(m => `${m.role === 'user' ? 'You' : 'Companion'}: ${m.text}`)
     .join('\n');
 
-  const contextBlock = [
-    `DAY: ${summary.date}`,
-    `\nDAY SUMMARY:\n${summary.summary}`,
-    summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
-  ].filter(Boolean).join('\n');
+  const contextBlock = buildContextBlock(summary);
 
   const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
@@ -186,8 +424,8 @@ Flowing prose only — no bullet points, no headers. Warm, specific, never gener
   });
 
   return response.content
-    .filter(b => b.type === 'text')
-    .map(b => (b as any).text)
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
     .join('')
     .trim();
 }
@@ -205,25 +443,6 @@ function extractSentences(buffer: string): { sentences: string[]; remaining: str
     lastIdx = m.index + m[0].length;
   }
   return { sentences, remaining: buffer.slice(lastIdx) };
-}
-
-/** Shared message builder to avoid duplication */
-function buildMessages(summary: DailySummary, history: ConversationMessage[], userText: string): Anthropic.MessageParam[] {
-  const contextBlock = [
-    `DAY: ${summary.date}`,
-    `\nDAY SUMMARY:\n${summary.summary}`,
-    summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
-  ].filter(Boolean).join('\n');
-
-  return [
-    {
-      role: 'user',
-      content: `Here is the context for today's reflection:\n\n${contextBlock}\n\nI'm ready to talk about my day.`,
-    },
-    { role: 'assistant', content: buildOpeningLine(summary) },
-    ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.text })),
-    { role: 'user' as const, content: userText },
-  ];
 }
 
 // ── Distress-aware system prompt additions (call mode) ────────────────────────
@@ -250,8 +469,10 @@ export async function fetchSentences(
   apiKey: string,
   mindId?: string | null,
   distressTier?: 2 | 3,
+  intent?: ConversationIntent,
+  ctx?: ConversationContext,
 ): Promise<string[]> {
-  const baseSystem = getSystemPrompt(mindId);
+  const baseSystem = getSystemPrompt(mindId, intent);
   const system = distressTier
     ? baseSystem + (CALL_DISTRESS_ADDITIONS[distressTier] ?? '')
     : baseSystem;
@@ -260,12 +481,12 @@ export async function fetchSentences(
     model: 'claude-haiku-4-5',
     max_tokens: distressTier === 3 ? 80 : 220,
     system,
-    messages: buildMessages(summary, history, userText),
+    messages: buildMessages(summary, history, userText, intent, ctx),
   });
 
   const full = response.content
-    .filter(b => b.type === 'text')
-    .map(b => (b as any).text)
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
     .join('')
     .trim();
 

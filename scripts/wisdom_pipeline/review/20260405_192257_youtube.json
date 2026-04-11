@@ -1,0 +1,615 @@
+[
+  {
+    "id": "schooloflife_loneliness_bodily_function",
+    "title": "Loneliness Is a Bodily Function Like Hunger",
+    "short": "Loneliness isn't a personality flaw or a sign you lack social skills. It's a biological signal, like hunger. Hunger makes you pay attention to your physical needs. Loneliness makes you pay attention to your social needs. Your body monitors your social connections because for most of human history, being alone meant death. You were born into groups of 50 to 150 people, and getting food, staying warm, and raising children was impossible without them. So your body evolved a warning system. When your social needs aren't met, it hurts — on purpose. The pain is designed to change your behavior, to push you back toward connection. Loneliness isn't a failing. It's your body doing exactly what it was built to do.",
+    "pullquote": "Loneliness isn't a failing — it's your body doing exactly what it was built to do.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "evolutionary_biology",
+    "themes": [
+      "loneliness",
+      "belonging",
+      "connection",
+      "interoception"
+    ],
+    "emotional_states": [
+      "lonely",
+      "isolated",
+      "disconnected"
+    ],
+    "cognitive_patterns": [
+      "personalisation",
+      "should-statements"
+    ],
+    "enneagram_resonance": [
+      2,
+      4,
+      6
+    ],
+    "cognitive_style": [
+      "reflective",
+      "intuitive"
+    ],
+    "values": [
+      "connection",
+      "belonging",
+      "self-worth"
+    ],
+    "depth": "mid",
+    "confidence_level": "high",
+    "_score": {
+      "id": "schooloflife_loneliness_bodily_function",
+      "clarity": 9,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 8,
+      "total": 33,
+      "keep": true
+    }
+  },
+  {
+    "id": "schooloflife_rejection_evolutionary_pain",
+    "title": "Social Pain Evolved to Keep You in the Tribe",
+    "short": "Your ancestors faced many threats, but the most dangerous one wasn't predators. It was being excluded from the group. Alone, you couldn't get enough food, stay safe, or raise children. So your body developed something powerful: social pain. Rejection was engineered to hurt — not as a bug, but as a feature. It was an early warning system. Those ancestors who felt rejection more sharply were more likely to adjust their behavior, stay in the group, and survive. Those who shrugged it off got kicked out and died. This is why a dismissive comment can ruin your week. Your body treats social rejection like a survival emergency, because for most of history, it was one.",
+    "pullquote": "Your body treats social rejection like a survival emergency, because for most of history, it was one.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "evolutionary_biology",
+    "themes": [
+      "loneliness",
+      "belonging",
+      "fear",
+      "shame"
+    ],
+    "emotional_states": [
+      "ashamed",
+      "insecure",
+      "anxious",
+      "lonely"
+    ],
+    "cognitive_patterns": [
+      "social-evaluation",
+      "personalisation"
+    ],
+    "enneagram_resonance": [
+      2,
+      6,
+      9
+    ],
+    "cognitive_style": [
+      "reflective",
+      "analytical"
+    ],
+    "values": [
+      "belonging",
+      "security",
+      "connection"
+    ],
+    "depth": "mid",
+    "confidence_level": "high",
+    "_score": {
+      "id": "schooloflife_rejection_evolutionary_pain",
+      "clarity": 9,
+      "non_obvious": 8,
+      "voice_fit": 9,
+      "standalone": 9,
+      "total": 35,
+      "keep": true
+    }
+  },
+  {
+    "id": "schooloflife_loneliness_not_social_skills",
+    "title": "Social Skills Won't Protect You from Loneliness",
+    "short": "There's a comfortable story we tell ourselves: lonely people just don't know how to connect. They're awkward, or shy, or bad at conversation. But large studies on adult populations show that social skills make practically no difference when it comes to chronic loneliness. Money doesn't protect you. Fame doesn't. Beauty, charm, a great personality — none of it. Loneliness can reach anyone because it's not about your ability to perform in social settings. It's about whether your deeper need for connection is being met. You can be surrounded by people, admired by many, and still feel profoundly alone. Loneliness is entirely subjective. If you feel it, it's real.",
+    "pullquote": "You can be surrounded by people, admired by many, and still feel profoundly alone.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "psychology",
+    "themes": [
+      "loneliness",
+      "connection",
+      "identity",
+      "belonging"
+    ],
+    "emotional_states": [
+      "lonely",
+      "disconnected",
+      "insecure",
+      "isolated"
+    ],
+    "cognitive_patterns": [
+      "personalisation",
+      "comparison",
+      "should-statements"
+    ],
+    "enneagram_resonance": [
+      3,
+      4,
+      7
+    ],
+    "cognitive_style": [
+      "reflective",
+      "analytical"
+    ],
+    "values": [
+      "connection",
+      "authenticity",
+      "self-worth"
+    ],
+    "depth": "entry",
+    "confidence_level": "high",
+    "_score": {
+      "id": "schooloflife_loneliness_not_social_skills",
+      "clarity": 9,
+      "non_obvious": 8,
+      "voice_fit": 9,
+      "standalone": 9,
+      "total": 35,
+      "keep": true
+    }
+  },
+  {
+    "id": "schooloflife_chronic_loneliness_self_sustain",
+    "title": "Chronic Loneliness Rewires How You See People",
+    "short": "Here's the cruel part about loneliness. When it becomes chronic, it starts to sustain itself. Your brain shifts into self-preservation mode. It begins scanning for danger and hostility everywhere. At the same time, something strange happens: you become more alert to social signals — you pay more attention to others — but you get worse at reading them correctly. You notice more but understand less. So you misread neutral faces as cold, ambiguous comments as hostile, and ordinary distance as rejection. The very thing you need most — connection — starts to feel threatening. Loneliness doesn't just isolate you from others. It distorts the lens through which you see them.",
+    "pullquote": "You notice more but understand less — and the very thing you need most starts to feel threatening.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "psychology",
+    "themes": [
+      "loneliness",
+      "fear",
+      "anxiety",
+      "connection"
+    ],
+    "emotional_states": [
+      "lonely",
+      "anxious",
+      "disconnected",
+      "hopeless"
+    ],
+    "cognitive_patterns": [
+      "catastrophising",
+      "social-evaluation",
+      "personalisation"
+    ],
+    "enneagram_resonance": [
+      4,
+      5,
+      6
+    ],
+    "cognitive_style": [
+      "reflective",
+      "analytical"
+    ],
+    "values": [
+      "connection",
+      "security",
+      "belonging"
+    ],
+    "depth": "deep",
+    "confidence_level": "moderate",
+    "_score": {
+      "id": "schooloflife_chronic_loneliness_self_sustain",
+      "clarity": 8,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 8,
+      "total": 32,
+      "keep": true
+    }
+  },
+  {
+    "id": "schooloflife_modern_loneliness_accident",
+    "title": "Nobody Plans to Become Chronically Lonely",
+    "short": "Most people don't choose loneliness. They stumble into it. You finish school, start working, find a partner, have kids, fill your evenings with screens. Time becomes scarce, and the easiest thing to cut is time with friends. It happens so gradually you barely notice. Then one day you realize you haven't had a real conversation in months. You want close relationships but you've lost the infrastructure for them. You moved cities for a job. Your old community dissolved. Making deep friendships as an adult is genuinely hard. This is how an epidemic grows — not through dramatic events, but through the slow, quiet erosion of something you assumed would always be there.",
+    "pullquote": "This is how an epidemic grows — not through dramatic events, but through the slow, quiet erosion of something you assumed would always be there.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "philosophy",
+    "themes": [
+      "loneliness",
+      "belonging",
+      "connection",
+      "loss"
+    ],
+    "emotional_states": [
+      "lonely",
+      "disconnected",
+      "stuck",
+      "numb"
+    ],
+    "cognitive_patterns": [
+      "avoidance",
+      "future-orientation"
+    ],
+    "enneagram_resonance": [
+      3,
+      7,
+      9
+    ],
+    "cognitive_style": [
+      "reflective",
+      "practical"
+    ],
+    "values": [
+      "connection",
+      "belonging",
+      "meaning"
+    ],
+    "depth": "mid",
+    "confidence_level": "philosophical",
+    "_score": {
+      "id": "schooloflife_modern_loneliness_accident",
+      "clarity": 9,
+      "non_obvious": 6,
+      "voice_fit": 9,
+      "standalone": 9,
+      "total": 33,
+      "keep": true
+    }
+  },
+  {
+    "id": "schooloflife_connected_era_isolation",
+    "title": "Most Connected Time in History, Most Isolated",
+    "short": "For hundreds of thousands of years, you were born into a group and stayed in it for life. Then, in just a few centuries, everything changed. Culture shifted toward the individual. The industrial revolution dissolved villages. People moved to cities, left communities behind. Today we move across continents for jobs and education, leaving our social networks in pieces. We meet fewer people in person and see them less often. Close friendships have declined — from an average of three to two in just 26 years. We live in the most connected time in human history and yet an unprecedented number of us feel isolated. Our technology connected us to everyone and rooted us to no one.",
+    "pullquote": "Our technology connected us to everyone and rooted us to no one.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "philosophy",
+    "themes": [
+      "loneliness",
+      "belonging",
+      "connection",
+      "impermanence"
+    ],
+    "emotional_states": [
+      "lonely",
+      "disconnected",
+      "isolated",
+      "restless"
+    ],
+    "cognitive_patterns": [
+      "philosophical",
+      "comparison"
+    ],
+    "enneagram_resonance": [
+      4,
+      6,
+      9
+    ],
+    "cognitive_style": [
+      "reflective",
+      "analytical"
+    ],
+    "values": [
+      "belonging",
+      "connection",
+      "meaning"
+    ],
+    "depth": "entry",
+    "confidence_level": "philosophical",
+    "_score": {
+      "id": "schooloflife_connected_era_isolation",
+      "clarity": 8,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 7,
+      "total": 31,
+      "keep": true
+    }
+  },
+  {
+    "id": "school_of_life_loneliness_self_sustaining",
+    "title": "Loneliness Rewires Your Brain to Stay Lonely",
+    "short": "Loneliness isn't just a feeling. When it becomes chronic, it changes how your brain works. Your threat-detection system starts running full-time. You become hyper-alert to social signals but worse at reading them correctly. The part of your brain that reads faces starts misreading neutral expressions as hostile. So you pull back. You protect yourself. You get colder, more guarded, more awkward — not because that's who you are, but because your brain has decided the world is dangerous. The tragedy is that the defense mechanism against loneliness is exactly what keeps you lonely. Your brain is trying to protect you from rejection by making connection nearly impossible.",
+    "pullquote": "The defense mechanism against loneliness is exactly what keeps you lonely.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "psychology",
+    "themes": [
+      "loneliness",
+      "fear",
+      "connection",
+      "belonging"
+    ],
+    "emotional_states": [
+      "lonely",
+      "isolated",
+      "disconnected",
+      "anxious"
+    ],
+    "cognitive_patterns": [
+      "personalisation",
+      "social-evaluation",
+      "avoidance"
+    ],
+    "enneagram_resonance": [
+      4,
+      5,
+      6
+    ],
+    "cognitive_style": [
+      "reflective",
+      "analytical"
+    ],
+    "values": [
+      "connection",
+      "belonging",
+      "security"
+    ],
+    "depth": "mid",
+    "confidence_level": "moderate",
+    "_score": {
+      "id": "school_of_life_loneliness_self_sustaining",
+      "clarity": 8,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 8,
+      "total": 32,
+      "keep": true
+    }
+  },
+  {
+    "id": "school_of_life_loneliness_vicious_cycle",
+    "title": "Loneliness Follows a Predictable Downward Spiral",
+    "short": "The cycle is almost always the same. You feel isolated, which makes you tense and sad. That tension makes you notice the negative in every interaction. Your view of yourself and others darkens. You start avoiding people. You sit farther away. You don't answer the phone. You decline invitations — until they stop coming. Each loop through the cycle makes the next one harder to break. It's slow and creeping, sometimes taking years. The worst part is that it's invisible. You don't decide to withdraw from the world. You just stop showing up, one small choice at a time, until the distance feels permanent.",
+    "pullquote": "You don't decide to withdraw from the world — you just stop showing up, one small choice at a time, until the distance feels permanent.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "psychology",
+    "themes": [
+      "loneliness",
+      "belonging",
+      "anxiety",
+      "behavior-change"
+    ],
+    "emotional_states": [
+      "lonely",
+      "isolated",
+      "stuck",
+      "numb"
+    ],
+    "cognitive_patterns": [
+      "avoidance",
+      "withdrawal",
+      "rumination"
+    ],
+    "enneagram_resonance": [
+      4,
+      5,
+      9
+    ],
+    "cognitive_style": [
+      "reflective"
+    ],
+    "values": [
+      "connection",
+      "belonging"
+    ],
+    "depth": "mid",
+    "confidence_level": "moderate",
+    "_score": {
+      "id": "school_of_life_loneliness_vicious_cycle",
+      "clarity": 9,
+      "non_obvious": 6,
+      "voice_fit": 9,
+      "standalone": 9,
+      "total": 33,
+      "keep": true
+    }
+  },
+  {
+    "id": "school_of_life_story_becomes_reality",
+    "title": "Your Story About Yourself Becomes the World",
+    "short": "Every one of us carries a story about who we are. If your story becomes 'people exclude me,' something strange happens — others pick up on it. They sense the guardedness, the expectation of rejection, the walls. And they respond to those walls, not to you. The outside world starts to match the way you feel about it. This is not magical thinking. It's a feedback loop. Your beliefs shape your body language, your tone, your willingness to be open. Other people respond to those signals. And their response confirms what you already believed. The story writes itself into reality. Which means the story is the thing worth examining.",
+    "pullquote": "The outside world starts to match the way you feel about it.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "psychology",
+    "themes": [
+      "identity",
+      "self-concept",
+      "loneliness",
+      "connection"
+    ],
+    "emotional_states": [
+      "isolated",
+      "insecure",
+      "stuck",
+      "disconnected"
+    ],
+    "cognitive_patterns": [
+      "personalisation",
+      "learned-helplessness",
+      "social-evaluation"
+    ],
+    "enneagram_resonance": [
+      4,
+      6
+    ],
+    "cognitive_style": [
+      "reflective",
+      "intuitive"
+    ],
+    "values": [
+      "authenticity",
+      "self-worth",
+      "truth"
+    ],
+    "depth": "deep",
+    "confidence_level": "philosophical",
+    "_score": {
+      "id": "school_of_life_story_becomes_reality",
+      "clarity": 8,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 8,
+      "total": 32,
+      "keep": true
+    }
+  },
+  {
+    "id": "school_of_life_social_pain_physical_pain",
+    "title": "Rejection Hurts Because Your Brain Treats It Like a Wound",
+    "short": "Social pain and physical pain run through the same circuits in your brain. Being excluded doesn't just feel bad metaphorically — it registers as a genuine threat, the same way a physical injury would. This is why rejection can feel so visceral, so disproportionate. A dismissive comment can land like a punch. Being left out of a gathering can ache for days. Your brain evolved when being separated from the group meant death. It hasn't updated. So it responds to a canceled plan with the same alarm system it uses for a broken bone. The pain is real. It's just answering the wrong question.",
+    "pullquote": "Your brain evolved when being separated from the group meant death — it hasn't updated.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "psychology",
+    "themes": [
+      "loneliness",
+      "belonging",
+      "fear",
+      "stress"
+    ],
+    "emotional_states": [
+      "lonely",
+      "anxious",
+      "overwhelmed",
+      "disconnected"
+    ],
+    "cognitive_patterns": [
+      "personalisation",
+      "catastrophising"
+    ],
+    "enneagram_resonance": [
+      2,
+      6
+    ],
+    "cognitive_style": [
+      "analytical",
+      "reflective"
+    ],
+    "values": [
+      "connection",
+      "security",
+      "belonging"
+    ],
+    "depth": "mid",
+    "confidence_level": "high",
+    "_score": {
+      "id": "school_of_life_social_pain_physical_pain",
+      "clarity": 8,
+      "non_obvious": 7,
+      "voice_fit": 8,
+      "standalone": 8,
+      "total": 31,
+      "keep": true
+    }
+  },
+  {
+    "id": "school_of_life_preemptive_rejection",
+    "title": "Lonely People Push Others Away Before They Can Be Hurt",
+    "short": "When loneliness takes hold, it doesn't make you reach out. It makes you act as if you're already under attack. You become colder, more guarded, more self-centered — not because you don't care, but because caring has become too dangerous. You push people away before they get the chance to reject you. You decline the invitation before it can be withdrawn. You read hostility into neutral words. From the outside, you look like someone who doesn't want connection. From the inside, you're someone who wants it desperately but has decided the cost is too high. The protection and the wound become the same thing.",
+    "pullquote": "The protection and the wound become the same thing.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "psychology",
+    "themes": [
+      "loneliness",
+      "fear",
+      "connection",
+      "attachment"
+    ],
+    "emotional_states": [
+      "lonely",
+      "isolated",
+      "insecure",
+      "stuck"
+    ],
+    "cognitive_patterns": [
+      "avoidance",
+      "social-evaluation",
+      "emotional-suppression"
+    ],
+    "enneagram_resonance": [
+      5,
+      6,
+      8
+    ],
+    "cognitive_style": [
+      "reflective",
+      "intuitive"
+    ],
+    "values": [
+      "connection",
+      "security",
+      "self-worth"
+    ],
+    "depth": "deep",
+    "confidence_level": "moderate",
+    "_score": {
+      "id": "school_of_life_preemptive_rejection",
+      "clarity": 8,
+      "non_obvious": 6,
+      "voice_fit": 9,
+      "standalone": 8,
+      "total": 31,
+      "keep": true
+    }
+  },
+  {
+    "id": "school_of_life_nothing_shiny_substitutes",
+    "title": "No Achievement Substitutes for Being Known",
+    "short": "Humans have built an astonishing world. We have technology, comfort, entertainment, endless stimulation. And none of it satisfies the one thing we actually need — connection with other people. Most animals get what they need from their environment. Food, water, shelter, warmth. We get what we need from each other. That's the fundamental design of our species. Which means a person can have everything material and still be starving. Loneliness is not a failure of ambition or success. It's a biological signal, as basic as hunger, telling you that the one resource you can't live without is missing.",
+    "pullquote": "A person can have everything material and still be starving.",
+    "source_author": "The School of Life",
+    "source_url": "https://www.youtube.com/watch?v=n3Xv_g3g-mA",
+    "source_type": "video",
+    "discipline": "philosophy",
+    "themes": [
+      "loneliness",
+      "meaning",
+      "connection",
+      "craving"
+    ],
+    "emotional_states": [
+      "empty",
+      "unfulfilled",
+      "disconnected",
+      "purposeless"
+    ],
+    "cognitive_patterns": [
+      "philosophical",
+      "comparison"
+    ],
+    "enneagram_resonance": [
+      3,
+      4,
+      7
+    ],
+    "cognitive_style": [
+      "reflective",
+      "intuitive"
+    ],
+    "values": [
+      "connection",
+      "meaning",
+      "belonging"
+    ],
+    "depth": "deep",
+    "confidence_level": "philosophical",
+    "_score": {
+      "id": "school_of_life_nothing_shiny_substitutes",
+      "clarity": 7,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 7,
+      "total": 30,
+      "keep": true
+    }
+  }
+]

@@ -28,34 +28,18 @@ export async function setupNotificationChannel(): Promise<void> {
   }
 }
 
-// ─── Schedule nightly silent trigger at 23:59 ───────────────────────────────
-// This fires the generation process. A separate "ready" notification is sent
-// once the summary has actually been created.
+// ─── Nightly notification removed ───────────────────────────────────────────
+// The 11:59 PM notification claimed to be "Generating your daily summary…" but
+// JS never runs when the app is closed — so it was misleading. The morning
+// app-open (checkAndAutoGenerate → generateIfNeeded yesterday, regenerate=true)
+// is now the reliable end-of-day finisher. No nightly notification needed.
 
 export async function scheduleNightlyNotification(): Promise<void> {
+  // Cancel any previously scheduled nightly notification so old builds don't
+  // keep showing the misleading "Generating…" message.
   try {
     await Notifications.cancelScheduledNotificationAsync(NIGHTLY_NOTIFICATION_ID);
   } catch {}
-
-  const granted = await requestNotificationPermission();
-  if (!granted) return;
-
-  await Notifications.scheduleNotificationAsync({
-    identifier: NIGHTLY_NOTIFICATION_ID,
-    content: {
-      title: 'untangle',
-      body: 'Generating your daily summary…',
-      data: { action: 'generate-summary' },
-      // Keep silent — the "ready" notification will appear once done
-      sound: false,
-      ...(Platform.OS === 'android' && { channelId: NOTIFICATION_CHANNEL }),
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DAILY,
-      hour: 23,
-      minute: 59,
-    },
-  });
 }
 
 // ─── Send "summary ready" notification ──────────────────────────────────────
@@ -81,27 +65,44 @@ async function sendSummaryReadyNotification(date: string): Promise<void> {
 // ─── Auto-generate logic ─────────────────────────────────────────────────────
 
 /**
- * Silently generates a summary for `date` if:
- *   - an Anthropic API key is configured
- *   - there are entries for that date
- *   - no summary exists yet
- * Returns the new summary or null if nothing was generated.
+ * Silently generates (or regenerates) a summary for `date`.
+ *
+ * - Normal mode (regenerate=false): only runs if no summary exists yet.
+ *   Used for first-entry generation throughout the day.
+ *
+ * - Regenerate mode (regenerate=true): runs even if a summary already exists,
+ *   but only if there are entries newer than the existing summary (stale).
+ *   Used for the end-of-day nightly trigger.
+ *
+ * Returns true if a summary was created/updated.
  */
-export async function generateIfNeeded(date: string): Promise<boolean> {
+export async function generateIfNeeded(date: string, regenerate = false): Promise<boolean> {
   try {
-    const settings = await StorageService.getSettings();
-    if (!settings?.anthropicApiKey) return false;
-
-    const existing = await StorageService.getSummaryForDate(date);
-    if (existing) return false; // already done
-
     const transcripts = await StorageService.getTranscriptsForDate(date);
     if (transcripts.length === 0) return false;
 
+    const existing = await StorageService.getSummaryForDate(date);
+
+    if (!regenerate) {
+      // First-entry mode: skip if a summary already exists
+      if (existing) return false;
+    } else {
+      // End-of-day mode: skip if summary is already up-to-date (no stale entries)
+      if (existing) {
+        const summaryCreatedAt = existing.createdAt ?? 0;
+        const hasStale = transcripts.some(t => t.timestamp > summaryCreatedAt);
+        if (!hasStale) return false;
+      }
+    }
+
     await generateDailySummary(transcripts, date);
 
-    // Generation succeeded — notify the user that their summary is ready
-    await sendSummaryReadyNotification(date);
+    // Only notify for today's first-ever summary — not for background catch-up of
+    // old dates (regenerate=true path) or for regenerations of existing summaries.
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (!existing && !regenerate && date === todayStr) {
+      await sendSummaryReadyNotification(date);
+    }
     return true;
   } catch {
     return false;
@@ -110,8 +111,13 @@ export async function generateIfNeeded(date: string): Promise<boolean> {
 
 /**
  * Called on every app launch / foreground resume.
- * - Auto-generates today's summary if it's 23:55 or later
- * - Auto-generates yesterday's summary if the app wasn't open at midnight
+ * - Near midnight (23:55+): regenerates today's summary to fold in all stale entries
+ * - Always: generates/regenerates yesterday's summary if missing OR stale.
+ *   Using regenerate=true here is the key catch-up for the nightly notification path:
+ *   if the app was closed at 11:59 PM the JS listener never ran, so the first
+ *   time the user opens the app the next day we finish the job here.
+ *   generateIfNeeded with regenerate=true only hits the API when entries exist
+ *   that are newer than the existing summary — safe to call on every app open.
  */
 export async function checkAndAutoGenerate(): Promise<void> {
   const now = new Date();
@@ -122,11 +128,12 @@ export async function checkAndAutoGenerate(): Promise<void> {
   const minute = now.getMinutes();
   const isNearMidnight = hour === 23 && minute >= 55;
 
-  // Near midnight → generate today's
+  // Near midnight → regenerate today's to include all entries recorded during the day
   if (isNearMidnight) {
-    generateIfNeeded(todayStr); // fire-and-forget, no await so it doesn't block UI
+    generateIfNeeded(todayStr, true); // fire-and-forget
   }
 
-  // Always try yesterday in case the app was closed at 11:59 PM
-  generateIfNeeded(yesterdayStr);
+  // Yesterday: generate if missing, or regenerate if stale (entries newer than summary).
+  // regenerate=true is safe — it no-ops when the summary is already up to date.
+  generateIfNeeded(yesterdayStr, true);
 }

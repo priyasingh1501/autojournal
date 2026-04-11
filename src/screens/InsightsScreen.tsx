@@ -14,6 +14,8 @@ import {
 } from '../services/InsightV2Service';
 import InsightFreshnessBadge from '../components/insights/InsightFreshnessBadge';
 import { StorageService } from '../services/StorageService';
+import { SubscriptionService } from '../services/SubscriptionService';
+import PaywallModal from '../components/PaywallModal';
 import {
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis,
   HowYouThinkAnalysis, YourStoryAnalysis, EnneagramResponse,
@@ -30,10 +32,10 @@ type TabKey = 'you' | 'values' | 'thinking' | 'story';
 
 // Ordered by update frequency — most dynamic first
 const TABS: { key: TabKey; label: string; icon: string; full: string; sub: string }[] = [
-  { key: 'values',   label: 'Values',   icon: 'heart',   full: 'What I Care About',   sub: 'Values · Motivation'  }, // 10 entries / 14d
-  { key: 'you',      label: 'Me',       icon: 'user',    full: 'Who I Am',            sub: 'Big Five · Enneagram' }, // 20 entries / 30d
-  { key: 'thinking', label: 'Thinking', icon: 'cpu',     full: 'How I Think',         sub: 'Cognitive styles'     }, // 25 entries / 30d
-  { key: 'story',    label: 'Story',    icon: 'book',    full: 'My Story',            sub: 'Chapter · Arc'        }, // 30 entries / 30d
+  { key: 'values',   label: 'Values',   icon: 'heart',   full: 'What You Care About',  sub: 'Values · Motivation'  }, // 10 entries / 14d
+  { key: 'you',      label: 'Me',       icon: 'user',    full: 'Who You Are',          sub: 'Big Five · Enneagram' }, // 20 entries / 30d
+  { key: 'thinking', label: 'Thinking', icon: 'cpu',     full: 'How You Think',        sub: 'Cognitive styles'     }, // 25 entries / 30d
+  { key: 'story',    label: 'Story',    icon: 'book',    full: 'Your Story',           sub: 'Chapter · Arc'        }, // 30 entries / 30d
 ];
 
 // ── Empty / error states ───────────────────────────────────────────────────────
@@ -52,7 +54,7 @@ function EmptyState({ noData, onGenerate, loading }: {
       ) : (
         <>
           <Text style={es.title}>Ready to generate</Text>
-          <Text style={es.sub}>Claude will read your recent entries and build this portrait.</Text>
+          <Text style={es.sub}>Claude will read your recent entries and build a portrait of you.</Text>
           <TouchableOpacity style={es.btn} onPress={onGenerate} disabled={loading} activeOpacity={0.8}>
             {loading
               ? <ActivityIndicator size="small" color="rgba(224,242,254,0.80)" />
@@ -68,7 +70,7 @@ const es = StyleSheet.create({
   wrap:    { paddingTop: 60, alignItems: 'center', gap: 8 },
   title:   { fontSize: 18, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.88)' },
   sub:     { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', textAlign: 'center', lineHeight: 20 },
-  btn:     { marginTop: 16, backgroundColor: '#0929AD', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.25)' },
+  btn:     { marginTop: 16, backgroundColor: 'rgba(9,41,173,0.65)', borderRadius: 14, paddingHorizontal: 24, paddingVertical: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.35)' },
   btnText: { fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.95)' },
 });
 
@@ -92,6 +94,10 @@ export default function InsightsScreen() {
   const [loading, setLoading] = useState<Partial<Record<TabKey, boolean>>>({});
   const [error,   setError]   = useState<Partial<Record<TabKey, string>>>({});
   const [noData,  setNoData]  = useState<Partial<Record<TabKey, boolean>>>({});
+
+  // Paywall
+  const [showPaywall,  setShowPaywall]  = useState(false);
+  const [pendingTab,   setPendingTab]   = useState<TabKey | null>(null);
 
   // Load enneagram + entry count once on first focus (not on every tab switch).
   const bootstrappedRef = React.useRef(false);
@@ -123,12 +129,24 @@ export default function InsightsScreen() {
       if (tab === 'values')   setValuesData(await generateWhatYouCare(true));
       if (tab === 'thinking') setThinkData(await generateHowYouThink(true));
       if (tab === 'story')    setStoryData(await generateYourStory(true));
+      await SubscriptionService.recordInsightGenerated(tab);
     } catch (e: any) {
       if (e?.message === NOT_ENOUGH_DATA) setNoData(p => ({ ...p, [tab]: true }));
       else setError(p => ({ ...p, [tab]: e?.message ?? 'Something went wrong.' }));
     } finally {
       setLoading(p => ({ ...p, [tab]: false }));
     }
+  };
+
+  // Soft gate: first generate per tab is free; subsequent ones require Pro.
+  const gatedGenerate = async (tab: TabKey) => {
+    const allowed = await SubscriptionService.canGenerateInsight(tab);
+    if (!allowed) {
+      setPendingTab(tab);
+      setShowPaywall(true);
+      return;
+    }
+    generate(tab);
   };
 
   const switchTab = (tab: TabKey) => {
@@ -150,10 +168,6 @@ export default function InsightsScreen() {
   const tabError   = error[activeTab];
   const tabNoData  = !!noData[activeTab];
 
-  const hasData = (tab: TabKey) =>
-    tab === 'you' ? !!whoData : tab === 'values' ? !!valuesData :
-    tab === 'thinking' ? !!thinkData : !!storyData;
-
   return (
     <SafeAreaView style={s.container} edges={['top']}>
 
@@ -163,18 +177,6 @@ export default function InsightsScreen() {
           <Text style={s.headerTitle}>Insights</Text>
           <Text style={s.headerSub}>{activeTabMeta.full}</Text>
         </View>
-        {hasData(activeTab) && (
-          <TouchableOpacity
-            onPress={() => generate(activeTab)}
-            disabled={isLoading}
-            style={s.refreshBtn}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            {isLoading
-              ? <ActivityIndicator size="small" color="rgba(152,212,250,0.65)" />
-              : <Feather name="refresh-cw" size={15} color="rgba(152,212,250,0.65)" />}
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Pill tabs */}
@@ -213,14 +215,14 @@ export default function InsightsScreen() {
         {isLoading && (
           <View style={s.loadingRow}>
             <ActivityIndicator size="small" color="rgba(152,212,250,0.60)" />
-            <Text style={s.loadingText}>Claude is reading my entries…</Text>
+            <Text style={s.loadingText}>Claude is reading your entries…</Text>
           </View>
         )}
 
         {tabError && !isLoading && (
           <View style={s.errorRow}>
             <Text style={s.errorText}>{tabError}</Text>
-            <TouchableOpacity onPress={() => generate(activeTab)} style={s.retryBtn}>
+            <TouchableOpacity onPress={() => gatedGenerate(activeTab)} style={s.retryBtn}>
               <Text style={s.retryText}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -236,7 +238,7 @@ export default function InsightsScreen() {
                       generatedAt={whoData.generatedAt}
                       entryCountAtGeneration={whoData.entryCountAtGeneration ?? 0}
                       currentEntryCount={currentEntryCount}
-                      onRefresh={() => generate('you')}
+                      onRefresh={() => gatedGenerate('you')}
                       refreshing={!!loading['you']}
                     />
                     <WhoYouAreTab
@@ -246,7 +248,7 @@ export default function InsightsScreen() {
                       onJump={handleJump}
                     />
                   </>
-                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('you')} />
+                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => gatedGenerate('you')} />
             )}
             {activeTab === 'values' && (
               valuesData
@@ -256,12 +258,12 @@ export default function InsightsScreen() {
                       generatedAt={valuesData.generatedAt}
                       entryCountAtGeneration={valuesData.entryCountAtGeneration ?? 0}
                       currentEntryCount={currentEntryCount}
-                      onRefresh={() => generate('values')}
+                      onRefresh={() => gatedGenerate('values')}
                       refreshing={!!loading['values']}
                     />
                     <ValuesConstellationTab data={valuesData} onJump={handleJump} />
                   </>
-                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('values')} />
+                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => gatedGenerate('values')} />
             )}
             {activeTab === 'thinking' && (
               thinkData
@@ -271,12 +273,12 @@ export default function InsightsScreen() {
                       generatedAt={thinkData.generatedAt}
                       entryCountAtGeneration={thinkData.entryCountAtGeneration ?? 0}
                       currentEntryCount={currentEntryCount}
-                      onRefresh={() => generate('thinking')}
+                      onRefresh={() => gatedGenerate('thinking')}
                       refreshing={!!loading['thinking']}
                     />
                     <HowYouThinkTab data={thinkData} onJump={handleJump} />
                   </>
-                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('thinking')} />
+                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => gatedGenerate('thinking')} />
             )}
             {activeTab === 'story' && (
               storyData
@@ -286,18 +288,29 @@ export default function InsightsScreen() {
                       generatedAt={storyData.generatedAt}
                       entryCountAtGeneration={storyData.entryCountAtGeneration ?? 0}
                       currentEntryCount={currentEntryCount}
-                      onRefresh={() => generate('story')}
+                      onRefresh={() => gatedGenerate('story')}
                       refreshing={!!loading['story']}
                     />
                     <YourStoryTab data={storyData} onJump={handleJump} />
                   </>
-                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => generate('story')} />
+                : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => gatedGenerate('story')} />
             )}
           </>
         )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <PaywallModal
+        visible={showPaywall}
+        featureHint="Refresh your insights as often as you like with Pro."
+        onClose={() => { setShowPaywall(false); setPendingTab(null); }}
+        onSuccess={() => {
+          setShowPaywall(false);
+          if (pendingTab) generate(pendingTab);
+          setPendingTab(null);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -307,16 +320,15 @@ export default function InsightsScreen() {
 const s = StyleSheet.create({
   container:      { flex: 1, backgroundColor: '#02060E' },
 
-  header:         { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  header:         { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   headerTitle:    { fontSize: 26, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.95)' },
   headerSub:      { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', marginTop: 2 },
-  refreshBtn:     { width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(152,212,250,0.08)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)', alignItems: 'center', justifyContent: 'center', marginTop: 4 },
 
   tabBar:         { flexGrow: 0, marginBottom: 0 },
   tabBarContent:  { paddingHorizontal: 20, gap: 8, paddingBottom: 4 },
-  tab:            { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(152,212,250,0.05)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)' },
-  tabActive:      { backgroundColor: 'rgba(9,41,173,0.40)', borderColor: 'rgba(152,212,250,0.35)' },
-  tabLabel:       { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)' },
+  tab:            { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: 'rgba(152,212,250,0.04)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.10)' },
+  tabActive:      { backgroundColor: 'rgba(9,41,173,0.45)', borderColor: 'rgba(152,212,250,0.38)' },
+  tabLabel:       { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)' },
   tabLabelActive: { color: 'rgba(224,242,254,0.95)' },
 
   tabSub:         { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.38)', paddingHorizontal: 20, paddingTop: 4, paddingBottom: 10, letterSpacing: 0.2 },
@@ -325,7 +337,7 @@ const s = StyleSheet.create({
   contentPad:     { paddingHorizontal: 20, paddingTop: 4 },
 
   loadingRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 40, justifyContent: 'center' },
-  loadingText:    { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', fontStyle: 'italic' },
+  loadingText:    { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)' },
 
   errorRow:       { alignItems: 'center', gap: 10, paddingVertical: 32 },
   errorText:      { fontSize: 13, color: '#e63946', textAlign: 'center', fontFamily: 'GillSans-Light' },

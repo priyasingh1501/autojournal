@@ -36,12 +36,12 @@ export const MINDS: Mind[] = [
     symbol: '👁',
   },
   {
-    id: 'naval_ravikant',
-    name: 'Naval Ravikant',
-    era: 'Entrepreneur & Philosopher · Contemporary',
-    philosophy: 'Wealth, freedom, and the specific knowledge that sets you apart',
-    accent: 'rgba(94, 234, 212, 0.90)',
-    symbol: '🧭',
+    id: 'charlie_munger',
+    name: 'Charlie Munger',
+    era: 'Investor & Thinker · 1924–2023',
+    philosophy: 'Mental models, inversion, and the latticework of knowledge',
+    accent: 'rgba(180, 120, 60, 0.90)',
+    symbol: '🦉',
   },
   {
     id: 'carl_jung',
@@ -52,20 +52,20 @@ export const MINDS: Mind[] = [
     symbol: '🔮',
   },
   {
-    id: 'osho',
-    name: 'Osho',
-    era: 'Mystic & Teacher · 1931–1990',
-    philosophy: 'Meditation, rebellion, and the celebration of being alive',
-    accent: 'rgba(244, 114, 182, 0.90)',
-    symbol: '🌀',
+    id: 'rumi',
+    name: 'Rumi',
+    era: 'Sufi Mystic & Poet · 1207–1273',
+    philosophy: 'The soul\'s longing for reunion — love, loss, and the music of separation',
+    accent: 'rgba(248, 113, 113, 0.90)',
+    symbol: '🌹',
   },
   {
-    id: 'acharya_prashant',
-    name: 'Acharya Prashant',
-    era: 'Vedantic Teacher · Contemporary',
-    philosophy: 'Vedanta & ego — seeing through conditioning to what is real',
-    accent: 'rgba(251, 146, 60, 0.90)',
-    symbol: '🔥',
+    id: 'ramana_maharshi',
+    name: 'Ramana Maharshi',
+    era: 'Sage of Arunachala · 1879–1950',
+    philosophy: 'Self-inquiry — who am I? — the direct path to pure awareness',
+    accent: 'rgba(253, 230, 138, 0.90)',
+    symbol: '✨',
   },
   {
     id: 'adi_shankaracharya',
@@ -170,8 +170,8 @@ export async function generateMindPerspective(
   });
 
   const raw = response.content
-    .filter(b => b.type === 'text')
-    .map(b => (b as any).text)
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
     .join('')
     .trim();
 

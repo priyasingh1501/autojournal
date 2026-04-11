@@ -140,10 +140,15 @@ export async function generateMonthlyInsight(
   const now = new Date();
   const { monthKey, monthStart, monthEnd, dates, totalDaysInMonth } = getMonthDateRange(now);
 
-  // Return cache if available and not force-refreshing
+  // Return cache if available and not force-refreshing,
+  // BUT invalidate automatically when new daily summaries have been added since last generation.
   if (!forceRefresh) {
     const cached = await StorageService.getMonthlyInsight(monthKey);
-    if (cached) return cached;
+    if (cached) {
+      const currentSummaries = await StorageService.getSummariesForDateRange(dates);
+      if (currentSummaries.length <= cached.daysSummarised) return cached;
+      // More summaries now — fall through to regenerate with fresh data
+    }
   }
 
   // Need at least 1 day of summaries
@@ -161,8 +166,8 @@ export async function generateMonthlyInsight(
   });
 
   const fullText = response.content
-    .filter(b => b.type === 'text')
-    .map(b => (b as any).text)
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
     .join('')
     .trim();
 

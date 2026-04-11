@@ -20,6 +20,8 @@ const MIC_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fil
 
 const STOP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
 
+const TYPE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>`;
+
 interface MicWidgetProps {
   isMonitoring: boolean;
 }
@@ -102,6 +104,30 @@ export function MicWidget({ isMonitoring }: MicWidgetProps) {
           text={isMonitoring ? 'Tap to stop' : ''}
           style={{ color: 'rgba(224, 242, 254, 0.60)', fontSize: 10, marginTop: 2 }}
         />
+
+        {/* Type button — only visible when idle */}
+        {!isMonitoring && (
+          <FlexWidget
+            clickAction="OPEN_COMPOSE"
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginTop: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 6,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: 'rgba(152,212,250,0.28)' as any,
+              backgroundColor: 'rgba(152,212,250,0.08)' as any,
+            }}
+          >
+            <SvgWidget svg={TYPE_SVG} style={{ width: 13, height: 13 }} />
+            <TextWidget
+              text="Type a note"
+              style={{ color: 'rgba(224,242,254,0.75)' as any, fontSize: 11 }}
+            />
+          </FlexWidget>
+        )}
       </FlexWidget>
     </OverlapWidget>
   );

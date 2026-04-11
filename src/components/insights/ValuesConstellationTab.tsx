@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   LayoutAnimation, UIManager, Platform,
@@ -43,13 +43,15 @@ function tagText(valence: ValueNode['valence']): string {
 function SourceExpand({ dates, onJump }: { dates: string[]; onJump?: (d: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
-    <TouchableOpacity
-      onPress={() => { LayoutAnimation.easeInEaseOut(); setOpen(v => !v); }}
-      style={src.row}
-      activeOpacity={0.7}
-    >
-      <Text style={src.label}>what prompted this</Text>
-      <Feather name={open ? 'chevron-up' : 'chevron-down'} size={11} color="rgba(152,212,250,0.40)" />
+    <View style={src.wrap}>
+      <TouchableOpacity
+        onPress={() => { LayoutAnimation.easeInEaseOut(); setOpen(v => !v); }}
+        style={src.row}
+        activeOpacity={0.7}
+      >
+        <Text style={src.label}>what prompted this</Text>
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={11} color="rgba(152,212,250,0.40)" />
+      </TouchableOpacity>
       {open && (
         <View style={src.chips}>
           {dates.map(d => (
@@ -61,25 +63,34 @@ function SourceExpand({ dates, onJump }: { dates: string[]; onJump?: (d: string)
           ))}
         </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 const src = StyleSheet.create({
-  row:      { flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 10 },
+  wrap:     { marginTop: 10 },
+  row:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
   label:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.38)', letterSpacing: 0.3 },
-  chips:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6, width: '100%', marginTop: 6 },
+  chips:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   chip:     { backgroundColor: 'rgba(152,212,250,0.07)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(152,212,250,0.14)', paddingHorizontal: 8, paddingVertical: 4 },
   chipText: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.70)' },
 });
 
-// ── Tag cloud ──────────────────────────────────────────────────────────────────
+// ── Values ranked list ────────────────────────────────────────────────────────
 
-function TagCloud({ values }: { values: ValueNode[] }) {
+function ValuesList({ values }: { values: ValueNode[] }) {
   const [selected, setSelected] = useState<string | null>(null);
 
-  // Sort largest → smallest so big tags anchor top-left in the wrap
-  const sorted = [...values].sort((a, b) => b.frequency - a.frequency);
-  const sel    = selected ? values.find(v => v.topic === selected) : null;
+  const sorted = useMemo(
+    () => [...values].sort((a, b) => b.frequency - a.frequency),
+    [values],
+  );
+
+  const maxFreq = useMemo(
+    () => Math.max(...sorted.map(v => v.frequency), 1),
+    [sorted],
+  );
+
+  const sel = selected ? sorted.find(v => v.topic === selected) : null;
 
   function onPress(topic: string) {
     LayoutAnimation.easeInEaseOut();
@@ -88,94 +99,94 @@ function TagCloud({ values }: { values: ValueNode[] }) {
 
   return (
     <View style={tc.wrap}>
-      {/* Key */}
-      <View style={tc.keyRow}>
-        <Text style={tc.keyHint}>larger = written about more  ·  brighter border = more emotional charge</Text>
-      </View>
+      <View style={tc.list}>
+        {sorted.map((v, i) => {
+          const ratio       = v.frequency / maxFreq;
+          const rgb         = accentColor(v.valence);
+          const barOpacity  = 0.20 + ratio * 0.75;
+          const barWidth    = Math.round(3 + ratio * 2);
+          const textOpacity = 0.40 + ratio * 0.60;
+          const rankOpacity = 0.25 + ratio * 0.38;
+          const isSel       = selected === v.topic;
 
-      {/* Tag cloud */}
-      <View style={tc.cloud}>
-        {sorted.map(v => {
-          const freq   = v.frequency / 100;                        // 0–1
-          const isSel  = selected === v.topic;
-          const fSize  = Math.round(11 + freq * 8);               // 11–19 px
-          const padH   = Math.round(9  + freq * 8);               // 9–17 px
-          const padV   = Math.round(5  + freq * 5);               // 5–10 px
           return (
             <TouchableOpacity
               key={v.topic}
               onPress={() => onPress(v.topic)}
               activeOpacity={0.75}
-              style={[tc.tag, {
-                paddingHorizontal: padH,
-                paddingVertical:   padV,
-                backgroundColor:   tagFill(v.valence, v.intensity),
-                borderColor:       tagBorder(v.valence, isSel ? Math.min(v.intensity + 30, 100) : v.intensity),
-                borderWidth:       isSel ? 1.5 : 1,
-              }]}
+              style={tc.row}
             >
-              <Text style={[tc.tagText, { fontSize: fSize, color: tagText(v.valence) }]}>
-                {v.topic}
-              </Text>
+              {/* Left accent bar — valence coloured */}
+              <View style={[tc.bar, {
+                width: barWidth,
+                opacity: barOpacity,
+                backgroundColor: `rgba(${rgb},1)`,
+              }]} />
+
+              <View style={tc.rowBody}>
+                <View style={tc.rowHeader}>
+                  {/* Rank */}
+                  <Text style={[tc.rank, { opacity: rankOpacity }]}>
+                    {String(i + 1).padStart(2, '0')}
+                  </Text>
+
+                  {/* Topic — full text, no truncation */}
+                  <Text style={[tc.topic, { opacity: textOpacity, color: `rgba(${rgb},0.95)` }]}>
+                    {v.topic}
+                  </Text>
+
+                  {/* Valence pill */}
+                  <View style={[tc.valencePill, { borderColor: `rgba(${rgb},0.25)`, backgroundColor: `rgba(${rgb},0.07)` }]}>
+                    <Text style={[tc.valenceText, { color: `rgba(${rgb},0.75)` }]}>{v.valence}</Text>
+                  </View>
+                </View>
+
+                {/* Expanded detail */}
+                {isSel && (
+                  <View style={tc.detail}>
+                    <View style={tc.barRow}>
+                      <Text style={tc.barLabel}>how often I write about this</Text>
+                      <View style={tc.track}>
+                        <View style={[tc.fill, { width: `${v.frequency}%` as any, backgroundColor: `rgba(${rgb},0.55)` }]} />
+                      </View>
+                    </View>
+                    <View style={tc.barRow}>
+                      <Text style={tc.barLabel}>emotional charge when I do</Text>
+                      <View style={tc.track}>
+                        <View style={[tc.fill, { width: `${v.intensity}%` as any, backgroundColor: `rgba(${rgb},0.35)` }]} />
+                      </View>
+                    </View>
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
           );
         })}
       </View>
-
-      {/* Detail card — appears below cloud on tap */}
-      {sel && (
-        <View style={[tc.detail, { borderColor: tagBorder(sel.valence, sel.intensity) }]}>
-          <View style={tc.detailTop}>
-            <Text style={[tc.detailTopic, { color: tagText(sel.valence) }]}>{sel.topic}</Text>
-            <View style={[tc.valencePill, { borderColor: tagBorder(sel.valence, 60) }]}>
-              <Text style={[tc.valenceText, { color: tagText(sel.valence) }]}>{sel.valence}</Text>
-            </View>
-          </View>
-          {/* Frequency bar */}
-          <View style={tc.barRow}>
-            <Text style={tc.barLabel}>how often I write about this</Text>
-            <View style={tc.track}>
-              <View style={[tc.fill, {
-                width: `${sel.frequency}%` as any,
-                backgroundColor: `rgba(${accentColor(sel.valence)},0.60)`,
-              }]} />
-            </View>
-          </View>
-          {/* Intensity bar */}
-          <View style={tc.barRow}>
-            <Text style={tc.barLabel}>emotional charge when I do</Text>
-            <View style={tc.track}>
-              <View style={[tc.fill, {
-                width: `${sel.intensity}%` as any,
-                backgroundColor: `rgba(${accentColor(sel.valence)},0.45)`,
-              }]} />
-            </View>
-          </View>
-        </View>
-      )}
+      <Text style={tc.hint}>Tap any topic to see frequency and emotional charge</Text>
     </View>
   );
 }
 
 const tc = StyleSheet.create({
-  wrap:        { gap: 12 },
-  keyRow:      { },
-  keyHint:     { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)', lineHeight: 15 },
+  wrap:        { gap: 4 },
+  list:        { gap: 2 },
+  row:         { flexDirection: 'row', alignItems: 'stretch', paddingVertical: 7, gap: 12 },
+  bar:         { width: 4, borderRadius: 2, minHeight: 18 },
+  rowBody:     { flex: 1, gap: 4 },
+  rowHeader:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rank:        { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.90)', letterSpacing: 0.5, width: 20 },
+  topic:       { flex: 1, fontSize: 15, fontFamily: 'Baskerville' },
+  valencePill: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2 },
+  valenceText: { fontSize: 9, fontFamily: 'GillSans-Light', letterSpacing: 0.3 },
 
-  cloud:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag:         { borderRadius: 20, borderWidth: 1 },
-  tagText:     { fontFamily: 'GillSans-Light', lineHeight: undefined },
+  detail:  { gap: 8, paddingLeft: 28, paddingTop: 6, paddingBottom: 2 },
+  barRow:  { gap: 3 },
+  barLabel:{ fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.42)', textTransform: 'uppercase', letterSpacing: 0.3 },
+  track:   { height: 3, backgroundColor: 'rgba(152,212,250,0.08)', borderRadius: 2, overflow: 'hidden' },
+  fill:    { height: '100%', borderRadius: 2 },
 
-  detail:      { marginTop: 4, borderRadius: 14, borderWidth: 1, backgroundColor: 'rgba(152,212,250,0.04)', padding: 14, gap: 10 },
-  detailTop:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  detailTopic: { fontSize: 17, fontFamily: 'Baskerville', fontWeight: '500', flex: 1 },
-  valencePill: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3 },
-  valenceText: { fontSize: 10, fontFamily: 'GillSans-Light', letterSpacing: 0.3 },
-
-  barRow:      { gap: 4 },
-  barLabel:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', textTransform: 'uppercase', letterSpacing: 0.3 },
-  track:       { height: 4, backgroundColor: 'rgba(152,212,250,0.08)', borderRadius: 2, overflow: 'hidden' },
-  fill:        { height: '100%', borderRadius: 2 },
+  hint:    { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)', textAlign: 'center', marginTop: 6 },
 });
 
 // ── Divergence flag ───────────────────────────────────────────────────────────
@@ -191,14 +202,14 @@ function DivergenceFlag({ stated, actual, observation }: { stated: string; actua
       <View style={df.stack}>
         <View style={df.tag}>
           <Text style={df.tagMeta}>says</Text>
-          <Text style={df.tagText} numberOfLines={2}>{stated}</Text>
+          <Text style={df.tagText}>{stated}</Text>
         </View>
         <View style={df.arrow}>
           <Feather name="arrow-down" size={12} color="rgba(152,212,250,0.30)" />
         </View>
         <View style={[df.tag, df.tagActual]}>
           <Text style={df.tagMeta}>lives</Text>
-          <Text style={[df.tagText, df.tagTextActual]} numberOfLines={2}>{actual}</Text>
+          <Text style={[df.tagText, df.tagTextActual]}>{actual}</Text>
         </View>
       </View>
       <Text style={df.obs}>{observation}</Text>
@@ -217,7 +228,7 @@ const df = StyleSheet.create({
   tagMeta:      { fontSize: 9, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
   tagText:      { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.85)' },
   tagTextActual:{ color: 'rgba(251,191,36,0.90)' },
-  obs:          { fontSize: 13, fontFamily: 'Baskerville', fontStyle: 'italic', color: 'rgba(224,242,254,0.80)', lineHeight: 20 },
+  obs:          { fontSize: 13, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.80)', lineHeight: 20 },
 });
 
 // ── Motivation pulse ──────────────────────────────────────────────────────────
@@ -265,7 +276,7 @@ export default function ValuesConstellationTab({ data, onJump }: Props) {
   return (
     <View style={s.root}>
       <Text style={s.sectionLabel}>WHAT I WRITE ABOUT</Text>
-      <TagCloud values={data.values} />
+      <ValuesList values={data.values} />
 
       {data.divergence.length > 0 && (
         <View style={s.section}>

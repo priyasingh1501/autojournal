@@ -171,27 +171,27 @@ async function buildLongContext(): Promise<{ text: string; dates: string[] }> {
   return { text, dates: summaries.map(s => s.date) };
 }
 
-async function callClaude(system: string, user: string, apiKey: string, maxTokens = 1200): Promise<string> {
+async function callClaude(system: string, user: string, maxTokens = 1200): Promise<string> {
   const res = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
   });
-  return res.content.filter(b => b.type === 'text').map(b => (b as any).text).join('').trim();
+  return res.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('').trim();
 }
 
 // ── Tab 1: Who You Are ─────────────────────────────────────────────────────────
 
 const WHO_SYSTEM = `You are an insightful psychologist and writer. You have read someone's private journal entries.
 
-Your task: write a 3–4 sentence character portrait that synthesizes Big Five and Enneagram. Write in FIRST PERSON as the journal writer ("I", "my", "me") — as if the insight is the person's own realisation about themselves. It should read like the opening of a character study — specific, observational, not generic.
+Your task: write a 3–4 sentence character portrait that synthesizes Big Five and Enneagram. Write in SECOND PERSON addressing the journal writer directly ("you", "your") — as if you are a trusted friend holding up a mirror. It should read like the opening of a character study — specific, observational, not generic.
 
 Then output EXACTLY this line by itself:
 ===JSON===
 Then output ONLY raw JSON — no markdown, no code fences, no backticks, no trailing commas:
 {
-  "narrative": "3–4 sentence portrait in first person — e.g. 'I show up as someone who...'",
+  "narrative": "3–4 sentence portrait in second person — e.g. 'You show up as someone who...'",
   "bigFive": {
     "openness":          { "score": 72, "direction": "stable" },
     "conscientiousness": { "score": 58, "direction": "rising" },
@@ -200,21 +200,21 @@ Then output ONLY raw JSON — no markdown, no code fences, no backticks, no trai
     "neuroticism":       { "score": 61, "direction": "rising" }
   },
   "bigFiveNarratives": {
-    "openness":          "First person — e.g. 'My curiosity runs wide but...'",
-    "conscientiousness": "First person observation about the writer's relationship with order/follow-through",
-    "extraversion":      "First person — how I draw energy",
-    "agreeableness":     "First person — how I relate to people",
-    "neuroticism":       "First person — honest, not clinical, about emotional variability"
+    "openness":          "Second person — e.g. 'Your curiosity runs wide but...'",
+    "conscientiousness": "Second person observation about the writer's relationship with order/follow-through",
+    "extraversion":      "Second person — how you draw energy",
+    "agreeableness":     "Second person — how you relate to people",
+    "neuroticism":       "Second person — honest, not clinical, about emotional variability"
   },
   "enneagram": {
     "types": [4, 5],
     "typeSummaries": {
-      "4": "How Type 4 might manifest for me specifically",
-      "5": "How Type 5 might manifest for me specifically"
+      "4": "How Type 4 might manifest for you specifically",
+      "5": "How Type 5 might manifest for you specifically"
     },
-    "coreFear": "First person — e.g. 'My core fear seems to be...'",
-    "coreDesire": "First person — stated tentatively",
-    "growthDirection": "First person — where my entries suggest I am being pulled"
+    "coreFear": "Second person — e.g. 'Your core fear seems to be...'",
+    "coreDesire": "Second person — stated tentatively",
+    "growthDirection": "Second person — where your entries suggest you are being pulled"
   },
   "sourceEntries": ["YYYY-MM-DD"]
 }
@@ -228,7 +228,6 @@ Rules:
 - No markdown. No code fences. Valid JSON only.`;
 
 export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAreAnalysis> {
-  const settings = await StorageService.getSettings();
   const allDates = await StorageService.getSummaryDates();
   const currentCount = allDates.length;
   if (!forceRefresh) {
@@ -238,7 +237,7 @@ export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAre
   const { text, dates } = await buildContext(FRESHNESS.you.windowDays);
   const raw = await callClaude(
     WHO_SYSTEM,
-    `Here are my journal entries:\n\n${text}\n\nPlease write my character portrait.`,
+    `Here are the journal entries:\n\n${text}\n\nPlease write the character portrait.`,
     1400,
   );
   let parsed: any;
@@ -262,7 +261,7 @@ export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAre
 
 const VALUES_SYSTEM = `You are a perceptive analyst reading someone's private journal entries.
 
-Your task: map what the writer actually cares about — not what they say they care about, but what their attention, language, and emotional charge reveal. Write all text in FIRST PERSON ("I", "my", "me") as if the insight is the person's own realisation.
+Your task: map what the writer actually cares about — not what they say they care about, but what their attention, language, and emotional charge reveal. Write all text in SECOND PERSON addressing the writer directly ("you", "your").
 
 Output a framing sentence, then ===JSON===, then only raw JSON:
 {
@@ -276,13 +275,13 @@ Output a framing sentence, then ===JSON===, then only raw JSON:
   ],
   "divergence": [
     {
-      "stated": "what I say I want",
-      "actual": "what I actually live",
-      "observation": "First person: 'I write about X as something I want. I write about Y as something I'm actually living.' This is the most important insight. Make it specific and pointed."
+      "stated": "what you say you want",
+      "actual": "what you actually live",
+      "observation": "Second person: 'You write about X as something you want. You write about Y as something you are actually living.' This is the most important insight. Make it specific and pointed."
     }
   ],
   "motivationPulse": "meaning",
-  "motivationRationale": "First person, one sentence — e.g. 'My language keeps circling questions of...'",
+  "motivationRationale": "Second person, one sentence — e.g. 'Your language keeps circling questions of...'",
   "sourceEntries": ["YYYY-MM-DD"]
 }
 
@@ -294,7 +293,6 @@ Rules:
 - No markdown. No code fences. Valid JSON only.`;
 
 export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYouCareAboutAnalysis> {
-  const settings = await StorageService.getSettings();
   const allDates = await StorageService.getSummaryDates();
   const currentCount = allDates.length;
   if (!forceRefresh) {
@@ -304,7 +302,7 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
   const { text, dates } = await buildContext(FRESHNESS.values.windowDays);
   const raw = await callClaude(
     VALUES_SYSTEM,
-    `Here are my journal entries:\n\n${text}\n\nPlease map what I actually care about.`,
+    `Here are the journal entries:\n\n${text}\n\nPlease map what the writer actually cares about.`,
     1100,
   );
   let parsed: any;
@@ -326,7 +324,7 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
 
 // ── Tab 3: How You Think ────────────────────────────────────────────────────────
 
-const THINK_SYSTEM = `You are a cognitive analyst reading someone's private journal entries. You are mapping HOW the writer thinks — not what they think about. Write all observations in FIRST PERSON ("I", "my") as if the writer is seeing this about themselves.
+const THINK_SYSTEM = `You are a cognitive analyst reading someone's private journal entries. You are mapping HOW the writer thinks — not what they think about. Write all observations in SECOND PERSON ("you", "your") addressing the writer directly.
 
 You have three types of input:
 - PROCESSED SUMMARIES: cleaned-up, structured — good for frequency of themes over time, not for thinking style
@@ -345,7 +343,7 @@ Output a framing sentence, then ===JSON===, then only raw JSON:
       "leftLabel": "Systems",
       "rightLabel": "Stories",
       "score": 35,
-      "observation": "First person, one sentence — e.g. 'I reach for frameworks first...' — specific to what you saw in the entries, not a generic definition.",
+      "observation": "Second person, one sentence — e.g. 'You reach for frameworks first...' — specific to what you saw in the entries, not a generic definition.",
       "sourceEntries": ["YYYY-MM-DD"]
     },
     {
@@ -387,7 +385,6 @@ Rules:
 - No markdown. No code fences. Valid JSON only.`;
 
 export async function generateHowYouThink(forceRefresh = false): Promise<HowYouThinkAnalysis> {
-  const settings = await StorageService.getSettings();
   const allDates = await StorageService.getSummaryDates();
   const currentCount = allDates.length;
   if (!forceRefresh) {
@@ -397,7 +394,7 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
   const { text, dates } = await buildThinkingContext();
   const raw = await callClaude(
     THINK_SYSTEM,
-    `Here are my journal entries — processed summaries, raw voice notes, and written notes:\n\n${text}\n\nPlease map how I think. Use voice notes for Systems vs Stories and Resolves vs Sits With. Use written notes for Zoomed In vs Out and Internal vs External. Note any meaningful gap between how I think out loud vs how I write.`,
+    `Here are the journal entries — processed summaries, raw voice notes, and written notes:\n\n${text}\n\nPlease map how the writer thinks. Use voice notes for Systems vs Stories and Resolves vs Sits With. Use written notes for Zoomed In vs Out and Internal vs External. Note any meaningful gap between how they think out loud vs how they write.`,
     1100,
   );
   let parsed: any;
@@ -417,24 +414,24 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
 
 const STORY_SYSTEM = `You are a narrative analyst reading someone's private journal entries across time.
 
-Your task: identify the story arc of the writer's life right now. Write everything in FIRST PERSON ("I", "my", "me") — as if the writer is narrating their own life. The chapter narrative especially should feel like the opening of a memoir, not a third-person analysis.
+Your task: identify the story arc of the writer's life right now. Write everything in SECOND PERSON addressing the writer directly ("you", "your") — as if a trusted witness is describing the writer's life back to them. The chapter narrative should feel immediate and specific, not like third-person analysis.
 
 Output a framing sentence, then ===JSON===, then only raw JSON:
 {
   "currentChapter": {
     "title": "2–3 word chapter title — evocative, like a book chapter name. e.g. 'The Clearing', 'Building the Frame', 'After the Storm'",
     "dateRange": "Month Year – present, or Month–Month Year",
-    "narrative": "2–3 sentences in FIRST PERSON, present tense — like the opening of a memoir. e.g. 'Something has been set down. Not resolved — set down...'"
+    "narrative": "2–3 sentences in SECOND PERSON, present tense — direct and specific. e.g. 'Something has been set down. Not resolved — set down. You are moving through a quieter kind of change...'"
   },
   "recurringCast": [
     {
-      "archetype": "First person — e.g. 'A relationship where I hold back' or 'A version of myself I am grieving' or 'A project that carries more weight than it should'",
+      "archetype": "Second person — e.g. 'A relationship where you hold back' or 'A version of yourself you are grieving' or 'A project that carries more weight than it should'",
       "frequency": 7
     }
   ],
   "arcPattern": {
     "type": "Seeker",
-    "description": "First person, 2–3 sentences — e.g. 'I make meaning through inquiry. I am at home in questions...'"
+    "description": "Second person, 2–3 sentences — e.g. 'You make meaning through inquiry. You are at home in questions...'"
   },
   "sourceEntries": ["YYYY-MM-DD"]
 }
@@ -447,14 +444,13 @@ Arc types (pick exactly one):
 - Returner: makes meaning through cycles and return, wisdom lives in what keeps coming back
 
 Rules:
-- currentChapter narrative: write it, don't describe it. Present tense. Like a novel.
+- currentChapter narrative: write it, don't describe it. Present tense. Second person.
 - recurringCast: 2–4 figures max. Unnamed. Archetype descriptions should be specific and slightly uncomfortable — real, not flattering.
 - arcPattern: must be exactly one of the 5 types above
 - sourceEntries: 3–6 most relevant dates
 - No markdown. No code fences. Valid JSON only.`;
 
 export async function generateYourStory(forceRefresh = false): Promise<YourStoryAnalysis> {
-  const settings = await StorageService.getSettings();
   const allDates = await StorageService.getSummaryDates();
   const currentCount = allDates.length;
   if (!forceRefresh) {
@@ -466,7 +462,7 @@ export async function generateYourStory(forceRefresh = false): Promise<YourStory
 
   const raw = await callClaude(
     STORY_SYSTEM,
-    `Here are my journal entries:\n\n${text}\n\nPlease write my story.`,
+    `Here are the journal entries:\n\n${text}\n\nPlease write the writer's story.`,
     1200,
   );
   let parsed: any;

@@ -1,285 +1,210 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  TextInput, ImageBackground, Dimensions, Platform,
-  KeyboardAvoidingView, Linking, ActivityIndicator,
+  ImageBackground, Dimensions, ActivityIndicator, Animated,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { StorageService } from '../services/StorageService';
-import { AppSettings } from '../types';
 
 const { width: SW } = Dimensions.get('window');
 
-// ── What untangle tracks ──────────────────────────────────────────────────────
-const TRACKABLE = [
-  { icon: 'sun',          label: 'Mood & emotions',     color: 'rgba(251,191,36,0.88)',   bg: 'rgba(251,191,36,0.08)'   },
-  { icon: 'activity',     label: 'Movement & exercise',  color: 'rgba(110,231,183,0.88)',  bg: 'rgba(110,231,183,0.08)'  },
-  { icon: 'coffee',       label: 'Meals & nutrition',    color: 'rgba(249,168,212,0.88)',  bg: 'rgba(249,168,212,0.08)'  },
-  { icon: 'credit-card',  label: 'Spending',             color: 'rgba(147,197,253,0.88)',  bg: 'rgba(147,197,253,0.08)'  },
-  { icon: 'moon',         label: 'Meditation & rest',    color: 'rgba(196,181,253,0.88)',  bg: 'rgba(196,181,253,0.08)'  },
-  { icon: 'book-open',    label: 'Learnings',            color: 'rgba(253,186,116,0.88)',  bg: 'rgba(253,186,116,0.08)'  },
-  { icon: 'repeat',       label: 'Recurring thoughts',   color: 'rgba(252,165,165,0.88)',  bg: 'rgba(252,165,165,0.08)'  },
-  { icon: 'user',         label: 'Who you are',          color: 'rgba(224,242,254,0.80)',  bg: 'rgba(224,242,254,0.05)'  },
-];
-
-// ── DayPicker ─────────────────────────────────────────────────────────────────
-function DayPicker({ value, onChange, max = 7 }: { value: number; onChange: (v: number) => void; max?: number }) {
-  return (
-    <View style={dp.row}>
-      {Array.from({ length: max }, (_, i) => i + 1).map(d => {
-        const on = d <= value;
-        return (
-          <TouchableOpacity
-            key={d}
-            onPress={() => onChange(value === d ? 0 : d)}
-            style={[dp.circle, on ? dp.on : dp.off]}
-            activeOpacity={0.7}
-          >
-            <Text style={[dp.label, on ? dp.labelOn : dp.labelOff]}>{d}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-const dp = StyleSheet.create({
-  row:      { flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' },
-  circle:   { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  on:       { backgroundColor: 'rgba(9,41,173,0.50)', borderColor: 'rgba(152,212,250,0.65)' },
-  off:      { backgroundColor: 'rgba(152,212,250,0.04)', borderColor: 'rgba(152,212,250,0.16)' },
-  label:    { fontSize: 13, fontFamily: 'GillSans-Light' },
-  labelOn:  { color: 'rgba(224,242,254,0.95)' },
-  labelOff: { color: 'rgba(152,212,250,0.35)' },
-});
-
 // ── Step 0: Welcome ───────────────────────────────────────────────────────────
 function StepWelcome({ onNext }: { onNext: () => void }) {
+  const fadeAnim   = useRef(new Animated.Value(0)).current;
+  const slideAnim  = useRef(new Animated.Value(24)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 1100, delay: 400, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 900,  delay: 400, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   return (
     <ImageBackground
-      source={require('../../assets/jellyfish.jpg')}
+      source={require('../../assets/ocean.avif')}
       style={s.welcomeBg}
       resizeMode="cover"
     >
+      {/* Deep gradient overlay */}
       <LinearGradient
-        colors={['rgba(2,6,14,0.30)', 'rgba(2,6,14,0.72)', '#02060E']}
+        colors={['rgba(0,10,30,0.25)', 'rgba(0,10,30,0.45)', 'rgba(2,6,14,0.88)']}
         style={StyleSheet.absoluteFill}
       />
+
       <SafeAreaView style={s.welcomeSafe} edges={['top', 'bottom']}>
         <View style={s.welcomeContent}>
-          <View style={s.welcomeTop}>
+
+          {/* Top wordmark */}
+          <Animated.View style={[s.welcomeTop, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
             <Text style={s.wordmark}>untangle</Text>
-            <Text style={s.tagline}>Your thoughts, organised.</Text>
-          </View>
-          <View style={s.welcomeBottom}>
+          </Animated.View>
+
+          {/* Glassmorphic centre card */}
+          <Animated.View style={[s.glassWrap, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+            <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={s.glassInner}>
+              {/* Decorative wave lines */}
+              <View style={s.waveRow}>
+                {[0.15, 0.30, 0.22, 0.35, 0.18].map((o, i) => (
+                  <View key={i} style={[s.waveLine, { opacity: o }]} />
+                ))}
+              </View>
+              <Text style={s.glassHeadline}>
+                Let's deep dive into{'\n'}the deep ocean{'\n'}within you.
+              </Text>
+              <Text style={s.glassSub}>
+                Your thoughts, your patterns, your growth — all in one quiet place.
+              </Text>
+            </View>
+          </Animated.View>
+
+          {/* Bottom CTA */}
+          <Animated.View style={[s.welcomeBottom, { opacity: fadeAnim }]}>
             <TouchableOpacity style={s.primaryBtn} onPress={onNext} activeOpacity={0.85}>
-              <Text style={s.primaryBtnText}>Get Started</Text>
+              <Text style={s.primaryBtnText}>Begin your journey</Text>
               <Feather name="arrow-right" size={16} color="rgba(224,242,254,0.95)" />
             </TouchableOpacity>
-          </View>
+            <Text style={s.welcomeHint}>takes about 2 minutes</Text>
+          </Animated.View>
+
         </View>
       </SafeAreaView>
     </ImageBackground>
   );
 }
 
-// ── Step 1: What you can track ────────────────────────────────────────────────
-function StepWhatYouCanTrack({ onNext }: { onNext: () => void }) {
+// ── Onboarding slide data ─────────────────────────────────────────────────────
+const ONBOARDING_SLIDES = [
+  {
+    id: 'journal',
+    icon: 'mic',
+    iconColor: 'rgba(152,212,250,0.90)',
+    iconBg: 'rgba(152,212,250,0.08)',
+    accent: 'rgba(152,212,250,0.65)',
+    title: 'Microjournal your day',
+    subtitle: 'Speak or type. Untangle does the rest.',
+    description:
+      'Capture fleeting thoughts in seconds — while commuting, mid-workout, or winding down. No blank pages. No pressure. Just your voice.',
+    features: [
+      { icon: 'mic',       text: 'Voice notes transcribed instantly' },
+      { icon: 'edit-2',    text: 'Quick text captures too' },
+      { icon: 'zap',       text: 'No login, no setup — just tap and speak' },
+    ],
+  },
+  {
+    id: 'summaries',
+    icon: 'sun',
+    iconColor: 'rgba(251,191,36,0.90)',
+    iconBg: 'rgba(251,191,36,0.08)',
+    accent: 'rgba(251,191,36,0.65)',
+    title: 'Your day, distilled',
+    subtitle: 'AI weaves your moments into a story.',
+    description:
+      'Every evening, Untangle reads your notes and writes a thoughtful summary — your mood, highlights, what you ate, how you moved, what you spent.',
+    features: [
+      { icon: 'bar-chart-2', text: 'Mood & emotion arc across the day' },
+      { icon: 'shopping-bag', text: 'Spending patterns spotted automatically' },
+      { icon: 'activity',    text: 'Workout & meditation logged from your words' },
+      { icon: 'coffee',      text: 'Meals & nutrition pieced together' },
+    ],
+  },
+  {
+    id: 'insights',
+    icon: 'compass',
+    iconColor: 'rgba(196,181,253,0.90)',
+    iconBg: 'rgba(196,181,253,0.08)',
+    accent: 'rgba(196,181,253,0.65)',
+    title: 'Personality insights',
+    subtitle: 'See the person behind the days.',
+    description:
+      'Month by month, Untangle maps your values, energy rhythms, recurring beliefs, and emotional patterns — helping you understand yourself at a deeper level.',
+    features: [
+      { icon: 'star',        text: 'Values constellation built from your words' },
+      { icon: 'trending-up', text: 'Emotional trends and growth arcs' },
+      { icon: 'repeat',      text: 'Recurring thoughts surfaced and named' },
+      { icon: 'user',        text: 'Your evolving self-portrait' },
+    ],
+  },
+  {
+    id: 'wisdom',
+    icon: 'film',
+    iconColor: 'rgba(110,231,183,0.90)',
+    iconBg: 'rgba(110,231,183,0.08)',
+    accent: 'rgba(110,231,183,0.65)',
+    title: 'Grow wiser with Shorts',
+    subtitle: 'Bite-sized wisdom, curated for you.',
+    description:
+      'Untangle surfaces short reflections and ideas drawn from philosophy, psychology, and lived experience — personalised to where you are in your journey.',
+    features: [
+      { icon: 'play-circle', text: 'Story-format wisdom cards' },
+      { icon: 'bookmark',    text: 'Save what resonates with you' },
+      { icon: 'rotate-cw',   text: 'Fresh perspectives every day' },
+    ],
+  },
+];
+
+// ── Step 1–4: Feature slides ──────────────────────────────────────────────────
+function StepFeature({ slide, onNext, isLast }: {
+  slide: typeof ONBOARDING_SLIDES[0];
+  onNext: () => void;
+  isLast: boolean;
+}) {
   return (
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={s.stepContainer}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={s.stepTitle}>What untangle tracks</Text>
-      <Text style={s.stepSub}>
-        Just speak or write naturally. Untangle listens and builds a picture of your life over time.
-      </Text>
+      {/* Icon */}
+      <View style={[feat.iconCircle, { backgroundColor: slide.iconBg, borderColor: slide.accent.replace('0.65)', '0.22)') }]}>
+        <Feather name={slide.icon as any} size={32} color={slide.iconColor} />
+      </View>
 
-      {/* Trackable grid */}
-      <View style={track.grid}>
-        {TRACKABLE.map(t => (
-          <View key={t.label} style={[track.chip, { backgroundColor: t.bg, borderColor: t.color.replace('0.88)', '0.20)') }]}>
-            <Feather name={t.icon as any} size={14} color={t.color} />
-            <Text style={[track.chipLabel, { color: t.color }]}>{t.label}</Text>
+      <Text style={s.stepTitle}>{slide.title}</Text>
+      <Text style={[s.stepSub, { color: slide.accent }]}>{slide.subtitle}</Text>
+      <Text style={feat.description}>{slide.description}</Text>
+
+      {/* Feature list */}
+      <View style={feat.list}>
+        {slide.features.map(f => (
+          <View key={f.icon} style={feat.row}>
+            <View style={[feat.dot, { backgroundColor: slide.iconBg, borderColor: slide.accent.replace('0.65)', '0.20)') }]}>
+              <Feather name={f.icon as any} size={13} color={slide.iconColor} />
+            </View>
+            <Text style={feat.rowText}>{f.text}</Text>
           </View>
         ))}
       </View>
 
-      {/* Privacy badge */}
-      <View style={priv.card}>
-        <View style={priv.iconRow}>
-          <View style={priv.lockWrap}>
-            <Feather name="lock" size={16} color="rgba(110,231,183,0.90)" />
-          </View>
-          <Text style={priv.title}>Your data never leaves your phone</Text>
-        </View>
-        <Text style={priv.body}>
-          Everything — your notes, summaries, and insights — is stored locally on this device.
-          No account required. No cloud sync. No one else can see it.
-        </Text>
-        <View style={priv.pills}>
-          {['No servers', 'No account', 'Local only'].map(p => (
-            <View key={p} style={priv.pill}>
-              <Text style={priv.pillText}>{p}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      <TouchableOpacity style={[s.primaryBtn, { marginTop: 8 }]} onPress={onNext} activeOpacity={0.85}>
-        <Text style={s.primaryBtnText}>Continue</Text>
+      <TouchableOpacity style={[s.primaryBtn, { marginTop: 32 }]} onPress={onNext} activeOpacity={0.85}>
+        <Text style={s.primaryBtnText}>{isLast ? 'Get set up' : 'Next'}</Text>
         <Feather name="arrow-right" size={16} color="rgba(224,242,254,0.95)" />
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
-const track = StyleSheet.create({
-  grid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 24, marginBottom: 24 },
-  chip:      { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 20, borderWidth: 1 },
-  chipLabel: { fontSize: 13, fontFamily: 'GillSans-Light', fontWeight: '500' },
+const feat = StyleSheet.create({
+  iconCircle:  { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', borderWidth: 1, marginBottom: 24 },
+  description: { fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', lineHeight: 22, marginTop: 8, marginBottom: 20 },
+  list:        { gap: 12 },
+  row:         { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dot:         { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  rowText:     { flex: 1, fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.80)', lineHeight: 20 },
 });
 
-const priv = StyleSheet.create({
-  card:     { backgroundColor: 'rgba(110,231,183,0.06)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(110,231,183,0.18)', padding: 16, gap: 10, marginBottom: 24 },
-  iconRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  lockWrap: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(110,231,183,0.10)', alignItems: 'center', justifyContent: 'center' },
-  title:    { fontSize: 15, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.92)', flex: 1 },
-  body:     { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.70)', lineHeight: 20 },
-  pills:    { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  pill:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: 'rgba(110,231,183,0.10)', borderWidth: 1, borderColor: 'rgba(110,231,183,0.22)' },
-  pillText: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(110,231,183,0.80)' },
-});
-
-// ── Step 2: API Keys ──────────────────────────────────────────────────────────
-function StepApiKeys({
-  anthropicKey, setAnthropicKey,
-  openaiKey, setOpenaiKey,
-  onNext,
-}: {
-  anthropicKey: string; setAnthropicKey: (v: string) => void;
-  openaiKey: string; setOpenaiKey: (v: string) => void;
-  onNext: () => void;
-}) {
-  const [showAnth, setShowAnth] = useState(false);
-  const [showOAI, setShowOAI] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const canProceed = anthropicKey.trim().length > 0 && openaiKey.trim().length > 0;
-
-  return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={s.stepContainer}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={s.stepTitle}>API Keys</Text>
-        <Text style={s.stepSub}>
-          Untangle uses Claude and Whisper to understand your journal. You'll need your own API keys.
-        </Text>
-
-        {/* Keys stay on device note */}
-        <View style={s.keysSafeNote}>
-          <Feather name="shield" size={12} color="rgba(110,231,183,0.80)" />
-          <Text style={s.keysSafeText}>
-            Keys are stored locally on your phone and never sent to any server other than Anthropic and OpenAI directly.
-          </Text>
-        </View>
-
-        {/* Anthropic */}
-        <Text style={s.keyLabel}>Anthropic API Key · Claude</Text>
-        <View style={s.inputRow}>
-          <TextInput
-            style={s.input}
-            value={anthropicKey}
-            onChangeText={setAnthropicKey}
-            placeholder="sk-ant-..."
-            placeholderTextColor="rgba(152,212,250,0.28)"
-            secureTextEntry={!showAnth}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity style={s.eyeBtn} onPress={() => setShowAnth(v => !v)}>
-            <Feather name={showAnth ? 'eye-off' : 'eye'} size={15} color="rgba(152,212,250,0.55)" />
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity onPress={() => Linking.openURL('https://console.anthropic.com')}>
-          <Text style={s.linkText}>Get key at console.anthropic.com →</Text>
-        </TouchableOpacity>
-
-        <View style={s.divider} />
-
-        {/* OpenAI */}
-        <Text style={s.keyLabel}>OpenAI API Key · Whisper transcription</Text>
-        <View style={s.inputRow}>
-          <TextInput
-            style={s.input}
-            value={openaiKey}
-            onChangeText={setOpenaiKey}
-            placeholder="sk-..."
-            placeholderTextColor="rgba(152,212,250,0.28)"
-            secureTextEntry={!showOAI}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity style={s.eyeBtn} onPress={() => setShowOAI(v => !v)}>
-            <Feather name={showOAI ? 'eye-off' : 'eye'} size={15} color="rgba(152,212,250,0.55)" />
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity onPress={() => Linking.openURL('https://platform.openai.com/api-keys')}>
-          <Text style={s.linkText}>Get key at platform.openai.com →</Text>
-        </TouchableOpacity>
-
-        {/* Why expandable */}
-        <TouchableOpacity style={s.whyRow} onPress={() => setExpanded(v => !v)} activeOpacity={0.75}>
-          <Feather name={expanded ? 'chevron-up' : 'chevron-down'} size={13} color="rgba(152,212,250,0.45)" />
-          <Text style={s.whyToggle}>Why do I need this?</Text>
-        </TouchableOpacity>
-        {expanded && (
-          <View style={s.whyBox}>
-            <Text style={s.whyText}>
-              Untangle runs entirely on your device — there is no backend server. Your API keys
-              connect directly to Anthropic (for Claude summaries and insights) and OpenAI
-              (for Whisper voice transcription). Keys are stored locally and never shared.
-              You only pay for what you use — typical daily usage costs a few paise.
-            </Text>
-          </View>
-        )}
-
-        <View style={s.divider} />
-
-        <TouchableOpacity
-          style={[s.primaryBtn, !canProceed && s.primaryBtnDisabled]}
-          onPress={canProceed ? onNext : undefined}
-          activeOpacity={canProceed ? 0.85 : 1}
-        >
-          <Text style={[s.primaryBtnText, !canProceed && { color: 'rgba(224,242,254,0.30)' }]}>
-            Continue
-          </Text>
-          <Feather name="arrow-right" size={16} color={canProceed ? 'rgba(224,242,254,0.95)' : 'rgba(224,242,254,0.30)'} />
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
-}
-
-// ── Step 3: Mic Permission ────────────────────────────────────────────────────
+// ── Step 5: Mic Permission ────────────────────────────────────────────────────
 function StepMicPermission({ onNext, onSkip }: { onNext: () => void; onSkip: () => void }) {
   const [requesting, setRequesting] = useState(false);
 
   const handleAllow = async () => {
     setRequesting(true);
-    try {
-      await Audio.requestPermissionsAsync();
-    } catch {}
+    try { await Audio.requestPermissionsAsync(); } catch {}
     setRequesting(false);
     onNext();
   };
@@ -312,85 +237,7 @@ function StepMicPermission({ onNext, onSkip }: { onNext: () => void; onSkip: () 
   );
 }
 
-// ── Step 4: Goals ─────────────────────────────────────────────────────────────
-function StepGoals({
-  strengthDays, setStrengthDays,
-  calorieTarget, setCalorieTarget,
-  spendBudget, setSpendBudget,
-  onNext, onSkip,
-}: {
-  strengthDays: number; setStrengthDays: (v: number) => void;
-  calorieTarget: string; setCalorieTarget: (v: string) => void;
-  spendBudget: string; setSpendBudget: (v: string) => void;
-  onNext: () => void; onSkip: () => void;
-}) {
-  return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={s.stepContainer}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={s.stepTitle}>Set your goals</Text>
-        <Text style={s.stepSub}>
-          Optional — helps untangle give you personalised insights. You can update these any time.
-        </Text>
-
-        {/* Strength */}
-        <View style={s.goalBlock}>
-          <Text style={s.goalLabel}>Strength sessions / week</Text>
-          <DayPicker value={strengthDays} onChange={setStrengthDays} />
-        </View>
-
-        {/* Calories */}
-        <View style={s.goalBlock}>
-          <Text style={s.goalLabel}>Daily calorie target</Text>
-          <View style={s.inputRow}>
-            <TextInput
-              style={s.input}
-              value={calorieTarget}
-              onChangeText={setCalorieTarget}
-              placeholder="e.g. 1600"
-              placeholderTextColor="rgba(152,212,250,0.28)"
-              keyboardType="numeric"
-              returnKeyType="done"
-            />
-            <Text style={s.unit}>kcal</Text>
-          </View>
-        </View>
-
-        {/* Spend */}
-        <View style={s.goalBlock}>
-          <Text style={s.goalLabel}>Monthly spend budget</Text>
-          <View style={s.inputRow}>
-            <TextInput
-              style={s.input}
-              value={spendBudget}
-              onChangeText={setSpendBudget}
-              placeholder="e.g. 15000"
-              placeholderTextColor="rgba(152,212,250,0.28)"
-              keyboardType="numeric"
-              returnKeyType="done"
-            />
-            <Text style={s.unit}>₹</Text>
-          </View>
-        </View>
-
-        <TouchableOpacity style={[s.primaryBtn, { marginTop: 24 }]} onPress={onNext} activeOpacity={0.85}>
-          <Text style={s.primaryBtnText}>Continue</Text>
-          <Feather name="arrow-right" size={16} color="rgba(224,242,254,0.95)" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={s.skipBtn} onPress={onSkip}>
-          <Text style={s.skipText}>Skip for now</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
-}
-
-// ── Step 5: All set ───────────────────────────────────────────────────────────
+// ── Step 6: All set ───────────────────────────────────────────────────────────
 function StepAllSet({ onFinish, finishing }: { onFinish: () => void; finishing: boolean }) {
   return (
     <View style={[s.stepContainer, s.centered]}>
@@ -407,7 +254,7 @@ function StepAllSet({ onFinish, finishing }: { onFinish: () => void; finishing: 
           { icon: 'mic',         label: 'Record voice notes anytime' },
           { icon: 'star',        label: 'Daily summary auto-generates at midnight' },
           { icon: 'trending-up', label: 'Monthly insights update as you journal' },
-          { icon: 'phone',       label: 'Call or chat to reflect on your day' },
+          { icon: 'film',        label: 'Wisdom shorts personalised to you' },
           { icon: 'lock',        label: 'All data stored privately on your phone' },
         ].map(f => (
           <View key={f.icon} style={s.featureListRow}>
@@ -437,16 +284,12 @@ function StepAllSet({ onFinish, finishing }: { onFinish: () => void; finishing: 
 // ── Main OnboardingScreen ─────────────────────────────────────────────────────
 interface Props { onComplete: () => void; }
 
-const STEPS = 6;
+// Steps: 0=Welcome, 1-4=Feature slides, 5=Mic, 6=All Set
+const TOTAL_STEPS = 7;
 
 export default function OnboardingScreen({ onComplete }: Props) {
-  const [step, setStep]                   = useState(0);
-  const [anthropicKey, setAnthropicKey]   = useState('');
-  const [openaiKey, setOpenaiKey]         = useState('');
-  const [strengthDays, setStrengthDays]   = useState(0);
-  const [calorieTarget, setCalorieTarget] = useState('');
-  const [spendBudget, setSpendBudget]     = useState('');
-  const [finishing, setFinishing]         = useState(false);
+  const [step, setStep]       = useState(0);
+  const [finishing, setFinishing] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -458,34 +301,6 @@ export default function OnboardingScreen({ onComplete }: Props) {
   const handleFinish = async () => {
     setFinishing(true);
     try {
-      // Save API keys
-      const existing = await StorageService.getSettings();
-      const settings: AppSettings = {
-        openaiApiKey:    openaiKey.trim(),
-        anthropicApiKey: anthropicKey.trim(),
-        vadThreshold:    existing?.vadThreshold    ?? -35,
-        silenceDuration: existing?.silenceDuration ?? 2000,
-        summaryTime:     existing?.summaryTime     ?? '21:00',
-        batchSize:       existing?.batchSize       ?? 0,
-        ...(existing?.elevenLabsApiKey   ? { elevenLabsApiKey:   existing.elevenLabsApiKey   } : {}),
-        ...(existing?.elevenLabsVoiceId  ? { elevenLabsVoiceId:  existing.elevenLabsVoiceId  } : {}),
-        ...(existing?.ttsVoiceId         ? { ttsVoiceId:         existing.ttsVoiceId         } : {}),
-      };
-      await StorageService.saveSettings(settings);
-
-      // Save goals if any set
-      const cal = parseFloat(calorieTarget);
-      const bud = parseFloat(spendBudget.replace(/,/g, ''));
-      const hasGoals = strengthDays > 0 || (!isNaN(cal) && cal > 0) || (!isNaN(bud) && bud > 0);
-      if (hasGoals) {
-        const goals: any = {};
-        if (strengthDays > 0)           goals.strengthDaysPerWeek = strengthDays;
-        if (!isNaN(cal) && cal > 0)     goals.dailyCalorieTarget  = cal;
-        if (!isNaN(bud) && bud > 0)     goals.monthlySpendBudget  = bud;
-        await StorageService.saveGoals(goals);
-      }
-
-      // Mark onboarding complete
       await AsyncStorage.setItem('onboarding_complete', '1');
       onComplete();
     } catch {
@@ -493,19 +308,22 @@ export default function OnboardingScreen({ onComplete }: Props) {
     }
   };
 
+  // Progress dots shown for steps 1–6 (not welcome)
+  const progressSteps = TOTAL_STEPS - 1; // 6 dots
+  const progressIndex = step - 1;        // 0-based within those 6
+
   return (
     <View style={{ flex: 1, backgroundColor: '#02060E' }}>
-      {/* Progress dots (hidden on welcome) */}
       {step > 0 && (
         <SafeAreaView edges={['top']} style={s.progressBar}>
-          {Array.from({ length: STEPS - 1 }).map((_, i) => (
+          {Array.from({ length: progressSteps }).map((_, i) => (
             <View
               key={i}
               style={[
                 s.progressDot,
-                i < step - 1
+                i < progressIndex
                   ? s.progressDotDone
-                  : i === step - 1
+                  : i === progressIndex
                     ? s.progressDotActive
                     : s.progressDotOff,
               ]}
@@ -527,44 +345,27 @@ export default function OnboardingScreen({ onComplete }: Props) {
           <StepWelcome onNext={() => goTo(1)} />
         </View>
 
-        {/* Step 1 — What you can track + Privacy */}
+        {/* Steps 1–4 — Feature slides */}
+        {ONBOARDING_SLIDES.map((slide, idx) => (
+          <View key={slide.id} style={{ width: SW }}>
+            <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
+              <StepFeature
+                slide={slide}
+                onNext={() => goTo(idx + 2)}
+                isLast={idx === ONBOARDING_SLIDES.length - 1}
+              />
+            </SafeAreaView>
+          </View>
+        ))}
+
+        {/* Step 5 — Mic Permission */}
         <View style={{ width: SW }}>
           <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
-            <StepWhatYouCanTrack onNext={() => goTo(2)} />
+            <StepMicPermission onNext={() => goTo(6)} onSkip={() => goTo(6)} />
           </SafeAreaView>
         </View>
 
-        {/* Step 2 — API Keys */}
-        <View style={{ width: SW }}>
-          <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
-            <StepApiKeys
-              anthropicKey={anthropicKey} setAnthropicKey={setAnthropicKey}
-              openaiKey={openaiKey} setOpenaiKey={setOpenaiKey}
-              onNext={() => goTo(3)}
-            />
-          </SafeAreaView>
-        </View>
-
-        {/* Step 3 — Mic Permission */}
-        <View style={{ width: SW }}>
-          <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
-            <StepMicPermission onNext={() => goTo(4)} onSkip={() => goTo(4)} />
-          </SafeAreaView>
-        </View>
-
-        {/* Step 4 — Goals */}
-        <View style={{ width: SW }}>
-          <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
-            <StepGoals
-              strengthDays={strengthDays} setStrengthDays={setStrengthDays}
-              calorieTarget={calorieTarget} setCalorieTarget={setCalorieTarget}
-              spendBudget={spendBudget} setSpendBudget={setSpendBudget}
-              onNext={() => goTo(5)} onSkip={() => goTo(5)}
-            />
-          </SafeAreaView>
-        </View>
-
-        {/* Step 5 — All set */}
+        {/* Step 6 — All set */}
         <View style={{ width: SW }}>
           <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
             <StepAllSet onFinish={handleFinish} finishing={finishing} />
@@ -580,47 +381,61 @@ const s = StyleSheet.create({
   // Welcome
   welcomeBg:      { flex: 1, width: SW },
   welcomeSafe:    { flex: 1 },
-  welcomeContent: { flex: 1, paddingHorizontal: 32, justifyContent: 'space-between' },
-  welcomeTop:     { flex: 1, justifyContent: 'center', alignItems: 'flex-start' },
-  welcomeBottom:  { paddingBottom: 48 },
-  wordmark:       { fontSize: 56, fontFamily: 'Baskerville', fontStyle: 'italic', color: 'rgba(224,242,254,0.95)', letterSpacing: -1 },
-  tagline:        { fontSize: 18, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.75)', marginTop: 10 },
+  welcomeContent: { flex: 1, paddingHorizontal: 28, justifyContent: 'space-between', paddingTop: 20 },
+  welcomeTop:     { paddingTop: 8 },
+  welcomeBottom:  { paddingBottom: 52, gap: 12 },
+  welcomeHint:    { textAlign: 'center', fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)' },
+  wordmark:       { fontSize: 42, fontFamily: 'Baskerville', fontStyle: 'italic', color: 'rgba(224,242,254,0.88)', letterSpacing: -0.5 },
+
+  // Glassmorphic card
+  glassWrap: {
+    flex: 1,
+    marginVertical: 24,
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.18)',
+    backgroundColor: 'rgba(2,6,14,0.35)',
+    justifyContent: 'center',
+  },
+  glassInner: {
+    padding: 28,
+    gap: 14,
+  },
+  waveRow: {
+    flexDirection: 'row',
+    gap: 3,
+    marginBottom: 8,
+  },
+  waveLine: {
+    flex: 1,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(152,212,250,0.70)',
+  },
+  glassHeadline: {
+    fontSize: 30,
+    fontFamily: 'Baskerville',
+    fontStyle: 'italic',
+    color: 'rgba(224,242,254,0.96)',
+    lineHeight: 40,
+    letterSpacing: -0.3,
+  },
+  glassSub: {
+    fontSize: 14,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.60)',
+    lineHeight: 21,
+  },
 
   // Steps
   stepContainer:  { padding: 28, paddingBottom: 40 },
-  stepTitle:      { fontSize: 28, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.95)', marginBottom: 8 },
-  stepSub:        { fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.65)', lineHeight: 21, marginBottom: 8 },
+  stepTitle:      { fontSize: 28, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.95)', marginBottom: 6 },
+  stepSub:        { fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.65)', lineHeight: 21, marginBottom: 4 },
   centered:       { justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: '100%' },
-
-  // API keys safety note
-  keysSafeNote: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    marginTop: 12, marginBottom: 4,
-    backgroundColor: 'rgba(110,231,183,0.06)',
-    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(110,231,183,0.16)',
-    padding: 10,
-  },
-  keysSafeText: { flex: 1, fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(110,231,183,0.75)', lineHeight: 18 },
-
-  // Inputs
-  keyLabel:  { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 20, marginBottom: 8 },
-  inputRow:  { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(1,8,18,0.80)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.14)', paddingRight: 12 },
-  input:     { flex: 1, color: 'rgba(224,242,254,0.95)', fontSize: 14, paddingHorizontal: 14, paddingVertical: 13, fontFamily: 'GillSans-Light' },
-  eyeBtn:    { padding: 4 },
-  unit:      { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.50)', paddingRight: 4 },
-  linkText:  { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', marginTop: 7, textDecorationLine: 'underline' },
-  divider:   { height: 1, backgroundColor: 'rgba(152,212,250,0.08)', marginVertical: 20 },
-  whyRow:    { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  whyToggle: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)' },
-  whyBox:    { marginTop: 10, backgroundColor: 'rgba(9,41,173,0.10)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)', padding: 14 },
-  whyText:   { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.65)', lineHeight: 19 },
 
   // Mic / all set icon
   bigIconWrap: { width: 96, height: 96, borderRadius: 48, backgroundColor: 'rgba(152,212,250,0.08)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.20)', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
-
-  // Goals
-  goalBlock: { marginTop: 20, gap: 8 },
-  goalLabel: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 0.5, textTransform: 'uppercase' },
 
   // All set feature list
   featureList:      { gap: 12, marginTop: 24, alignSelf: 'stretch' },

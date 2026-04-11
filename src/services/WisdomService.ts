@@ -351,6 +351,7 @@ depth_preference: "entry" if surface venting/stress, "deep" if existential/ident
     if (start === -1 || end === -1) return null;
 
     const parsed = JSON.parse(raw.slice(start, end + 1)) as JournalSignal;
+    parsed.extractedAt = Date.now();
     await StorageService.saveJournalSignal(parsed);
     return parsed;
   } catch {

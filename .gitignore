@@ -14,6 +14,10 @@ web-build/
 .env.local
 .env.*.local
 src/config/keys.ts
+keystore.properties
+*.jks
+*.keystore
+!android/app/debug.keystore
 
 # EAS
 eas-build-local-nodejs/

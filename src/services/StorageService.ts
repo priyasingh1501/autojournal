@@ -6,7 +6,7 @@ import {
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis, HowYouThinkAnalysis, YourStoryAnalysis,
   EnneagramResponse, SavedShort, JournalSignal, WisdomShort,
 } from '../types';
-import { ANTHROPIC_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID } from '../config/keys';
+// API keys are now server-side (Supabase Edge Functions via AIProxy) — not needed in app
 
 const KEYS = {
   TRANSCRIPTS_PREFIX: 'transcripts_',
@@ -62,15 +62,9 @@ export const StorageService = {
   async getSettings(): Promise<AppSettings | null> {
     const json = await AsyncStorage.getItem(KEYS.SETTINGS);
     const stored: AppSettings | null = json ? JSON.parse(json) : null;
-    // Always inject hardcoded keys — overrides anything stored in settings
+    // Keys are server-side (AIProxy/Edge Functions) — return stored settings as-is
     const base: AppSettings = stored ?? ({} as AppSettings);
-    return {
-      ...base,
-      anthropicApiKey:   ANTHROPIC_API_KEY,
-      openaiApiKey:      OPENAI_API_KEY,
-      elevenLabsApiKey:  ELEVENLABS_API_KEY,
-      elevenLabsVoiceId: ELEVENLABS_VOICE_ID,
-    };
+    return base;
   },
 
   async saveSettings(settings: AppSettings): Promise<void> {
@@ -388,17 +382,46 @@ export const StorageService = {
     await AsyncStorage.setItem(KEYS.WISDOM_SAVED, JSON.stringify(filtered));
   },
 
+  /** Returns IDs seen in the last 30 days. Shorts seen longer ago re-surface as fresh. */
   async getSeenShortIds(): Promise<string[]> {
     const json = await AsyncStorage.getItem(KEYS.WISDOM_SEEN);
-    return json ? JSON.parse(json) : [];
+    if (!json) return [];
+    const raw: Array<string | { id: string; seenAt: number }> = JSON.parse(json);
+
+    // Migrate legacy string entries to object form so they expire naturally via the
+    // 30-day cutoff rather than reappearing as if never seen.
+    const migrated: Array<{ id: string; seenAt: number }> = raw.map(e =>
+      typeof e === 'string' ? { id: e, seenAt: 0 } : e,
+    );
+
+    // Write back if any migration happened
+    if (raw.some(e => typeof e === 'string')) {
+      const capped = migrated.length > 400 ? migrated.slice(-400) : migrated;
+      await AsyncStorage.setItem(KEYS.WISDOM_SEEN, JSON.stringify(capped)).catch(() => {});
+    }
+
+    const cutoff = Date.now() - 30 * 86_400_000; // 30 days
+    return migrated
+      .filter(e => e.seenAt > cutoff)
+      .map(e => e.id);
   },
 
   async markShortSeen(shortId: string): Promise<void> {
-    const seen = await this.getSeenShortIds();
-    if (seen.includes(shortId)) return;
-    seen.push(shortId);
-    // Keep last 200 seen IDs
-    const capped = seen.length > 200 ? seen.slice(-200) : seen;
+    const json = await AsyncStorage.getItem(KEYS.WISDOM_SEEN);
+    const raw: Array<{ id: string; seenAt: number }> = json
+      ? (JSON.parse(json) as Array<string | { id: string; seenAt: number }>).map(e =>
+          typeof e === 'string' ? { id: e, seenAt: 0 } : e,
+        )
+      : [];
+    const idx = raw.findIndex(e => e.id === shortId);
+    const entry = { id: shortId, seenAt: Date.now() };
+    if (idx >= 0) {
+      raw[idx] = entry; // refresh seenAt so the 30-day clock resets
+    } else {
+      raw.push(entry);
+    }
+    // Keep last 400 entries (enough headroom for a 500-short library)
+    const capped = raw.length > 400 ? raw.slice(-400) : raw;
     await AsyncStorage.setItem(KEYS.WISDOM_SEEN, JSON.stringify(capped));
   },
 

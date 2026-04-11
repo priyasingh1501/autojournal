@@ -10,12 +10,13 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WisdomShort } from '../types';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/keys';
+const SUPABASE_URL      = 'https://hgodsuwrdpmaqcdetjjn.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhnb2RzdXdyZHBtYXFjZGV0ampuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMTI3MjYsImV4cCI6MjA5MDc4ODcyNn0.PrrHGD7Vx0hq51uLcCLTH4tA-smRFMKTnxom1i5lrCw';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const CACHE_KEY = 'supabase_shorts_v1';
+const CACHE_KEY = 'supabase_shorts_v2';
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 interface CacheEntry {
@@ -130,6 +131,26 @@ export async function getShortsLibrary(
 
   console.warn('[Supabase] Using bundled SHORTS_LIBRARY as fallback');
   return SHORTS_LIBRARY;
+}
+
+/**
+ * Fetch the current image_url for a single short directly from Supabase.
+ * Bypasses the local cache — used to check if another device already uploaded
+ * an image before we regenerate via DALL-E.
+ * Returns null on any error or if image_url is not set.
+ */
+export async function fetchShortImageUrl(shortId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('wisdom_shorts')
+      .select('image_url')
+      .eq('id', shortId)
+      .single();
+    if (error || !data?.image_url) return null;
+    return data.image_url as string;
+  } catch {
+    return null;
+  }
 }
 
 /**
