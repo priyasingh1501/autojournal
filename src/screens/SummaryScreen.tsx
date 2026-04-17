@@ -20,16 +20,25 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Markdown from 'react-native-markdown-display';
 import { renderInsightSections } from '../components/InsightSections';
+import NewDaySummaryView from '../components/NewDaySummaryView';
 import { StorageService } from '../services/StorageService';
-import { generateDailySummary } from '../services/SummaryService';
+import { FeatureFlagsService } from '../services/FeatureFlagsService';
+import { generateDailySummary, generateFullBreakdown } from '../services/SummaryService';
 import { generateIfNeeded } from '../services/AutoSummaryService';
 import { SubscriptionService } from '../services/SubscriptionService';
 import PaywallModal from '../components/PaywallModal';
 import { DailySummary, DayMacros, UserGoals } from '../types';
-import TalkScreen from './TalkScreen';
+import TalkScreen from './TalkScreenV2';
 import ChatScreen from './ChatScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+function localDateStr(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 // ── markdown styles ───────────────────────────────────────────────────────────
 const markdownStyles = {
@@ -52,8 +61,9 @@ const markdownStyles = {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function formatDate(date: string): string {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
+  const todayStr = localDateStr();
+  const _yd = new Date(); _yd.setDate(_yd.getDate() - 1);
+  const yesterdayStr = localDateStr(_yd);
   if (date === todayStr) return 'Today';
   if (date === yesterdayStr) return 'Yesterday';
   return new Date(date + 'T12:00:00').toLocaleDateString([], {
@@ -66,8 +76,9 @@ function formatCreatedAt(ts: number) {
 }
 
 function formatShortDate(date: string): string {
-  const todayStr = new Date().toISOString().split('T')[0];
-  const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
+  const todayStr = localDateStr();
+  const _yd2 = new Date(); _yd2.setDate(_yd2.getDate() - 1);
+  const yesterdayStr = localDateStr(_yd2);
   if (date === todayStr) return 'Today';
   if (date === yesterdayStr) return 'Yesterday';
   return new Date(date + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -140,18 +151,19 @@ export default function SummaryScreen() {
   const [staleCounts, setStaleCounts] = useState<Record<string, number>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [generatingDate, setGeneratingDate] = useState<string | null>(null);
-  const [callSummary, setCallSummary] = useState<DailySummary | null>(null);
-  const [chatSummary, setChatSummary] = useState<DailySummary | null>(null);
+  const [perspectiveSummary, setPerspectiveSummary] = useState<DailySummary | null>(null);
+  const [callMindId, setCallMindId] = useState<string | null | undefined>(undefined); // undefined = not a call
   const [showPaywall, setShowPaywall] = useState(false);
   const [paywallHint, setPaywallHint] = useState<string | undefined>();
-  const pendingCallRef = useRef<DailySummary | null>(null);
-  const pendingChatRef = useRef<DailySummary | null>(null);
+  const pendingPerspectiveRef = useRef<DailySummary | null>(null);
   const pendingGenerateDateRef = useRef<string | null>(null);
   const [containerHeight, setContainerHeight] = useState(0);
   const [enabledTrackers, setEnabledTrackers] = useState<Set<string> | null>(null);
   const [mealMacrosByDate, setMealMacrosByDate] = useState<Record<string, DayMacros>>({});
   const [goals, setGoals] = useState<UserGoals | null>(null);
   const [expandedBreakdowns, setExpandedBreakdowns] = useState<Set<string>>(new Set());
+  const [breakdownGenerating, setBreakdownGenerating] = useState<Set<string>>(new Set());
+  const [newDaySummaryOn, setNewDaySummaryOn] = useState<boolean>(false);
 
   const flatListRef = useRef<FlatList<DailySummary>>(null);
   const currentIndexRef = useRef(0);
@@ -162,7 +174,8 @@ export default function SummaryScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const yesterday = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
+      const _yd3 = new Date(); _yd3.setDate(_yd3.getDate() - 1);
+      const yesterday = localDateStr(_yd3);
       // Load immediately, then also try to auto-generate any missing summaries
       // and reload so they appear without the user having to navigate away and back
       loadSummaries().then(() => {
@@ -183,6 +196,10 @@ export default function SummaryScreen() {
       // Load goals and meal macros from monthly insights
       StorageService.getGoals().then(g => setGoals(g)).catch(() => {});
       loadMealMacros().catch(() => {});
+      // Re-read the flag on every focus so dev toggles take effect without a reload
+      FeatureFlagsService.getFlag('ff_new_day_summary')
+        .then(setNewDaySummaryOn)
+        .catch(() => setNewDaySummaryOn(false));
       // Catch-up generation: generate yesterday's summary if missing OR stale, then
       // reload. regenerate=true means it also picks up entries recorded after an
       // earlier auto-summary (e.g. notes added after the 5-min auto-generate).
@@ -212,13 +229,17 @@ export default function SummaryScreen() {
     currentIndexRef.current = clamped;
     setCurrentIndex(clamped);
 
-    // Compute stale counts fresh on every load so the banner reflects current state
-    // regardless of whether the summary object has changed since last render.
+    // Compute stale counts: only check the last 7 days since entries can only be
+    // added to dates within the last 30 days, and old summaries can't realistically
+    // become stale. Use transcript count comparison to avoid reading full entry arrays.
     const counts: Record<string, number> = {};
-    await Promise.all(valid.map(async (s) => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const recentSummaries = valid.filter(s => s.date >= cutoffStr);
+    await Promise.all(recentSummaries.map(async (s) => {
       const transcripts = await StorageService.getTranscriptsForDate(s.date);
-      const createdAt = s.createdAt ?? Math.max(...transcripts.map(t => t.timestamp), 0);
-      const newer = transcripts.filter(t => t.timestamp > createdAt).length;
+      const newer = transcripts.length - (s.transcriptCount ?? 0);
       if (newer > 0) counts[s.date] = newer;
     }));
     setStaleCounts(counts);
@@ -251,7 +272,7 @@ export default function SummaryScreen() {
   // Recompute on every render so it stays correct after midnight without needing
   // a timer. useMemo with no deps gives a stable value per mount but refreshes
   // on the next focus (useFocusEffect re-renders the component).
-  const today = React.useMemo(() => new Date().toISOString().split('T')[0], []);
+  const today = React.useMemo(() => localDateStr(), []);
 
   const handleGenerate = useCallback(async (date: string) => {
     // Use a ref guard (not state) so this callback stays stable and renderItem
@@ -298,29 +319,18 @@ export default function SummaryScreen() {
     handleGenerate(date);
   };
 
-  // Conversation gates — first session (Call or Chat) is free; subsequent sessions require Pro.
-  const handleCallPress = async (item: DailySummary) => {
+  // Single entry point — opens the mind picker (ChatScreen), which routes to chat or call
+  const handlePerspectivePress = async (item: DailySummary) => {
     const allowed = await SubscriptionService.canUseConversation();
     if (!allowed) {
-      pendingCallRef.current = item;
-      setPaywallHint('Unlimited AI Call & Chat conversations are a Pro feature.');
+      pendingPerspectiveRef.current = item;
+      setPaywallHint('Unlimited AI conversations are a Pro feature.');
       setShowPaywall(true);
       return;
     }
     await SubscriptionService.recordConversationUsed();
-    setCallSummary(item);
-  };
-
-  const handleChatPress = async (item: DailySummary) => {
-    const allowed = await SubscriptionService.canUseConversation();
-    if (!allowed) {
-      pendingChatRef.current = item;
-      setPaywallHint('Unlimited AI Call & Chat conversations are a Pro feature.');
-      setShowPaywall(true);
-      return;
-    }
-    await SubscriptionService.recordConversationUsed();
-    setChatSummary(item);
+    setCallMindId(undefined); // start as chat picker, not a direct call
+    setPerspectiveSummary(item);
   };
 
   const handleDownload = async (item: DailySummary) => {
@@ -338,7 +348,7 @@ export default function SummaryScreen() {
       const sep = '-'.repeat(40);
       const header = `AUTO JOURNAL - DAILY SUMMARY\n${formatDate(item.date)}\n${sep}\n`;
       const meta = `Entries: ${item.transcriptCount}  |  Generated: ${formatCreatedAt(item.createdAt)}\n\n`;
-      const plainSummary = toPlainText(item.summary);
+      const plainSummary = toPlainText(item.summary || item.insightText || '');
       const insightBlock = item.insightText
         ? `\n${sep}\nDAILY INSIGHTS\n${sep}\n${item.insightText}\n`
         : '';
@@ -356,8 +366,47 @@ export default function SummaryScreen() {
     }
   };
 
+  const handleToggleBreakdown = useCallback(async (date: string) => {
+    const isExpanded = expandedBreakdowns.has(date);
+    if (isExpanded) {
+      setExpandedBreakdowns(prev => { const n = new Set(prev); n.delete(date); return n; });
+      return;
+    }
+    setExpandedBreakdowns(prev => { const n = new Set(prev); n.add(date); return n; });
+    const current = summariesRef.current.find(s => s.date === date);
+    if (current && !current.summary && !breakdownGenerating.has(date)) {
+      setBreakdownGenerating(prev => { const n = new Set(prev); n.add(date); return n; });
+      try {
+        const text = await generateFullBreakdown(date);
+        setSummaries(prev => prev.map(s => s.date === date ? { ...s, summary: text } : s));
+      } catch { /* silently skip — user can tap again */ }
+      finally {
+        setBreakdownGenerating(prev => { const n = new Set(prev); n.delete(date); return n; });
+      }
+    }
+  }, [expandedBreakdowns, breakdownGenerating]);
+
   // ── card content ─────────────────────────────────────────────────────────
-  const renderCardContent = (item: DailySummary) => (
+  const renderCardContent = (item: DailySummary) => {
+    if (newDaySummaryOn) {
+      return (
+        <NewDaySummaryView
+          item={item}
+          enabledTrackers={enabledTrackers}
+          mealMacrosByDate={mealMacrosByDate}
+          goals={goals}
+          staleCount={staleCounts[item.date] ?? 0}
+          generatingDate={generatingDate}
+          expanded={expandedBreakdowns.has(item.date)}
+          breakdownGenerating={breakdownGenerating.has(item.date)}
+          onGenerate={gatedHandleGenerate}
+          onDownload={handleDownload}
+          onPerspective={handlePerspectivePress}
+          onToggleBreakdown={handleToggleBreakdown}
+        />
+      );
+    }
+    return (
     <>
       {item.imageUri ? (
         <ImageBackground
@@ -470,50 +519,63 @@ export default function SummaryScreen() {
           </View>
         )}
 
-        {/* Full breakdown — collapsed by default */}
+        {/* Full breakdown — generated on first expand, then cached in storage */}
         <View style={styles.divider} />
         <TouchableOpacity
           style={styles.breakdownToggleRow}
-          onPress={() => setExpandedBreakdowns(prev => {
-            const next = new Set(prev);
-            next.has(item.date) ? next.delete(item.date) : next.add(item.date);
-            return next;
-          })}
+          onPress={async () => {
+            const isExpanded = expandedBreakdowns.has(item.date);
+            if (isExpanded) {
+              setExpandedBreakdowns(prev => { const n = new Set(prev); n.delete(item.date); return n; });
+              return;
+            }
+            // Expand — generate if not yet available
+            setExpandedBreakdowns(prev => { const n = new Set(prev); n.add(item.date); return n; });
+            if (!item.summary && !breakdownGenerating.has(item.date)) {
+              setBreakdownGenerating(prev => { const n = new Set(prev); n.add(item.date); return n; });
+              try {
+                const text = await generateFullBreakdown(item.date);
+                setSummaries(prev => prev.map(s => s.date === item.date ? { ...s, summary: text } : s));
+              } catch { /* silently skip — user can tap again */ }
+              finally {
+                setBreakdownGenerating(prev => { const n = new Set(prev); n.delete(item.date); return n; });
+              }
+            }
+          }}
           activeOpacity={0.7}
         >
           <Text style={styles.breakdownLabel}>FULL BREAKDOWN</Text>
-          <Feather
-            name={expandedBreakdowns.has(item.date) ? 'chevron-up' : 'chevron-down'}
-            size={13}
-            color="rgba(152,212,250,0.50)"
-          />
+          {breakdownGenerating.has(item.date)
+            ? <ActivityIndicator size="small" color="rgba(152,212,250,0.50)" />
+            : <Feather
+                name={expandedBreakdowns.has(item.date) ? 'chevron-up' : 'chevron-down'}
+                size={13}
+                color="rgba(152,212,250,0.50)"
+              />
+          }
         </TouchableOpacity>
         {expandedBreakdowns.has(item.date) && (
-          <Markdown style={markdownStyles}>{item.summary}</Markdown>
+          item.summary
+            ? <Markdown style={markdownStyles}>{item.summary}</Markdown>
+            : breakdownGenerating.has(item.date)
+              ? <ActivityIndicator size="small" color="rgba(152,212,250,0.30)" style={{ marginVertical: 12 }} />
+              : null
         )}
       </ScrollView>
 
       <View style={styles.ctaRow}>
         <TouchableOpacity
-          style={[styles.ctaBtn, styles.ctaBtnCall]}
-          onPress={() => handleCallPress(item)}
+          style={styles.ctaBtn}
+          onPress={() => handlePerspectivePress(item)}
           activeOpacity={0.85}
         >
-          <Feather name="phone" size={15} color="rgba(224, 242, 254, 0.95)" />
-          <Text style={styles.ctaBtnText}>Call</Text>
-        </TouchableOpacity>
-        <View style={styles.ctaDivider} />
-        <TouchableOpacity
-          style={[styles.ctaBtn, styles.ctaBtnChat]}
-          onPress={() => handleChatPress(item)}
-          activeOpacity={0.85}
-        >
-          <Feather name="message-circle" size={15} color="rgba(224, 242, 254, 0.95)" />
-          <Text style={styles.ctaBtnText}>Chat</Text>
+          <Feather name="compass" size={15} color="rgba(224, 242, 254, 0.95)" />
+          <Text style={styles.ctaBtnText}>Get a new perspective</Text>
         </TouchableOpacity>
       </View>
     </>
   );
+  };
 
   // ── FlatList item ─────────────────────────────────────────────────────────
   const renderItem = useCallback(({ item }: { item: DailySummary }) => (
@@ -522,7 +584,23 @@ export default function SummaryScreen() {
         {renderCardContent(item)}
       </View>
     </View>
-  ), [containerHeight, generatingDate, handleGenerate, staleCounts, mealMacrosByDate, goals, enabledTrackers, expandedBreakdowns]);
+  ), [containerHeight, generatingDate, handleGenerate, staleCounts, mealMacrosByDate, goals, enabledTrackers, expandedBreakdowns, breakdownGenerating, newDaySummaryOn, handleToggleBreakdown]);
+
+  const getItemLayout = useCallback((_: any, index: number) => ({
+    length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index,
+  }), []);
+
+  const handleMomentumScrollEnd = useCallback((e: any) => {
+    const newIdx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+    currentIndexRef.current = newIdx;
+    setCurrentIndex(newIdx);
+  }, []);
+
+  const handleScrollToIndexFailed = useCallback((info: { index: number }) => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+    }, 100);
+  }, []);
 
   const todaySummary = summaries.find(s => s.date === today);
   const isGeneratingToday = generatingDate === today;
@@ -539,14 +617,12 @@ export default function SummaryScreen() {
       <View style={styles.topBar}>
         <Text style={styles.screenTitle}>Summaries</Text>
         <View style={styles.topBarRight}>
-          {summaries.length > 0 && (
+          {summaries.length > 0 && !isViewingToday && (
             <TouchableOpacity
-              onPress={() => todayIdx !== -1 && todayIdx !== currentIndex && scrollToIndex(todayIdx)}
+              onPress={() => todayIdx !== -1 && scrollToIndex(todayIdx)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={styles.counter}>
-                {isViewingToday ? '● ' : ''}{currentIndex + 1} / {summaries.length}
-              </Text>
+              <Text style={styles.counter}>Today</Text>
             </TouchableOpacity>
           )}
           {showTopBarGenerate && (
@@ -595,20 +671,9 @@ export default function SummaryScreen() {
             showsHorizontalScrollIndicator={false}
             decelerationRate="fast"
             initialScrollIndex={currentIndex}
-            getItemLayout={(_, index) => ({
-              length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index,
-            })}
-            onMomentumScrollEnd={e => {
-              const newIdx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-              currentIndexRef.current = newIdx;
-              setCurrentIndex(newIdx);
-            }}
-            // Scroll-to-index failures (sparse data) — fail silently
-            onScrollToIndexFailed={info => {
-              setTimeout(() => {
-                flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
-              }, 100);
-            }}
+            getItemLayout={getItemLayout}
+            onMomentumScrollEnd={handleMomentumScrollEnd}
+            onScrollToIndexFailed={handleScrollToIndexFailed}
           />
         ) : null}
       </View>
@@ -642,32 +707,25 @@ export default function SummaryScreen() {
         </View>
       )}
 
-      {/* Call modal */}
+      {/* Perspective modal — ChatScreen (picker) or TalkScreen (direct call) */}
       <Modal
-        visible={!!callSummary}
+        visible={!!perspectiveSummary}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => { setCallSummary(null); loadSummaries(); }}
+        onRequestClose={() => { setPerspectiveSummary(null); setCallMindId(undefined); loadSummaries(); }}
       >
-        {callSummary && (
-          <TalkScreen
-            summary={callSummary}
-            onClose={() => { setCallSummary(null); loadSummaries(); }}
+        {perspectiveSummary && callMindId === undefined && (
+          <ChatScreen
+            summary={perspectiveSummary}
+            onClose={() => { setPerspectiveSummary(null); loadSummaries(); }}
+            onCallRequested={(mindId) => setCallMindId(mindId ?? null)}
           />
         )}
-      </Modal>
-
-      {/* Chat modal */}
-      <Modal
-        visible={!!chatSummary}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => { setChatSummary(null); loadSummaries(); }}
-      >
-        {chatSummary && (
-          <ChatScreen
-            summary={chatSummary}
-            onClose={() => { setChatSummary(null); loadSummaries(); }}
+        {perspectiveSummary && callMindId !== undefined && (
+          <TalkScreen
+            summary={perspectiveSummary}
+            initialMindId={callMindId}
+            onClose={() => { setPerspectiveSummary(null); setCallMindId(undefined); loadSummaries(); }}
           />
         )}
       </Modal>
@@ -678,8 +736,7 @@ export default function SummaryScreen() {
         onClose={() => {
           setShowPaywall(false);
           pendingGenerateDateRef.current = null;
-          pendingCallRef.current = null;
-          pendingChatRef.current = null;
+          pendingPerspectiveRef.current = null;
         }}
         onSuccess={() => {
           setShowPaywall(false);
@@ -687,14 +744,11 @@ export default function SummaryScreen() {
             const d = pendingGenerateDateRef.current;
             pendingGenerateDateRef.current = null;
             handleGenerate(d);
-          } else if (pendingCallRef.current) {
-            const s = pendingCallRef.current;
-            pendingCallRef.current = null;
-            setCallSummary(s);
-          } else if (pendingChatRef.current) {
-            const s = pendingChatRef.current;
-            pendingChatRef.current = null;
-            setChatSummary(s);
+          } else if (pendingPerspectiveRef.current) {
+            const s = pendingPerspectiveRef.current;
+            pendingPerspectiveRef.current = null;
+            setCallMindId(undefined);
+            setPerspectiveSummary(s);
           }
         }}
       />
@@ -818,7 +872,7 @@ const styles = StyleSheet.create({
   reflectionText: {
     fontSize: 14, lineHeight: 22,
     color: 'rgba(224, 242, 254, 0.80)',
-    fontFamily: 'Baskerville', fontStyle: 'italic',
+    fontFamily: 'GillSans-Light',
   },
   legacyNudge: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -859,11 +913,9 @@ const styles = StyleSheet.create({
   },
   ctaBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', gap: 7, paddingVertical: 15,
+    justifyContent: 'center', gap: 8, paddingVertical: 15,
+    backgroundColor: 'rgba(9, 41, 173, 0.55)',
   },
-  ctaBtnCall: { backgroundColor: 'rgba(9, 41, 173, 0.70)' },
-  ctaBtnChat: { backgroundColor: 'rgba(9, 41, 173, 0.45)' },
-  ctaDivider: { width: 1, backgroundColor: 'rgba(152, 212, 250, 0.15)' },
   ctaBtnText: {
     fontSize: 15, color: 'rgba(224, 242, 254, 0.95)',
     fontFamily: 'GillSans-Light', letterSpacing: 0.2,

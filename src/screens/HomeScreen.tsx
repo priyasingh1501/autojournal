@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   View,
@@ -15,16 +15,18 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRoute } from '@react-navigation/native';
+import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { audioRecorderService, RecordingStatus } from '../services/AudioRecorderService';
-import { transcribePendingClips, BatchProgress } from '../services/BatchTranscriptionService';
+import { transcribePendingClips, BatchProgress, SummaryBannerStatus } from '../services/BatchTranscriptionService';
 import { StorageService } from '../services/StorageService';
 import { generateDailySummary } from '../services/SummaryService';
+import { FeatureFlagsService } from '../services/FeatureFlagsService';
 import {
   analyzeEntry,
   getPendingReentry,
   clearPendingReentry,
+  recordFalsePositive,
   ReentryPending,
   WellbeingAnalysis,
 } from '../services/WellbeingService';
@@ -32,23 +34,59 @@ import { PendingClip, TranscriptEntry } from '../types';
 import ComposeModal from '../components/ComposeModal';
 import MonthlyInsightCard from '../components/MonthlyInsightCard';
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
-import TalkScreen from './TalkScreen';
-import ChatScreen from './ChatScreen';
+import TalkScreen from './TalkScreenV2';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
+import { track } from '../services/AnalyticsService';
+import {
+  requestNotificationPermission,
+  scheduleSmartNotifications,
+} from '../services/SmartNotificationService';
+import { ActionablesService } from '../services/ActionablesService';
+import ActionablesCard from '../components/ActionablesCard';
 // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
 // import { syncSMSTransactionsToNotes } from '../services/SMSSpendService';
 
+function localDateStr(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export default function HomeScreen() {
   const route = useRoute<any>();
+  const navigation = useNavigation<any>();
   const [status, setStatus] = useState<RecordingStatus>('idle');
   const [pendingClips, setPendingClips] = useState<PendingClip[]>([]);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [pulseAnim] = useState(new Animated.Value(1));
-  const [showCompose, setShowCompose] = useState(false);
-  const [showCall,    setShowCall]    = useState(false);
-  const [showChat,    setShowChat]    = useState(false);
+  const [showCompose,       setShowCompose]       = useState(false);
+  const [showPerspective,   setShowPerspective]   = useState(false);
   const [cardRefreshKey, setCardRefreshKey] = useState(0);
   const isTranscribingRef = React.useRef(false);
+  const [summaryBanner, setSummaryBanner] = useState<SummaryBannerStatus | null>(null);
+  const summaryBannerTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Clear the banner timer if the component unmounts mid-countdown
+  useEffect(() => () => { if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current); }, []);
+  const [isNewUser, setIsNewUser] = useState(false);
+  const [notifOptInDone, setNotifOptInDone] = useState(false);
+  // Rotating mic prompts
+  const MIC_PROMPTS = ['How is your day going?', 'Something you\'re thinking about?', 'How are you feeling right now?'];
+  const [promptIdx, setPromptIdx] = useState(0);
+  const [promptOpacity] = useState(new Animated.Value(1));
+  const promptIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    promptIntervalRef.current = setInterval(() => {
+      Animated.timing(promptOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
+        setPromptIdx(i => (i + 1) % MIC_PROMPTS.length);
+        Animated.timing(promptOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+      });
+    }, 3000);
+    return () => { if (promptIntervalRef.current) clearInterval(promptIntervalRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Prevents multiple wellbeing alerts firing from a single batch
   const batchWellbeingFiredRef = React.useRef(false);
   // Holds the pending auto-generate timer so additional notes reset the countdown
@@ -71,7 +109,7 @@ export default function HomeScreen() {
       // re-show the card after the user has already dismissed it this session.
       getPendingReentry().then(r => {
         if (r && !reentryDismissedRef.current) {
-          const today = new Date().toISOString().split('T')[0];
+          const today = localDateStr();
           if (r.date < today) {
             setReentryPending(r);
           }
@@ -114,11 +152,27 @@ export default function HomeScreen() {
     return () => sub.remove();
   }, []);
 
+  // When the app returns to foreground, retry any pending clips that were
+  // interrupted mid-transcription (e.g. user switched apps while Whisper was running).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        // Reset stuck flag in case JS was suspended before the finally block ran
+        isTranscribingRef.current = false;
+        StorageService.getPendingClips().then(clips => {
+          if (clips.length > 0) handleTranscribeNow();
+        }).catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   useEffect(() => {
     audioRecorderService.setCallbacks({
       onStatus: (s) => setStatus(s),
       onPendingClip: (clip) => {
         setPendingClips(prev => [...prev, clip]);
+        track('recording_completed', { duration_ms: clip.duration });
         // Auto-transcribe as soon as the recording is saved
         handleTranscribeNow();
       },
@@ -151,12 +205,23 @@ export default function HomeScreen() {
     setPendingClips(clips);
   };
 
+  // Check once on mount whether this is a first-time user
+  useEffect(() => {
+    AsyncStorage.getItem('UNTANGLE_FIRST_NOTE_DONE').then(val => {
+      if (!val) setIsNewUser(true);
+    }).catch(() => {});
+    AsyncStorage.getItem('UNTANGLE_NOTIF_OPT_IN_DONE').then(val => {
+      if (val) setNotifOptInDone(true);
+    }).catch(() => {});
+  }, []);
+
   // ── Wellbeing check ───────────────────────────────────────────────────────
   const checkWellbeing = async (entry: TranscriptEntry, batchGuard = false) => {
     // During batch transcription, stop after the first alert to avoid
     // re-triggering the modal for every remaining entry in the batch
     if (batchGuard && batchWellbeingFiredRef.current) return;
-    const date = new Date(entry.timestamp).toISOString().split('T')[0];
+    const _e = new Date(entry.timestamp);
+    const date = localDateStr(_e);
     const analysis = await analyzeEntry(entry, date);
     if (analysis && analysis.tier >= 2) {
       if (batchGuard) batchWellbeingFiredRef.current = true;
@@ -188,7 +253,7 @@ export default function HomeScreen() {
       const { MicWidget } = require('../widgets/MicWidget');
       await requestWidgetUpdate({
         widgetName: 'MicWidget',
-        renderWidget: () => require('react').default.createElement(MicWidget, { isMonitoring: monitoring }),
+        renderWidget: () => require('react').default.createElement(MicWidget, {}),
       });
     } catch {
       // Widget might not be placed yet; ignore
@@ -197,6 +262,7 @@ export default function HomeScreen() {
 
   const toggleMonitoring = async () => {
     if (status === 'idle') {
+      track('recording_started');
       await audioRecorderService.startMonitoring();
       await updateWidgetState(true);
     } else {
@@ -214,9 +280,41 @@ export default function HomeScreen() {
       await transcribePendingClips(
         (progress) => setBatchProgress(progress),
         (entry) => {
+          // Dismiss new-user guided state on first ever note
+          if (isNewUser) {
+            setIsNewUser(false);
+            AsyncStorage.setItem('UNTANGLE_FIRST_NOTE_DONE', '1').catch(() => {});
+            // Ask for notification permission on first saved note — the user is now
+            // invested enough for the prompt to feel relevant, not intrusive.
+            if (!notifOptInDone) {
+              setNotifOptInDone(true);
+              AsyncStorage.setItem('UNTANGLE_NOTIF_OPT_IN_DONE', '1').catch(() => {});
+              requestNotificationPermission().then(granted => {
+                if (granted) {
+                  StorageService.getSettings().then(s => {
+                    const time = s?.notificationTime;
+                    // Mark notifications as enabled in settings and schedule
+                    StorageService.saveSettings({ ...s, notificationsEnabled: true } as any).catch(() => {});
+                    scheduleSmartNotifications(time).catch(() => {});
+                  }).catch(() => {});
+                }
+              }).catch(() => {});
+            }
+          }
           // Entry saved to storage — run wellbeing check fire-and-forget
           // batchGuard=true so only the first alert fires per batch
           checkWellbeing(entry, true).catch(() => {});
+        },
+        (status) => {
+          setSummaryBanner(status);
+          if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current);
+          if (status === 'ready') {
+            // Auto-dismiss "ready" after 5 s
+            summaryBannerTimerRef.current = setTimeout(() => setSummaryBanner(null), 5000);
+          } else if (status === 'generating') {
+            // Safety timeout: if generation never completes, stop showing spinner after 45 s
+            summaryBannerTimerRef.current = setTimeout(() => setSummaryBanner(null), 45_000);
+          }
         },
       );
     } finally {
@@ -225,6 +323,7 @@ export default function HomeScreen() {
       setBatchProgress(null);
       // Refresh the home card so new entries are reflected immediately
       setCardRefreshKey(k => k + 1);
+      ActionablesService.invalidate();
       // After each batch, schedule (or debounce) an auto-generate if no summary yet
       scheduleAutoGenerateIfNeeded();
       // Re-trigger for any clips that arrived while this batch was running
@@ -237,9 +336,22 @@ export default function HomeScreen() {
 
   // Silently generate today's summary 5 minutes after the last note, if no
   // summary exists yet. Each new note resets the countdown.
+  //
+  // Under ff_day_close_model, this debounce is a no-op: summaries are only
+  // produced once at 23:59 close-out, so we explicitly clear any lingering
+  // timer and return before scheduling a new one.
   const scheduleAutoGenerateIfNeeded = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const dayCloseOn = await FeatureFlagsService.getFlag('ff_day_close_model').catch(() => false);
+      if (dayCloseOn) {
+        if (autoGenerateTimerRef.current) {
+          clearTimeout(autoGenerateTimerRef.current);
+          autoGenerateTimerRef.current = null;
+        }
+        return;
+      }
+
+      const today = localDateStr();
       const existingSummary = await StorageService.getSummaryForDate(today);
       if (existingSummary) return; // already have one — nothing to do
 
@@ -258,9 +370,15 @@ export default function HomeScreen() {
           if (summaryCheck) return; // user may have manually generated in the meantime
           const transcripts = await StorageService.getTranscriptsForDate(today);
           if (transcripts.length > 0) {
+            if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current);
+            setSummaryBanner('generating');
+            // 45 s safety timeout in case generation hangs
+            summaryBannerTimerRef.current = setTimeout(() => setSummaryBanner(null), 45_000);
             await generateDailySummary(transcripts, today);
-            // Refresh home card so the new summary's signals appear
             setCardRefreshKey(k => k + 1);
+            if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current);
+            setSummaryBanner('ready');
+            summaryBannerTimerRef.current = setTimeout(() => setSummaryBanner(null), 5000);
           }
         } catch {
           // Silent — user can always generate manually from Summaries tab
@@ -273,7 +391,7 @@ export default function HomeScreen() {
 
   const getStatusText = (): string => {
     switch (status) {
-      case 'idle':       return 'Tap to record';
+      case 'idle':       return isNewUser ? 'Tap the mic to start' : 'Tap to record';
       case 'monitoring': return 'Listening…';
       case 'recording':  return 'Recording — tap to stop';
       default:           return '';
@@ -294,14 +412,11 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Everything scrolls together */}
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Re-entry check-in — shown after a Tier 2/3 session from a prior day */}
-        {reentryPending && (
+      {/* Primary section — all 4 components, always visible without scroll */}
+      <View style={styles.primarySection}>
+
+        {/* Warm line card (or re-entry check-in when pending) */}
+        {reentryPending ? (
           <View style={styles.reentryCard}>
             <View style={styles.reentryRow}>
               <Feather name="heart" size={15} color="rgba(152, 212, 250, 0.70)" />
@@ -333,6 +448,12 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
           </View>
+        ) : (
+          <View style={styles.warmLineCard}>
+            <Animated.Text style={[styles.warmLineText, { opacity: promptOpacity }]}>
+              {MIC_PROMPTS[promptIdx]}
+            </Animated.Text>
+          </View>
         )}
 
         {/* Main Button — Jellyfish card */}
@@ -360,15 +481,40 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 </Animated.View>
               </View>
-
               <Text style={[styles.statusText, { color: getStatusColor() }]}>
                 {getStatusText()}
               </Text>
-
             </View>
           </ImageBackground>
         </View>
 
+        {/* Action tiles */}
+        <View style={styles.tilesRow}>
+          <TouchableOpacity
+            style={styles.tile}
+            onPress={() => setShowCompose(true)}
+            activeOpacity={0.85}
+          >
+            <Feather name="edit-2" size={20} color="rgba(152, 212, 250, 0.80)" />
+            <Text style={styles.tileLabel}>Add a manual entry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.tile}
+            onPress={() => setShowPerspective(true)}
+            activeOpacity={0.85}
+          >
+            <Feather name="compass" size={20} color="rgba(152, 212, 250, 0.80)" />
+            <Text style={styles.tileLabel}>Get a new perspective</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Secondary scrollable content — banners + insight cards */}
+      <ScrollView
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Transcription progress banner */}
         {isTranscribing && (
           <View style={styles.pendingBanner}>
@@ -381,43 +527,58 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* Summary generation banner */}
+        {summaryBanner && (
+          <TouchableOpacity
+            style={styles.summaryBanner}
+            activeOpacity={summaryBanner === 'ready' ? 0.75 : 1}
+            onPress={() => {
+              if (summaryBanner === 'ready') {
+                setSummaryBanner(null);
+                navigation.navigate('Summary');
+              }
+            }}
+          >
+            {summaryBanner === 'generating' ? (
+              <>
+                <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" style={{ marginRight: 8 }} />
+                <Text style={styles.summaryBannerText}>Building your summary…</Text>
+              </>
+            ) : (
+              <>
+                <Feather name="star" size={13} color="rgba(152,212,250,0.90)" style={{ marginRight: 8 }} />
+                <Text style={[styles.summaryBannerText, styles.summaryBannerReady]}>
+                  Your summary is ready
+                </Text>
+                <Feather name="arrow-right" size={13} color="rgba(152,212,250,0.60)" style={{ marginLeft: 4 }} />
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
         {/* Monthly insight card */}
         <MonthlyInsightCard refreshKey={cardRefreshKey} />
-      </ScrollView>
 
-      {/* FAB cluster */}
-      <View style={styles.fabCluster}>
-        <TouchableOpacity
-          style={styles.fabSecondary}
-          onPress={() => setShowCall(true)}
-          activeOpacity={0.85}
-        >
-          <Feather name="phone" size={17} color="rgba(224, 242, 254, 0.75)" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.fabSecondary}
-          onPress={() => setShowChat(true)}
-          activeOpacity={0.85}
-        >
-          <Feather name="message-circle" size={17} color="rgba(224, 242, 254, 0.75)" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.fab}
-          onPress={() => setShowCompose(true)}
-          activeOpacity={0.85}
-        >
-          <Feather name="edit-2" size={18} color="rgba(224, 242, 254, 0.8)" />
-        </TouchableOpacity>
-      </View>
+        {/* Actionables — goal, action, question derived from recent entries */}
+        <ActionablesCard refreshKey={cardRefreshKey} />
+      </ScrollView>
 
       <ComposeModal
         visible={showCompose}
         onClose={() => setShowCompose(false)}
         onSaved={(entry) => {
           setShowCompose(false);
+          track('manual_note_created', { has_photo: !!entry.photoUri });
+          ActionablesService.invalidate();
+          // Refresh home card so the new entry appears immediately
+          setCardRefreshKey(k => k + 1);
+          // Schedule auto-generate (same logic as after voice batch) so the
+          // summary banner and 5-minute timer fire for manual entries too
+          scheduleAutoGenerateIfNeeded();
           // Run wellbeing check after a brief delay so modal closes first
           setTimeout(() => checkWellbeing(entry).catch(() => {}), 600);
         }}
+        onExpensesExtracted={() => setCardRefreshKey(k => k + 1)}
       />
 
       {/* Wellbeing response modal — Tier 2 or Tier 3 */}
@@ -427,30 +588,22 @@ export default function HomeScreen() {
           tier={wellbeingAlert.tier}
           onContinue={() => setWellbeingAlert(null)}
           onDismiss={() => setWellbeingAlert(null)}
+          onFalsePositive={() => {
+            recordFalsePositive().catch(() => {});
+            setWellbeingAlert(null);
+          }}
         />
       )}
 
-      {/* Call modal — no day context */}
+      {/* Get a perspective — opens mind picker in call mode, no day context */}
       <Modal
-        visible={showCall}
+        visible={showPerspective}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setShowCall(false)}
+        onRequestClose={() => setShowPerspective(false)}
       >
-        {showCall && (
-          <TalkScreen onClose={() => setShowCall(false)} />
-        )}
-      </Modal>
-
-      {/* Chat modal — no day context */}
-      <Modal
-        visible={showChat}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowChat(false)}
-      >
-        {showChat && (
-          <ChatScreen onClose={() => setShowChat(false)} />
+        {showPerspective && (
+          <TalkScreen onClose={() => setShowPerspective(false)} />
         )}
       </Modal>
     </SafeAreaView>
@@ -460,10 +613,61 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#02060E' },
 
+  // ── Primary (non-scroll) section ──────────────────────────────────────────
+  primarySection: {
+    flex: 1,
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 10,
+    gap: 10,
+  },
+
+  // ── Warm line card ────────────────────────────────────────────────────────
+  warmLineCard: {
+    backgroundColor: 'rgba(3, 18, 40, 0.80)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.16)',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  warmLineText: {
+    fontSize: 16,
+    fontFamily: 'Baskerville',
+    color: 'rgba(224, 242, 254, 0.78)',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    lineHeight: 22,
+  },
+
+  // ── Action tiles ──────────────────────────────────────────────────────────
+  tilesRow: {
+    flexDirection: 'row',
+    gap: 10,
+    height: 88,
+  },
+  tile: {
+    flex: 1,
+    backgroundColor: 'rgba(3, 18, 40, 0.82)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  tileLabel: {
+    fontSize: 12,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(224, 242, 254, 0.75)',
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+
   // ── Re-entry check-in card ────────────────────────────────────────────────
   reentryCard: {
-    marginHorizontal: 20,
-    marginTop: 16,
     backgroundColor: 'rgba(3, 18, 40, 0.85)',
     borderRadius: 18,
     borderWidth: 1,
@@ -515,8 +719,7 @@ const styles = StyleSheet.create({
 
   // ── Jellyfish monitor card ────────────────────────────────────────────────
   monitorCard: {
-    marginHorizontal: 20,
-    marginTop: 16,
+    flex: 1,
     borderRadius: 28,
     overflow: 'hidden',
     borderWidth: 1,
@@ -527,7 +730,7 @@ const styles = StyleSheet.create({
     shadowRadius: 28,
     elevation: 10,
   },
-  monitorCardBg: { width: '100%', minHeight: 280 },
+  monitorCardBg: { flex: 1, width: '100%' },
   monitorCardImage: { opacity: 0.80 },
   monitorOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -535,7 +738,7 @@ const styles = StyleSheet.create({
   },
 
   // ── Mic button section ────────────────────────────────────────────────────
-  buttonSection: { alignItems: 'center', paddingVertical: 44, paddingHorizontal: 20 },
+  buttonSection: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 20, paddingHorizontal: 20 },
 
   glowRing: {
     width: 120,
@@ -587,6 +790,110 @@ const styles = StyleSheet.create({
   },
 
   // ── Pending banner ────────────────────────────────────────────────────────
+  guidedCard: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    backgroundColor: 'rgba(4,13,30,0.70)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.12)',
+    padding: 22,
+  },
+  guidedPrompt: {
+    fontSize: 19,
+    fontFamily: 'Baskerville',
+    color: 'rgba(224,242,254,0.92)',
+    textAlign: 'center',
+    marginBottom: 10,
+    lineHeight: 26,
+  },
+  guidedSub: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.50)',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 18,
+  },
+  guidedHints: {
+    gap: 8,
+  },
+  guidedHint: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.60)',
+    lineHeight: 19,
+  },
+
+  notifOptIn: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(152,212,250,0.10)',
+  },
+  notifOptInLabel: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.65)',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  notifOptInRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  notifOptInYes: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(9,41,173,0.25)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.30)',
+    paddingVertical: 10,
+  },
+  notifOptInYesText: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(224,242,254,0.90)',
+    fontWeight: '500',
+  },
+  notifOptInNo: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifOptInNoText: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.40)',
+  },
+
+  summaryBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 0,
+    backgroundColor: 'rgba(9,41,173,0.18)',
+    borderRadius: 14,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.18)',
+  },
+  summaryBannerText: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.70)',
+    flex: 1,
+  },
+  summaryBannerReady: {
+    color: 'rgba(224,242,254,0.90)',
+  },
+
   pendingBanner: {
     marginHorizontal: 20,
     marginTop: 16,
@@ -625,47 +932,7 @@ const styles = StyleSheet.create({
   },
   discardButtonText: { color: 'rgba(152, 212, 250, 0.70)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
 
-  // ── Scroll area ───────────────────────────────────────────────────────────
-  scrollArea: { flex: 1 },
-  scrollContent: { paddingBottom: 100 },
-
-  // ── FAB cluster ───────────────────────────────────────────────────────────
-  fabCluster: {
-    position: 'absolute',
-    bottom: 28,
-    right: 24,
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 10,
-  },
-  fab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(9, 41, 173, 0.65)',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.40)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-  },
-  fabSecondary: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(3, 18, 40, 0.80)',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.22)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-  },
+  // ── Scroll area (secondary content below primary section) ────────────────
+  scrollArea: { flexShrink: 0 },
+  scrollContent: { paddingBottom: 24 },
 });

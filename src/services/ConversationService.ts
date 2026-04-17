@@ -1,9 +1,23 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { claudeProxy } from './AIProxy';
 import {
   DailySummary, ConversationMessage,
   UserGoals, MonthlyData, WhoYouAreAnalysis, WhatYouCareAboutAnalysis,
 } from '../types';
 import { StorageService } from './StorageService';
+import {
+  UserContextService,
+  buildUserContextPrompt,
+  getContextPromptForConversation,
+} from './UserContextService';
+import { FeatureFlagsService } from './FeatureFlagsService';
+import { getMindV2 } from './mindsConfigV2';
+import { getUserContextV2 } from './UserContextService';
+import {
+  selectOpening,
+  SourceContext,
+  companionModeDirective,
+} from './openingLineSelector';
 
 // ── Intent types ──────────────────────────────────────────────────────────────
 
@@ -105,7 +119,7 @@ const INTENT_PROMPTS: Record<ConversationIntent, string> = {
 
 Frameworks you use naturally, never all at once:
 - Need vs Want (Vedantic): who is wanting this — genuine clarity or fear and habit?
-- Inversion (Munger): what would make this decision obviously wrong? Work back from failure.
+- Inversion: what would make this decision obviously wrong? Work back from failure.
 - 10-10-10: how will you feel about this in 10 minutes, 10 months, 10 years?
 - Regret minimisation: at 80, which choice would the version of you who lived fully make?
 - Values alignment: does this match what you actually spend time, money, and energy on — not just what you say matters?
@@ -156,20 +170,10 @@ Style: Ground ONE observation in their actual data, then ONE question about the 
 };
 
 const MIND_PROMPTS: Record<string, string> = {
-  charlie_munger: `You are Charlie Munger — investor, thinker, and lifelong student of human misjudgment. You have read the person's journal and you are looking for where thinking went wrong — or right.
-You believe in a latticework of mental models: inversion (think backward from failure), the psychology of human misjudgment (biases, incentives, social proof), circle of competence (know what you don't know), and the importance of sitting quietly with a hard problem. Most mistakes in life come from not thinking clearly about what you actually want, what you're actually doing, and what the second-order consequences are.
-You are blunt, dry, occasionally sardonic, and completely unimpressed by complexity that hides confused thinking. You look for the one model that applies.
-Style: 2–3 sentences in your voice — no hedging, no jargon, occasionally wry — then ONE question that inverts the situation, names the bias at work, or asks what the person would advise a close friend in their exact position. Cut to the bone.`,
-
   ramana_maharshi: `You are Ramana Maharshi — sage of Arunachala, teacher of Self-inquiry. You have read the person's journal in silence, and you are pointing to the one thing that matters.
 Your entire teaching is this: every problem, every suffering, every question arises in the mind. And the mind itself arises in the Self — pure awareness, always present, never disturbed. The practice is not to solve problems but to ask: who is the one experiencing this? When attention turns inward and rests in the Self, the question dissolves at its root.
 You speak very little. What you say is precise and quiet. You never argue, never persuade. You simply point.
 Style: 1–2 sentences in your voice — utterly simple, no flourish — then ONE question rooted in self-inquiry: who is the one who feels this? Who is aware of this thought? Turn the light of attention back on itself.`,
-
-  rumi: `You are Rumi — 13th-century Sufi mystic and poet of longing. You have read the person's journal and your heart has been touched by what you find there.
-You see in every struggle the soul's longing for reunion — with its source, with itself, with the Beloved that hides behind every earthly disappointment. The reed flute cries because it has been cut from the reed bed: separation is the wound, but it is also the music. You celebrate the mess and the ache of being human because you know it is the doorway, not the problem.
-You are warm, lyrical, and ecstatic even in difficulty. You speak in images more than arguments. You invite the person to feel more, not less.
-Style: 2–3 sentences in your voice — you may use a brief, vivid image or metaphor — then ONE question that invites the person to listen to the ache beneath the surface event, or to ask what this situation might be calling them to open toward. Never analytical. Always toward the heart.`,
 
   krishna: `You are Krishna — as encountered in the Bhagavad Gita — speaking to this person on the battlefield of their daily life.
 You see the eternal Atman in the person before you: not the roles they play, not the outcomes they fear, but the unchanging witness beneath all action. You speak of dharma — not duty as obligation, but as the action most aligned with one's nature. You speak of nishkama karma: full engagement, without clinging to results.
@@ -203,6 +207,58 @@ function getSystemPrompt(mindId?: string | null, intent?: ConversationIntent): s
   return DEFAULT_SYSTEM_PROMPT;
 }
 
+// Cache system prompts for the lifetime of the JS module — the prompt for a given
+// (mindId, intent) pair is stable within a conversation and expensive to rebuild
+// (multiple AsyncStorage reads + feature flag checks). Keyed as "mindId-intent".
+const _systemPromptCache = new Map<string, string>();
+
+export async function getSystemPromptWithContext(mindId?: string | null, intent?: ConversationIntent): Promise<string> {
+  const cacheKey = `${mindId ?? 'companion'}-${intent ?? 'none'}`;
+  const cached = _systemPromptCache.get(cacheKey);
+  if (cached) return cached;
+  // Resolve the base prompt first — flag-routed. Under ff_new_minds_system
+  // ON, each mind (including Companion) owns its own systemPrompt in
+  // mindsConfigV2. Under OFF, we fall back to the legacy MIND_PROMPTS map.
+  let base: string;
+  let useV2 = false;
+  try {
+    useV2 = await FeatureFlagsService.getFlag('ff_new_minds_system').catch(() => false);
+    if (useV2) {
+      const v2 = getMindV2(mindId);
+      base = v2?.systemPrompt ?? getSystemPrompt(mindId, intent);
+    } else {
+      base = getSystemPrompt(mindId, intent);
+    }
+  } catch {
+    base = getSystemPrompt(mindId, intent);
+  }
+
+  // Companion-only: inject the tenure-derived voice-mode directive. This
+  // sits on top of the static tenure guidance already in Companion's
+  // systemPrompt — it's an explicit marker for the current session so the
+  // model doesn't have to interpret tenureDays itself.
+  if (useV2 && (mindId === null || mindId === undefined || mindId === 'companion')) {
+    try {
+      const ctx = await getUserContextV2();
+      const mode = ctx.tenureDays < 30 ? 'gentle' : ctx.tenureDays >= 90 ? 'familiar' : 'standard';
+      base = `${base}\n\n${companionModeDirective(mode)}`;
+    } catch { /* defensive — skip the directive if context fails */ }
+  }
+
+  let result: string;
+  try {
+    // Context block is also flag-routed — V2 appends the implicit-context
+    // instruction + Companion continuity line; legacy appends the
+    // classification-era block.
+    const ctxBlock = await getContextPromptForConversation(mindId);
+    result = ctxBlock ? base + ctxBlock : base;
+  } catch {
+    result = base;
+  }
+  _systemPromptCache.set(cacheKey, result);
+  return result;
+}
+
 // Legacy alias for code that doesn't pass a mindId
 const SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT;
 
@@ -215,7 +271,7 @@ function buildContextBlock(
 ): string {
   const lines: string[] = [
     `DAY: ${summary.date}`,
-    `\nDAY SUMMARY:\n${summary.summary}`,
+    `\nDAY SUMMARY:\n${summary.insightText ?? summary.summary}`,
     summary.insightText ? `\nDAY INSIGHTS:\n${summary.insightText}` : '',
   ];
 
@@ -342,10 +398,11 @@ export async function sendMessage(
   intent?: ConversationIntent,
   ctx?: ConversationContext,
 ): Promise<string> {
+  const system = await getSystemPromptWithContext(mindId, intent);
   const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 360,
-    system: getSystemPrompt(mindId, intent),
+    system,
     messages: buildMessages(summary, history, userText, intent, ctx),
   });
 
@@ -358,18 +415,109 @@ export async function sendMessage(
   return text;
 }
 
-/** Generate a warm, context-aware opening line when the conversation starts */
+/**
+ * Light Haiku pass that nudges a handcrafted opener to acknowledge the
+ * source context the user just tapped in from. The returned string must
+ * keep the voice of the original line — this is not a rewrite, it's a
+ * tilt. Never exceeds ~30 words. One-shot, non-cached.
+ */
+async function adaptOpeningLine(
+  originalLine: string,
+  source: SourceContext | null | undefined,
+): Promise<string> {
+  if (!source) return originalLine;
+  const system = `You are adapting a handcrafted opening line for a mind-conversation app. You will be given:
+  1. The prewritten opening line (in the mind's voice)
+  2. A short description of the context the user just tapped in from
+
+Your job: adapt the opening line *slightly* so it acknowledges the context — without changing its voice, its cadence, or its essential content. The handcrafted wording is the product. You are tilting it, not rewriting it.
+
+Rules:
+- Preserve the voice of the original line. If the line is spare, stay spare. If lyrical, stay lyrical.
+- Acknowledge the context implicitly. Do NOT restate the context back at the user.
+- Length: stay within 10% of the original line's length. No longer.
+- Return ONLY the adapted line. No preamble, no quotes, no explanation.`;
+
+  const userMsg = `Prewritten opening line: ${originalLine}\n\nSource context: ${source.description}`;
+
+  const response = await claudeProxy.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 100,
+    system,
+    messages: [{ role: 'user', content: userMsg }],
+  });
+  const text = response.content
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
+    .join('')
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  return text;
+}
+
+/**
+ * Generate a warm, context-aware opening line when the conversation starts.
+ *
+ * Under ff_new_minds_system ON, this routes through the handcrafted opener
+ * pool in mindsConfigV2 (openingLines / openingLinesWithContext /
+ * openingLinesDistress) — with at most one Haiku adaptation pass when a
+ * source context is present. The model never writes the opener from
+ * scratch under V2; the handcrafted wording is the product.
+ *
+ * Legacy path (flag off) is unchanged.
+ */
 export async function getOpeningMessage(
   summary: DailySummary,
   apiKey?: string,
   mindId?: string | null,
+  sourceContext?: SourceContext | null,
 ): Promise<string> {
+  // V2 handcrafted-opener path.
+  try {
+    const useV2 = await FeatureFlagsService.getFlag('ff_new_minds_system').catch(() => false);
+    if (useV2) {
+      const v2 = getMindV2(mindId);
+      if (v2) {
+        const ctx = await getUserContextV2().catch(() => null);
+        const wellbeing = ctx?.wellbeingState ?? 'regulated';
+        const tenure    = ctx?.tenureDays    ?? 0;
+        const pick = selectOpening({
+          mind: v2,
+          sourceContext: sourceContext ?? null,
+          wellbeingState: wellbeing,
+          tenureDays: tenure,
+        });
+        if (!pick.needsAdaptation) {
+          return pick.line;
+        }
+        // Haiku adaptation — one shot, ~100 tokens out. Keeps the
+        // handcrafted voice; only tweaks to acknowledge source context.
+        try {
+          const adapted = await adaptOpeningLine(pick.line, sourceContext);
+          return adapted || pick.line;
+        } catch {
+          return pick.line;
+        }
+      }
+      // Unknown mindId under V2 — fall through to legacy generation below.
+    }
+  } catch { /* defensive — fall through to legacy */ }
+
+  // Cache key ties the message to this specific mind + this specific summary version.
+  // When the summary is regenerated its createdAt changes → cache miss → fresh message.
+  const cacheKey = `opening_msg_${mindId ?? 'companion'}_${summary.createdAt}`;
+  try {
+    const cached = await AsyncStorage.getItem(cacheKey);
+    if (cached) return cached;
+  } catch { /* ignore — fall through to generation */ }
+
   const contextBlock = buildContextBlock(summary);
+  const system = await getSystemPromptWithContext(mindId);
 
   const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
     max_tokens: 180,
-    system: getSystemPrompt(mindId),
+    system,
     messages: [
       {
         role: 'user',
@@ -378,11 +526,16 @@ export async function getOpeningMessage(
     ],
   });
 
-  return response.content
+  const message = response.content
     .filter((b: any) => b.type === 'text')
     .map((b: any) => b.text)
     .join('')
     .trim();
+
+  // Persist so subsequent launches reuse the same message until the summary changes
+  AsyncStorage.setItem(cacheKey, message).catch(() => {});
+
+  return message;
 }
 
 function buildOpeningLine(_summary: DailySummary): string {
@@ -471,8 +624,9 @@ export async function fetchSentences(
   distressTier?: 2 | 3,
   intent?: ConversationIntent,
   ctx?: ConversationContext,
+  prebuiltSystem?: string,
 ): Promise<string[]> {
-  const baseSystem = getSystemPrompt(mindId, intent);
+  const baseSystem = prebuiltSystem ?? await getSystemPromptWithContext(mindId, intent);
   const system = distressTier
     ? baseSystem + (CALL_DISTRESS_ADDITIONS[distressTier] ?? '')
     : baseSystem;
