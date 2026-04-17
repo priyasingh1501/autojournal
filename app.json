@@ -43,7 +43,6 @@
     },
     "plugins": [
       "./plugins/withMicrophonePermission",
-      "@livekit/react-native-webrtc",
       [
         "expo-av",
         {

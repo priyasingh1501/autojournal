@@ -1,6 +1,7 @@
 <resources>
   <string name="app_name">untangle</string>
-  <string name="expo_splash_screen_resize_mode" translatable="false">contain</string>
+  <string name="expo_splash_screen_resize_mode" translatable="false">cover</string>
   <string name="expo_splash_screen_status_bar_translucent" translatable="false">false</string>
-  <string name="widget_micwidget_description" translatable="false">Tap to start or stop voice monitoring</string>
+  <string name="widget_micwidget_description" translatable="false">Quick shortcut to type a note</string>
+  <string name="widget_wisdomwidget_description" translatable="false">Daily wisdom short — tap to open in app</string>
 </resources>
