@@ -32,10 +32,25 @@ def get_client() -> Client:
 
 
 def existing_ids() -> set[str]:
-    """Fetch all IDs currently in the table for deduplication."""
+    """Fetch all IDs currently in the table for deduplication (paginated)."""
     sb = get_client()
-    result = sb.table("wisdom_shorts").select("id").execute()
-    return {row["id"] for row in (result.data or [])}
+    all_ids: set[str] = set()
+    page_size = 1000
+    offset = 0
+    while True:
+        result = (
+            sb.table("wisdom_shorts")
+            .select("id")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = result.data or []
+        for row in rows:
+            all_ids.add(row["id"])
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return all_ids
 
 
 def upsert_insights(insights: list[dict], dry_run: bool = False) -> tuple[int, int]:

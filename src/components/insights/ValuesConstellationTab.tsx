@@ -192,13 +192,26 @@ const tc = StyleSheet.create({
 // ── Divergence flag ───────────────────────────────────────────────────────────
 
 function DivergenceFlag({ stated, actual, observation }: { stated: string; actual: string; observation: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  function toggle() {
+    LayoutAnimation.easeInEaseOut();
+    setExpanded(prev => !prev);
+  }
+
   return (
-    <View style={df.card}>
+    <TouchableOpacity activeOpacity={0.80} onPress={toggle} style={df.card}>
       <View style={df.iconRow}>
         <Feather name="alert-circle" size={13} color="rgba(251,191,36,0.80)" />
-        <Text style={df.label}>Values gap</Text>
+        <Text style={df.label}>Where intention meets reality</Text>
+        <Feather
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={13}
+          color="rgba(251,191,36,0.50)"
+          style={{ marginLeft: 'auto' }}
+        />
       </View>
-      {/* Stacked layout — no overflow on narrow screens */}
+      {/* Says / Lives by — always visible */}
       <View style={df.stack}>
         <View style={df.tag}>
           <Text style={df.tagMeta}>says</Text>
@@ -208,12 +221,13 @@ function DivergenceFlag({ stated, actual, observation }: { stated: string; actua
           <Feather name="arrow-down" size={12} color="rgba(152,212,250,0.30)" />
         </View>
         <View style={[df.tag, df.tagActual]}>
-          <Text style={df.tagMeta}>lives</Text>
+          <Text style={df.tagMeta}>lives by</Text>
           <Text style={[df.tagText, df.tagTextActual]}>{actual}</Text>
         </View>
       </View>
-      <Text style={df.obs}>{observation}</Text>
-    </View>
+      {/* Explanation — revealed on tap */}
+      {expanded && <Text style={df.obs}>{observation}</Text>}
+    </TouchableOpacity>
   );
 }
 
@@ -251,7 +265,7 @@ function MotivationPulse({ pulse, rationale }: { pulse: string; rationale: strin
   const bg    = PULSE_BG[pulse]    ?? 'rgba(152,212,250,0.05)';
   return (
     <View style={[mp.card, { backgroundColor: bg, borderColor: color.replace(/[\d.]+\)$/, '0.20)') }]}>
-      <Text style={mp.label}>Driving you this month</Text>
+      <Text style={mp.label}>What's pulling you right now</Text>
       <Text style={[mp.pulse, { color }]}>{pulse.charAt(0).toUpperCase() + pulse.slice(1)}</Text>
       <Text style={mp.rationale}>{rationale}</Text>
     </View>
@@ -275,9 +289,7 @@ interface Props {
 export default function ValuesConstellationTab({ data, onJump }: Props) {
   return (
     <View style={s.root}>
-      <Text style={s.sectionLabel}>WHAT I WRITE ABOUT</Text>
-      <ValuesList values={data.values} />
-
+      {/* Divergence first — the headline insight */}
       {data.divergence.length > 0 && (
         <View style={s.section}>
           {data.divergence.map((d, i) => (
@@ -286,7 +298,9 @@ export default function ValuesConstellationTab({ data, onJump }: Props) {
         </View>
       )}
 
-      <MotivationPulse pulse={data.motivationPulse} rationale={data.motivationRationale} />
+      {/* Ranked list — the evidence behind it */}
+      <Text style={s.sectionLabel}>Where your attention goes</Text>
+      <ValuesList values={data.values} />
 
       <SourceExpand dates={data.sourceEntries} onJump={onJump} />
     </View>

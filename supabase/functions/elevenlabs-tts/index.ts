@@ -1,9 +1,30 @@
-/** elevenlabs-tts — ElevenLabs text-to-speech proxy (returns base64 mp3) */
+/** elevenlabs-tts — ElevenLabs TTS proxy and voice list proxy */
 
 Deno.serve(async (req) => {
   try {
-    const { voice_id, text, voice_settings } = await req.json();
+    const body = await req.json();
     const apiKey = Deno.env.get('ELEVENLABS_API_KEY')!;
+
+    // Voice list action — proxy the /v1/voices endpoint server-side so the
+    // API key never needs to be sent from the client.
+    if (body.action === 'list_voices') {
+      const res = await fetch('https://api.elevenlabs.io/v1/voices', {
+        headers: { 'xi-api-key': apiKey },
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        return new Response(JSON.stringify({ error: errText }), {
+          status: res.status,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const data = await res.json();
+      return new Response(JSON.stringify(data), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { voice_id, text, voice_settings } = body;
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`,
@@ -37,9 +58,12 @@ Deno.serve(async (req) => {
 
     const audioBuffer = await response.arrayBuffer();
     const bytes = new Uint8Array(audioBuffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    const base64 = btoa(binary);
+    // Encode in 8KB chunks to avoid call-stack limits and O(n²) concat
+    const chunks: string[] = [];
+    for (let i = 0; i < bytes.length; i += 8192) {
+      chunks.push(String.fromCharCode(...bytes.subarray(i, i + 8192)));
+    }
+    const base64 = btoa(chunks.join(''));
 
     return new Response(JSON.stringify({ audio: base64 }), {
       headers: { 'Content-Type': 'application/json' },

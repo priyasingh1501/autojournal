@@ -1,7 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import { synthesizeSpeech as proxySynthesize } from './AIProxy';
-
-const BASE = 'https://api.elevenlabs.io/v1';
+import { synthesizeSpeech as proxySynthesize, fetchVoices } from './AIProxy';
 
 export interface ELVoice {
   voice_id: string;
@@ -9,13 +7,9 @@ export interface ELVoice {
   category: string; // 'premade' | 'cloned' | 'generated' etc.
 }
 
-// ── Fetch available voices ────────────────────────────────────────────────────
-export async function fetchElevenLabsVoices(apiKey: string): Promise<ELVoice[]> {
-  const res = await fetch(`${BASE}/voices`, {
-    headers: { 'xi-api-key': apiKey },
-  });
-  if (!res.ok) throw new Error(`ElevenLabs voices error: ${res.status}`);
-  const data = await res.json();
+// ── Fetch available voices (server-side proxied — API key never leaves the server) ──
+export async function fetchElevenLabsVoices(_apiKey?: string): Promise<ELVoice[]> {
+  const data = await fetchVoices();
   return (data.voices as any[]).map(v => ({
     voice_id: v.voice_id,
     name: v.name,

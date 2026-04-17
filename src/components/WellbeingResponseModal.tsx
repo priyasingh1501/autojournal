@@ -64,8 +64,9 @@ const CRISIS_RESOURCES: Resource[] = [
 interface Props {
   visible: boolean;
   tier: DistressTier;
-  onContinue: () => void; // user wants to keep journaling
-  onDismiss: () => void;  // user closes / acknowledges
+  onContinue: () => void;      // user wants to keep journaling
+  onDismiss: () => void;       // user closes / acknowledges
+  onFalsePositive?: () => void; // user says "I was just venting"
 }
 
 type T2View = 'initial' | 'opened-up';
@@ -83,6 +84,7 @@ export default function WellbeingResponseModal({
   tier,
   onContinue,
   onDismiss,
+  onFalsePositive,
 }: Props) {
   const [t2View, setT2View] = useState<T2View>('initial');
 
@@ -108,9 +110,15 @@ export default function WellbeingResponseModal({
 
           {/* Message */}
           <Text style={s.heading}>A gentle check-in</Text>
+
+          {/* Transparency note */}
+          <Text style={s.transparencyNote}>
+            untangle noticed some heavy language in your last entry. This isn't a clinical
+            assessment — just a check-in. It gets it wrong sometimes.
+          </Text>
+
           <Text style={s.body}>
-            You've been carrying something heavy lately. I just want to check in —
-            how are you doing, really?
+            How are you doing, really?
           </Text>
 
           {/* Choices */}
@@ -120,6 +128,16 @@ export default function WellbeingResponseModal({
 
           <TouchableOpacity style={s.secondaryBtn} onPress={handleContinue}>
             <Text style={s.secondaryBtnText}>Continue journaling</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={s.falsePositiveBtn}
+            onPress={() => {
+              onFalsePositive?.();
+              handleContinue();
+            }}
+          >
+            <Text style={s.falsePositiveText}>I was just venting — this doesn't apply</Text>
           </TouchableOpacity>
         </>
       );
@@ -182,6 +200,9 @@ export default function WellbeingResponseModal({
       {/* Resources */}
       <View style={s.resourcesCard}>
         <Text style={s.resourcesTitle}>Reach out — right now</Text>
+        <Text style={s.humanStaffedNote}>
+          These lines are staffed by trained humans, not AI.
+        </Text>
         {CRISIS_RESOURCES.map(r => (
           <ResourceRow key={r.name} resource={r} crisis />
         ))}
@@ -394,6 +415,36 @@ const s = StyleSheet.create({
   },
   resourceActionTextCrisis: {
     color: 'rgba(230, 57, 70, 0.90)',
+  },
+
+  transparencyNote: {
+    fontSize: 12,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152, 212, 250, 0.45)',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 14,
+    fontStyle: 'italic',
+  },
+  humanStaffedNote: {
+    fontSize: 12,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152, 212, 250, 0.50)',
+    textAlign: 'center',
+    marginBottom: 10,
+    fontStyle: 'italic',
+  },
+  falsePositiveBtn: {
+    marginTop: 16,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(152, 212, 250, 0.07)',
+  },
+  falsePositiveText: {
+    fontSize: 12,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152, 212, 250, 0.30)',
   },
 
   closingNote: {

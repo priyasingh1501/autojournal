@@ -18,14 +18,18 @@ export const MINDS: Mind[] = [
     philosophy: 'Nishkama karma — act fully, without attachment to the fruit',
     accent: 'rgba(167, 139, 250, 0.90)',
     symbol: '🪈',
+    teaser: 'You have a right to perform your actions, but never to the fruits thereof. What is it you are truly acting for today?',
+    image: require('../../assets/minds/krishna.png'),
   },
   {
     id: 'buddha',
-    name: 'The Buddha',
+    name: 'Buddha',
     era: 'Siddhartha Gautama · c. 5th century BCE',
     philosophy: 'The Middle Path — suffering, impermanence, and liberation',
     accent: 'rgba(110, 231, 183, 0.90)',
     symbol: '☸️',
+    teaser: 'All conditioned things are impermanent. What in your day arose, and what passed away? Sit with that for a moment.',
+    image: require('../../assets/minds/buddha.jpg'),
   },
   {
     id: 'jiddu_krishnamurti',
@@ -34,14 +38,8 @@ export const MINDS: Mind[] = [
     philosophy: 'Freedom from the known — thought, conditioning, choiceless awareness',
     accent: 'rgba(147, 197, 253, 0.90)',
     symbol: '👁',
-  },
-  {
-    id: 'charlie_munger',
-    name: 'Charlie Munger',
-    era: 'Investor & Thinker · 1924–2023',
-    philosophy: 'Mental models, inversion, and the latticework of knowledge',
-    accent: 'rgba(180, 120, 60, 0.90)',
-    symbol: '🦉',
+    teaser: 'Can you observe your day without the observer — without judgment, comparison, or conclusion? What do you actually see?',
+    image: require('../../assets/minds/krishnamurti.jpg'),
   },
   {
     id: 'carl_jung',
@@ -50,14 +48,8 @@ export const MINDS: Mind[] = [
     philosophy: 'Depth psychology — shadow, archetypes, individuation',
     accent: 'rgba(196, 181, 253, 0.90)',
     symbol: '🔮',
-  },
-  {
-    id: 'rumi',
-    name: 'Rumi',
-    era: 'Sufi Mystic & Poet · 1207–1273',
-    philosophy: 'The soul\'s longing for reunion — love, loss, and the music of separation',
-    accent: 'rgba(248, 113, 113, 0.90)',
-    symbol: '🌹',
+    teaser: 'What you resist in others is often what you haven\'t yet faced in yourself. What irritated or unsettled you today?',
+    image: require('../../assets/minds/jung.jpg'),
   },
   {
     id: 'ramana_maharshi',
@@ -66,6 +58,8 @@ export const MINDS: Mind[] = [
     philosophy: 'Self-inquiry — who am I? — the direct path to pure awareness',
     accent: 'rgba(253, 230, 138, 0.90)',
     symbol: '✨',
+    teaser: 'Before any thought arises, there is awareness. Who is the one who is tired, worried, or pleased today?',
+    image: require('../../assets/minds/ramana.jpg'),
   },
   {
     id: 'adi_shankaracharya',
@@ -74,6 +68,8 @@ export const MINDS: Mind[] = [
     philosophy: 'Advaita — you are not the body-mind, you are pure consciousness',
     accent: 'rgba(251, 191, 36, 0.90)',
     symbol: '🕉',
+    teaser: 'Brahma satyam, jagan mithya — the Self alone is real. What today did you take to be real that may be appearance?',
+    image: require('../../assets/minds/shankaracharya.jpg'),
   },
 ];
 

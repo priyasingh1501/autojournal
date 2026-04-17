@@ -225,6 +225,31 @@ export async function generateAndCacheImage(short: WisdomShort): Promise<string 
   });
 }
 
+// ── Startup pre-warm ──────────────────────────────────────────────────────────
+
+/**
+ * Checks the first `count` shorts in the given ordered list and queues image
+ * generation for any that don't already have a cached local image.
+ * Fire-and-forget — never throws, never blocks app startup.
+ */
+export async function prewarmWisdomImages(
+  shorts: WisdomShort[],
+  count = 5,
+): Promise<void> {
+  try {
+    const targets = shorts.slice(0, count);
+    for (const short of targets) {
+      const cached = await getCachedImageUri(short.id);
+      if (!cached) {
+        // Queue generation — existing queue ensures one-at-a-time, no stampede
+        generateAndCacheImage(short).catch(() => {});
+      }
+    }
+  } catch {
+    // Never block startup
+  }
+}
+
 // ── Metadata auto-fill ────────────────────────────────────────────────────────
 
 export interface AutoFilledMeta {

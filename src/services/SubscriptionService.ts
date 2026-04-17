@@ -19,7 +19,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Purchases, { PurchasesPackage } from 'react-native-purchases';
 
-export type InsightTab = 'you' | 'values' | 'thinking' | 'story';
+export type InsightTab = 'you' | 'values' | 'thinking' | 'story' | 'patterns';
 export type ProPlan = 'monthly' | 'annual';
 
 const TRIAL_DAYS = 14;
@@ -125,7 +125,7 @@ async function getInsightsGenerated(): Promise<Record<InsightTab, boolean>> {
     const raw = await AsyncStorage.getItem(KEYS.INSIGHTS_GENERATED);
     if (raw) return JSON.parse(raw);
   } catch {}
-  return { you: false, values: false, thinking: false, story: false };
+  return { you: false, values: false, thinking: false, story: false, patterns: false };
 }
 
 /**

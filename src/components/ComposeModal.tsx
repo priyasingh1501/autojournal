@@ -17,15 +17,23 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { StorageService } from '../services/StorageService';
-import { extractAndSaveExpenses } from '../services/ExpenseService';
+import { extractAndSaveExpenses, quickExtractExpense } from '../services/ExpenseService';
 import { generateDailySummary } from '../services/SummaryService';
-import { generateIfNeeded } from '../services/AutoSummaryService';
+import { UserContextService } from '../services/UserContextService';
+import { ActionablesService } from '../services/ActionablesService';
+import { detectAndSuggestIntention } from '../services/IntentionsService';
+import { FeatureFlagsService } from '../services/FeatureFlagsService';
+import { effectiveDateStr } from '../services/dayRollover';
+import { invalidateDigest } from '../services/DigestService';
 import { TranscriptEntry } from '../types';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   onSaved: (entry: TranscriptEntry) => void;
+  /** Called after expense extraction completes so the caller can refresh spend totals */
+  onExpensesExtracted?: () => void;
   /** If provided the modal opens in edit mode pre-filled with this entry */
   editEntry?: TranscriptEntry & { date: string };
   /**
@@ -87,7 +95,8 @@ function getPastDates(count: number): string[] {
   });
 }
 
-export default function ComposeModal({ visible, onClose, onSaved, editEntry, targetDate }: Props) {
+export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtracted, editEntry, targetDate }: Props) {
+  const insets = useSafeAreaInsets();
   const isEditing = !!editEntry;
   const [text, setText] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -118,7 +127,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
     onClose();
   };
 
-  const pickImage = (source: 'camera' | 'library') => {
+  const pickImage = () => {
     Alert.alert(
       'Add Photo',
       undefined,
@@ -234,13 +243,30 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
           kind: 'manual',
           photoUri: savedPhotoUri,
         };
-        await StorageService.addTranscript(entry);
+        // Under ff_day_close_model, manual entries before 3am roll back a
+        // day (same as voice path in BatchTranscriptionService).
+        const dayCloseOn = await FeatureFlagsService.getFlag('ff_day_close_model').catch(() => false);
+        const _d = new Date(entry.timestamp);
+        const calendarDate = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
+        const date = dayCloseOn ? effectiveDateStr(entry.timestamp) : calendarDate;
+        await StorageService.addTranscript(entry, { storageDate: date });
+        UserContextService.invalidate();
+        ActionablesService.invalidate();
+        if (dayCloseOn) invalidateDigest(date).catch(() => {});
         onSaved(entry);
-        const date = new Date(entry.timestamp).toISOString().split('T')[0];
-        // Fire-and-forget expense extraction — passes photo for OCR if one is attached
-        extractAndSaveExpenses(entry.text, date, entry.id, savedPhotoUri).catch(() => {});
-        // First-entry trigger: generate an initial summary if none exists for this day yet
-        generateIfNeeded(date).catch(() => {});
+        // 1. Instant regex extraction — no API call, updates home immediately
+        const quick = quickExtractExpense(entry.text, date, entry.id);
+        if (quick) {
+          StorageService.addExpenses([quick])
+            .then(() => onExpensesExtracted?.())
+            .catch(() => {});
+        }
+        // 2. Async Claude extraction — enriches category/description, deduped against quick entry
+        extractAndSaveExpenses(entry.text, date, entry.id, savedPhotoUri)
+          .then(() => onExpensesExtracted?.())
+          .catch(() => {});
+        // Intention detection — no-op when ff_intentions is off or on cooldown.
+        detectAndSuggestIntention(entry).catch(() => {});
       }
 
       reset();
@@ -313,7 +339,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
           <ScrollView
             style={styles.body}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 24 }}
+            contentContainerStyle={{ paddingBottom: Math.max(24, insets.bottom) }}
           >
             {/* Text input */}
             <TextInput
@@ -345,7 +371,7 @@ export default function ComposeModal({ visible, onClose, onSaved, editEntry, tar
             {/* Photo button */}
             <TouchableOpacity
               style={styles.photoButton}
-              onPress={() => pickImage('library')}
+              onPress={() => pickImage()}
             >
               <Feather name="camera" size={14} color="rgba(152, 212, 250, 0.65)" />
               <Text style={styles.photoButtonText}>

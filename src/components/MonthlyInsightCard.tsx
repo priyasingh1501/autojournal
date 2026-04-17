@@ -951,6 +951,159 @@ const gpStyles = StyleSheet.create({
   overText: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(252,165,165,0.75)' },
 });
 
+// ── Spending Tracker Card — always shown first in carousel ────────────────────
+
+function SpendingTrackerCard({
+  expenses,
+  budget,
+  aiCategories,
+}: {
+  expenses: ExpenseEntry[];
+  budget?: number;
+  aiCategories?: SpendCategory[];
+}) {
+  const hasTracked = expenses.length > 0;
+  const total      = hasTracked
+    ? expenses.reduce((s, e) => s + e.amount, 0)
+    : (aiCategories ?? []).reduce((s, c) => s + (c.amount ?? 0), 0);
+
+  const grouped  = hasTracked ? groupByCategory(expenses) : [];
+  const maxTotal = grouped[0]?.total ?? 1;
+
+  // Days remaining in month
+  const now       = new Date();
+  const lastDay   = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const daysLeft  = lastDay - now.getDate();
+  const monthName = now.toLocaleDateString([], { month: 'long' });
+
+  const pct      = budget && total > 0 ? Math.min(total / budget, 1) : 0;
+  const over     = budget ? total > budget : false;
+  const barColor = over
+    ? 'rgba(252,165,165,0.70)'
+    : pct >= 0.85
+      ? 'rgba(251,191,36,0.70)'
+      : 'rgba(74,222,128,0.65)';
+
+  return (
+    <View style={spendCardStyles.wrap}>
+      {/* Header row */}
+      <View style={spendCardStyles.headerRow}>
+        <View style={spendCardStyles.headerLeft}>
+          <Feather name="credit-card" size={11} color="rgba(152,212,250,0.60)" />
+          <Text style={spendCardStyles.title}>SPENDING · {monthName.toUpperCase()}</Text>
+        </View>
+        <Text style={spendCardStyles.daysLeft}>{daysLeft}d left</Text>
+      </View>
+
+      {/* Budget vs total */}
+      {budget ? (
+        <>
+          <View style={spendCardStyles.amountRow}>
+            <Text style={[spendCardStyles.spent, over && { color: 'rgba(252,165,165,0.90)' }]}>
+              {formatINR(total)}
+            </Text>
+            <Text style={spendCardStyles.slash}> / </Text>
+            <Text style={spendCardStyles.goal}>{formatINR(budget)}</Text>
+          </View>
+          <View style={spendCardStyles.track}>
+            <View style={[spendCardStyles.bar, { flex: pct, backgroundColor: barColor }]} />
+            <View style={{ flex: Math.max(0, 1 - pct) }} />
+          </View>
+          <View style={spendCardStyles.subRow}>
+            <Text style={[spendCardStyles.subText, over && { color: 'rgba(252,165,165,0.75)' }]}>
+              {over
+                ? `${formatINR(total - budget)} over budget`
+                : `${formatINR(budget - total)} remaining`}
+            </Text>
+            <Text style={spendCardStyles.pctText}>{Math.round(pct * 100)}%</Text>
+          </View>
+        </>
+      ) : total > 0 ? (
+        <View style={spendCardStyles.amountRow}>
+          <Text style={spendCardStyles.spent}>{formatINR(total)}</Text>
+          <Text style={spendCardStyles.noGoalHint}> this month</Text>
+        </View>
+      ) : null}
+
+      {/* ── Tracked categories (from voice/manual notes) ── */}
+      {hasTracked && (
+        <>
+          <View style={spendCardStyles.sourceTag}>
+            <Feather name="mic" size={9} color="rgba(147,197,253,0.70)" />
+            <Text style={spendCardStyles.sourceText}>tracked from your notes</Text>
+          </View>
+          <View style={spendCardStyles.catList}>
+            {grouped.map(g => {
+              const fill     = g.total / maxTotal;
+              const isOver   = budget ? g.total > budget * 0.5 : false;
+              const catColor = isOver ? 'rgba(252,165,165,0.50)' : 'rgba(74,222,128,0.40)';
+              const lastDesc = g.entries[g.entries.length - 1]?.description;
+              return (
+                <View key={g.category} style={spendCardStyles.detailCatWrap}>
+                  <View style={infoStyles.catHeader}>
+                    <Text style={infoStyles.catName}>{g.category}</Text>
+                    <Text style={[infoStyles.catAmount, { color: 'rgba(224,242,254,0.85)' }]}>
+                      {formatINR(g.total)}
+                      <Text style={expStyles.txCount}> · {g.count} item{g.count !== 1 ? 's' : ''}</Text>
+                    </Text>
+                  </View>
+                  <View style={infoStyles.spendTrack}>
+                    <View style={[infoStyles.spendBar, { flex: fill, backgroundColor: catColor }]} />
+                    <View style={{ flex: 1 - fill }} />
+                  </View>
+                  {lastDesc ? (
+                    <Text style={infoStyles.catSummary}>Last: {lastDesc}</Text>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        </>
+      )}
+
+      {/* ── AI-estimated categories (fallback when nothing tracked) ── */}
+      {!hasTracked && (aiCategories ?? []).length > 0 && (
+        <SpendCategoryList categories={aiCategories!} />
+      )}
+
+      {/* Empty state */}
+      {!hasTracked && (aiCategories ?? []).length === 0 && (
+        <Text style={spendCardStyles.emptyHint}>
+          Mention purchases while journaling and they'll appear here.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const spendCardStyles = StyleSheet.create({
+  wrap:       { gap: 8 },
+  headerRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  title:      { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 0.5 },
+  daysLeft:   { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)' },
+  amountRow:  { flexDirection: 'row', alignItems: 'baseline', marginTop: 2 },
+  spent:      { fontSize: 24, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.90)', fontWeight: '600' },
+  slash:      { fontSize: 16, color: 'rgba(152,212,250,0.35)' },
+  goal:       { fontSize: 16, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)' },
+  noGoalHint: { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)' },
+  track:      { height: 6, borderRadius: 3, flexDirection: 'row', overflow: 'hidden', backgroundColor: 'rgba(152,212,250,0.08)' },
+  bar:        { height: 6, borderRadius: 3 },
+  subRow:     { flexDirection: 'row', justifyContent: 'space-between' },
+  subText:    { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)' },
+  pctText:    { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)' },
+  sourceTag:  { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+  sourceText: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(147,197,253,0.65)' },
+  catList:    { gap: 8, marginTop: 2 },
+  detailCatWrap: { gap: 3 },
+  catRow:     { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  catName:    { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.65)', width: 80 },
+  catTrack:   { flex: 1, height: 4, borderRadius: 2, flexDirection: 'row', overflow: 'hidden', backgroundColor: 'rgba(152,212,250,0.08)' },
+  catBar:     { height: 4, borderRadius: 2 },
+  catAmt:     { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.70)', width: 44, textAlign: 'right' },
+  emptyHint:  { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', fontStyle: 'italic', lineHeight: 16, marginTop: 4 },
+});
+
 // ── Main card ─────────────────────────────────────────────────────────────────
 
 // ── Tracker → section key mapping ─────────────────────────────────────────────
@@ -962,7 +1115,7 @@ const TRACKER_SECTION_MAP: Record<string, string> = {
 };
 
 // Sections that are always shown regardless of tracker settings
-const ALWAYS_SHOWN_SECTIONS = new Set(['Emotional check-in', 'Recurring thoughts', 'Learnings']);
+const ALWAYS_SHOWN_SECTIONS = new Set(['Emotional check-in', 'Recurring thoughts']);
 
 export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: number }) {
   const [insight,           setInsight]           = useState<MonthlyInsight | null>(null);
@@ -971,6 +1124,7 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   const [error,             setError]             = useState<string | null>(null);
   const [refreshing,        setRefreshing]        = useState(false);
   const [showPaywall,       setShowPaywall]       = useState(false);
+  const [carouselPage,      setCarouselPage]      = useState(0);
   const [goals,             setGoals]             = useState<UserGoals | null>(null);
   const [showGoals,         setShowGoals]         = useState(false);
   const [trackedExpenses,   setTrackedExpenses]   = useState<ExpenseEntry[]>([]);
@@ -984,8 +1138,9 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   useEffect(() => {
     loadInsight(false);
     StorageService.getGoals().then(g => setGoals(g));
-    // Load real tracked expenses for the current month
-    const yearMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+    // Load real tracked expenses for the current month (use local date to match save keys)
+    const _now = new Date();
+    const yearMonth = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}`;
     StorageService.getExpensesForMonth(yearMonth)
       .then(entries => setTrackedExpenses(entries))
       .catch(() => {});
@@ -1015,7 +1170,9 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   const loadInsight = async (force: boolean) => {
     setError(null);
     setNotEnoughData(false);
-    if (force) setRefreshing(true);
+    // If we already have data, keep it visible and show a spinner instead of
+    // blanking the card with the skeleton loader.
+    if (insight !== null || force) setRefreshing(true);
     else setLoading(true);
     try {
       const result = await generateMonthlyInsight(force);
@@ -1053,8 +1210,10 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
   });
 
   const TRACKER_SECTION_KEYS = new Set(Object.values(TRACKER_SECTION_MAP));
-  const trackerSections = sections.filter(s => TRACKER_SECTION_KEYS.has(s.key));
+  // Exclude AI "Spending" from carousel — replaced by the always-present SpendingTrackerCard
+  const trackerSections = sections.filter(s => TRACKER_SECTION_KEYS.has(s.key) && s.key !== 'Spending');
   const otherSections   = sections.filter(s => !TRACKER_SECTION_KEYS.has(s.key));
+  const showSpendCard   = enabledTrackers.has('spending');
 
   return (
     <>
@@ -1101,8 +1260,60 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
         </View>
       )}
 
+      {/* ── Spending tracker — always shown when enabled, independent of monthly insight ── */}
+      {!loading && showSpendCard && (
+        (() => {
+          const otherTrackerCount = insight ? trackerSections.length : 0;
+          const totalPages = 1 + otherTrackerCount;
+          const pageWidth  = Dimensions.get('window').width - 40;
+          return (
+            <View style={styles.trackerOuterCard}>
+              <ScrollView
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.trackerScroll}
+                style={styles.trackerScrollWrap}
+                onMomentumScrollEnd={e => {
+                  const page = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
+                  setCarouselPage(page);
+                }}
+              >
+                {/* Spending card — always first */}
+                <View style={styles.trackerPage}>
+                  <SpendingTrackerCard
+                    expenses={trackedExpenses}
+                    budget={goals?.monthlySpendBudget}
+                    aiCategories={insight?.weeklyData?.spendCategories}
+                  />
+                </View>
+                {/* Other tracker sections only when insight is loaded */}
+                {insight && trackerSections.map(s => (
+                  <View key={s.key} style={styles.trackerPage}>
+                    <SectionRow
+                      sectionKey={s.key}
+                      body={s.body}
+                      monthlyData={insight.weeklyData}
+                      goals={goals ?? undefined}
+                      trackedExpenses={undefined}
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+              {totalPages > 1 && (
+                <View style={styles.carouselDots}>
+                  {Array.from({ length: totalPages }).map((_, i) => (
+                    <View key={i} style={[styles.carouselDot, i === carouselPage && styles.carouselDotActive]} />
+                  ))}
+                </View>
+              )}
+            </View>
+          );
+        })()
+      )}
+
       {/* ── Not enough data ── */}
-      {!loading && notEnoughData && (
+      {!loading && notEnoughData && !showSpendCard && (
         <Text style={styles.emptyText}>
           Keep journaling — monthly insights appear once you have at least one daily summary this month.
         </Text>
@@ -1126,31 +1337,6 @@ export default function MonthlyInsightCard({ refreshKey = 0 }: { refreshKey?: nu
               <Text style={styles.statLabel}>entries</Text>
             </View>
           </View>
-
-          {/* Tracker sections — one card, horizontally scrollable */}
-          {trackerSections.length > 0 && (
-            <View style={styles.trackerOuterCard}>
-              <ScrollView
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.trackerScroll}
-                style={styles.trackerScrollWrap}
-              >
-                {trackerSections.map(s => (
-                  <View key={s.key} style={styles.trackerPage}>
-                    <SectionRow
-                      sectionKey={s.key}
-                      body={s.body}
-                      monthlyData={insight.weeklyData}
-                      goals={goals ?? undefined}
-                      trackedExpenses={s.key === 'Spending' ? trackedExpenses : undefined}
-                    />
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
 
           {/* Other sections — vertical (Emotional check-in, Recurring thoughts, Learnings) */}
           {otherSections.length > 0 && (
@@ -1194,7 +1380,7 @@ const styles = StyleSheet.create({
   },
 
   cardless: {
-    marginBottom: 16, marginTop: 4, marginHorizontal: 20,
+    marginBottom: 16, marginTop: 24, marginHorizontal: 20,
   },
 
   headingRow: {
@@ -1234,20 +1420,27 @@ const styles = StyleSheet.create({
 
   trackerOuterCard: {
     borderRadius: 20,
-    backgroundColor: 'rgba(3, 18, 40, 0.65)',
+    backgroundColor: 'rgba(4,13,30,0.70)',
     borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.12)',
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.10,
-    shadowRadius: 18,
-    elevation: 4,
     overflow: 'hidden',
     marginBottom: 10,
   },
   trackerScrollWrap: { },
   trackerScroll: { },
   trackerPage: { width: Dimensions.get('window').width - 40, padding: 16 },
+  carouselDots: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    gap: 5, paddingBottom: 10,
+  },
+  carouselDot: {
+    width: 5, height: 5, borderRadius: 3,
+    backgroundColor: 'rgba(152,212,250,0.20)',
+  },
+  carouselDotActive: {
+    width: 14,
+    backgroundColor: 'rgba(152,212,250,0.70)',
+  },
 
   sections: { gap: 6 },
   sectionRow: {

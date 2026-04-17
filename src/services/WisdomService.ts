@@ -7,10 +7,12 @@
  *   • Journal signal  — extracted post-entry (Phase 2); overrides mood if fresher.
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { claudeProxy } from './AIProxy';
-import { WisdomShort, JournalSignal, FeedSelection } from '../types';
+import { WisdomShort, JournalSignal, FeedSelection, Stance, LoopState, Placement, PatternsReport } from '../types';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
 import { StorageService } from './StorageService';
+import { track } from './AnalyticsService';
 
 // ── Mood definitions ───────────────────────────────────────────────────────────
 
@@ -128,6 +130,71 @@ export const MOODS: Mood[] = [
   },
 ];
 
+// ── Loop state ────────────────────────────────────────────────────────────────
+
+function parseWindowDays(window: string): number {
+  const m = window.match(/(\d+)\s*day/i);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/**
+ * Derive the user's loop state — how long they've been in their current pattern.
+ * Pure function of the cached PatternsReport; returns 'fresh' when no data.
+ *
+ *   fresh    (<3 days)  — prefer comforting
+ *   building (3-14d)    — prefer clarifying
+ *   stuck    (>14 days) — prefer disruptive (the Vedantic move)
+ */
+export function computeLoopState(report: PatternsReport | null): LoopState {
+  if (!report) return 'fresh';
+
+  // returning_question means the same question has been surfacing for weeks → stuck
+  const hasReturning = report.acrossTime.some(o => o.type === 'returning_question');
+  if (hasReturning) return 'stuck';
+
+  // whats_loud with a long window (>14 days) → stuck
+  const hasLongLoud = report.acrossTime.some(
+    o => o.type === 'whats_loud' && parseWindowDays(o.window) > 14,
+  );
+  if (hasLongLoud) return 'stuck';
+
+  // Any whats_loud present at all → building
+  if (report.acrossTime.some(o => o.type === 'whats_loud')) return 'building';
+
+  return 'fresh';
+}
+
+// ── Stance weights ────────────────────────────────────────────────────────────
+
+// Base probability weights by loop state (must sum to 1.0 per row).
+const LOOP_STANCE_WEIGHTS: Record<LoopState, Record<Stance, number>> = {
+  fresh:    { comforting: 0.70, clarifying: 0.25, disruptive: 0.05 },
+  building: { comforting: 0.30, clarifying: 0.50, disruptive: 0.20 },
+  stuck:    { comforting: 0.10, clarifying: 0.40, disruptive: 0.50 },
+};
+
+// Per-placement bias multipliers — applied on top of the loop-state weights.
+// Omitted stances use 1.0 (no bias).
+const PLACEMENT_BIAS: Record<Placement, Partial<Record<Stance, number>>> = {
+  wisdom_tab:         {},
+  end_of_day_summary: { clarifying: 1.5 },  // gentle, reflective close-of-day
+  home_warm_line:     { comforting: 1.5 },   // warm, low-friction home surface
+  smart_notification: {},                    // loop state already drives disruptive-if-stuck
+};
+
+function stanceMultiplier(stance: Stance, loopState: LoopState, placement: Placement): number {
+  return LOOP_STANCE_WEIGHTS[loopState][stance] * (PLACEMENT_BIAS[placement][stance] ?? 1.0);
+}
+
+// ── FeedOptions ───────────────────────────────────────────────────────────────
+
+export interface FeedOptions {
+  loopState?: LoopState;
+  placement?: Placement;
+  /** Pass the resolved value of ff_new_minds_system — keeps buildFeed synchronous. */
+  stanceEnabled?: boolean;
+}
+
 // ── Date-seeded shuffle ────────────────────────────────────────────────────────
 
 /**
@@ -224,6 +291,7 @@ export function buildFeed(
   seenIds: Set<string>,
   emotionFilter?: string,
   library?: WisdomShort[],
+  options?: FeedOptions,
 ): FeedSelection {
   let pool = library ? [...library] : [...SHORTS_LIBRARY];
 
@@ -233,13 +301,23 @@ export function buildFeed(
   }
 
   if (!signal) {
-    return buildFallbackFeed(pool, seenIds);
+    return buildFallbackFeed(pool, seenIds, options);
   }
+
+  const loopState     = options?.loopState  ?? 'fresh';
+  const placement     = options?.placement  ?? 'wisdom_tab';
+  const stanceEnabled = options?.stanceEnabled ?? false;
 
   // Score + stable-sort (ties broken by seeded shuffle position)
   const seed = todaySeed();
   const shuffled = seededShuffle(pool, seed);
-  const scored: ScoredShort[] = shuffled.map(s => ({ short: s, score: scoreShort(s, signal) }));
+  const scored: ScoredShort[] = shuffled.map(s => {
+    const base = scoreShort(s, signal);
+    if (!stanceEnabled) return { short: s, score: base };
+    // +1 floor so stance still differentiates zero-matched shorts
+    const mult = stanceMultiplier(s.stance ?? 'clarifying', loopState, placement);
+    return { short: s, score: (base + 1) * mult };
+  });
   scored.sort((a, b) => b.score - a.score);
 
   const total = scored.length;
@@ -258,10 +336,25 @@ export function buildFeed(
  * Daily seeded shuffle keeps the order consistent within a day but fresh tomorrow.
  * Unseen shorts float to the top; author-interleaved to avoid source clustering.
  */
-function buildFallbackFeed(pool: WisdomShort[], seenIds: Set<string>): FeedSelection {
+function buildFallbackFeed(pool: WisdomShort[], seenIds: Set<string>, options?: FeedOptions): FeedSelection {
+  const loopState     = options?.loopState  ?? 'fresh';
+  const placement     = options?.placement  ?? 'wisdom_tab';
+  const stanceEnabled = options?.stanceEnabled ?? false;
+
   const seed   = todaySeed();
-  const unseen = seededShuffle(pool.filter(s => !seenIds.has(s.id)), seed);
-  const seen   = seededShuffle(pool.filter(s =>  seenIds.has(s.id)), seed + 1);
+  let unseen = pool.filter(s => !seenIds.has(s.id));
+  let seen   = pool.filter(s =>  seenIds.has(s.id));
+
+  if (stanceEnabled) {
+    // Sort each bucket by stance weight so the best-stance shorts surface first
+    const byStance = (s: WisdomShort) => stanceMultiplier(s.stance ?? 'clarifying', loopState, placement);
+    unseen = seededShuffle(unseen, seed).sort((a, b) => byStance(b) - byStance(a));
+    seen   = seededShuffle(seen,   seed + 1).sort((a, b) => byStance(b) - byStance(a));
+  } else {
+    unseen = seededShuffle(unseen, seed);
+    seen   = seededShuffle(seen,   seed + 1);
+  }
+
   const ordered = interleaveByAuthor([...unseen, ...seen]);
 
   const total = ordered.length;
@@ -311,6 +404,75 @@ export function flattenFeed(feed: FeedSelection): WisdomShort[] {
     }
   }
   return result;
+}
+
+// ── For You Today / placement picker ──────────────────────────────────────────
+
+const FOR_YOU_TODAY_KEY = 'wisdom_for_you_today';
+
+function localDateKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Pick the single best short for a given placement, applying journal-signal
+ * scoring multiplied by stance weights for (loopState × placement).
+ *
+ * For 'wisdom_tab' the result is stable for the calendar day (cached in
+ * AsyncStorage). Other placements are computed fresh each call.
+ */
+export async function pickShortForPlacement(
+  placement: Placement,
+  signal: JournalSignal | null,
+  loopState: LoopState,
+  library: WisdomShort[],
+): Promise<WisdomShort | null> {
+  if (library.length === 0) return null;
+
+  // Daily cache for the main "For you today" surface only
+  if (placement === 'wisdom_tab') {
+    const todayKey = localDateKey();
+    try {
+      const raw = await AsyncStorage.getItem(FOR_YOU_TODAY_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw) as { shortId: string; dateKey: string };
+        if (cached.dateKey === todayKey) {
+          const found = library.find(s => s.id === cached.shortId);
+          if (found) return found;
+        }
+      }
+    } catch {}
+  }
+
+  const seed = todaySeed();
+  const shuffled = seededShuffle(library, seed);
+
+  const scored = shuffled.map(s => {
+    const base = signal ? scoreShort(s, signal) : 0;
+    const mult = stanceMultiplier(s.stance ?? 'clarifying', loopState, placement);
+    return { short: s, score: (base + 1) * mult };
+  });
+  scored.sort((a, b) => b.score - a.score);
+
+  const winner = scored[0]?.short ?? null;
+
+  if (winner) {
+    track('wisdom_stance_surfaced', {
+      stance:    winner.stance ?? 'clarifying',
+      loopState,
+      placement,
+    });
+
+    if (placement === 'wisdom_tab') {
+      await AsyncStorage.setItem(
+        FOR_YOU_TODAY_KEY,
+        JSON.stringify({ shortId: winner.id, dateKey: localDateKey() }),
+      ).catch(() => {});
+    }
+  }
+
+  return winner;
 }
 
 // ── Job 1: Journal signal extraction (Phase 2 — available but not auto-called) ──

@@ -22,7 +22,7 @@ export async function generateSummaryImage(
         'deep navy to pure black background, soft scattered glowing orbs and particles, ' +
         'photorealistic, cinematic, no text, no people',
       n: 1,
-      size: '1792x1024',
+      size: '1024x1024',
       quality: 'standard',
     });
 

@@ -56,6 +56,7 @@ VALID_VALUES = {
 }
 VALID_DEPTH    = {"entry", "mid", "deep"}
 VALID_CONFIDENCE = {"high", "moderate", "philosophical"}
+VALID_STANCE   = {"comforting", "clarifying", "disruptive"}
 VALID_DISCIPLINES = {
     "neuroscience", "evolutionary_biology", "psychology", "philosophy", "behavioral_economics",
 }
@@ -115,7 +116,8 @@ OUTPUT FORMAT — return a JSON array. Each element must have ALL these fields \
   "cognitive_style": ["1-2 items from: analytical, reflective, intuitive, practical"],
   "values": ["1-3 items from: authenticity, freedom, security, connection, achievement, clarity, peace, integrity, self-worth, meaning, truth, belonging"],
   "depth": "entry (accessible, surface insight) | mid (requires reflection) | deep (existential/identity level)",
-  "confidence_level": "high (well-replicated science) | moderate (emerging/mixed evidence) | philosophical (wisdom tradition, not science)"
+  "confidence_level": "high (well-replicated science) | moderate (emerging/mixed evidence) | philosophical (wisdom tradition, not science)",
+  "stance": "comforting | clarifying | disruptive — how the short MEETS the reader. comforting acknowledges the feeling and meets the reader in it ('you are not alone in this ache'). clarifying names the feeling more precisely or gives it structure ('there is a difference between grief and regret'). disruptive interrupts the pattern, turns the question back on the reader, or refuses the premise ('who is the one who is lonely? find that one first'). Choose the stance honestly — do not default to clarifying."
 }
 
 Return ONLY valid JSON — a top-level array. No preamble, no trailing text.\
@@ -309,6 +311,11 @@ def _normalise(ins: dict, chunk: dict) -> Optional[dict]:
     # Confidence
     if ins.get("confidence_level") not in VALID_CONFIDENCE:
         ins["confidence_level"] = "moderate"
+
+    # Stance — defaults to "clarifying" when the model omits or emits an
+    # unknown value. Keeps the column populated for every new short.
+    if ins.get("stance") not in VALID_STANCE:
+        ins["stance"] = "clarifying"
 
     # Pullquote fallback
     if not ins.get("pullquote"):

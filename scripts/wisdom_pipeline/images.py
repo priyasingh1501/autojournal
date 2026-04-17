@@ -44,7 +44,7 @@ def _build_prompt(short: dict) -> str:
     Build a DALL-E 3 prompt from a short's stored image_prompt field,
     falling back to an auto-built prompt from themes + title.
     """
-    stored = short.get("image_prompt", "").strip()
+    stored = (short.get("image_prompt") or "").strip()
     if stored:
         return stored
 

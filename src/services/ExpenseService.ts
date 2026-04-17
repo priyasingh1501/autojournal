@@ -39,6 +39,42 @@ export function mayContainExpense(text: string): boolean {
   return EXPENSE_PATTERN.test(text);
 }
 
+// ── Synchronous regex extractor — immediate save, no API call ─────────────────
+
+const AMOUNT_PATTERN =
+  /(?:[₹$£€]\s*(\d[\d,]*(?:\.\d{1,2})?))|(?:(\d[\d,]*(?:\.\d{1,2})?)\s*(?:₹|rs\.?|rupees?|inr|bucks?)\b)/i;
+
+/**
+ * Instantly extracts a single spend amount from text using regex — no API call.
+ * Returns a single ExpenseEntry with category 'Other' on success, or null.
+ * Use this for immediate home-screen feedback; Claude runs async to enrich the data.
+ */
+export function quickExtractExpense(
+  text: string,
+  date: string,
+  transcriptId: string,
+): ExpenseEntry | null {
+  if (!mayContainExpense(text)) return null;
+  const match = text.match(AMOUNT_PATTERN);
+  if (!match) return null;
+  const raw = (match[1] ?? match[2]).replace(/,/g, '');
+  const amount = parseFloat(raw);
+  if (!amount || amount <= 0) return null;
+  return {
+    id: `exp_quick_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    amount,
+    currency: 'INR',
+    category: 'Other',
+    description: text.slice(0, 60).trim(),
+    date,
+    timestamp: Date.now(),
+    // Use the same transcriptId so Claude text extraction is automatically
+    // deduped (transcript-level dedup in addExpenses blocks it). Photo
+    // extraction uses transcriptId + '_photo' so it still runs independently.
+    sourceTranscriptId: transcriptId,
+  };
+}
+
 // ── MIME type from URI ────────────────────────────────────────────────────────
 
 function getMimeType(uri: string): 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' {
@@ -101,7 +137,7 @@ async function extractFromPhoto(
     const categoryList = EXPENSE_CATEGORIES.map(c => `"${c}"`).join(', ');
 
     const response = await claudeProxy.messages.create({
-      model: 'claude-opus-4-5', // opus-4-5 supports vision
+      model: 'claude-sonnet-4-6', // sonnet supports vision, much cheaper
       max_tokens: 500,
       messages: [
         {
@@ -214,11 +250,17 @@ export async function extractAndSaveExpenses(
       entries.push(...photoEntries);
     }
 
-    // 2. Text extraction (always runs if text has keywords — catches spoken mentions
-    //    even when a receipt photo is also present)
+    // 2. Text extraction — catches spoken mentions even when a receipt photo is present.
+    //    Deduplicate against photo results so a "paid ₹500" spoken mention doesn't
+    //    double-count the same receipt the photo already captured.
     if (mayContainExpense(text)) {
       const textEntries = await extractFromText(text, date, transcriptId);
-      entries.push(...textEntries);
+      const photoKeys = new Set(entries.map(e => `${Math.round(e.amount)}_${e.category}`));
+      for (const e of textEntries) {
+        if (!photoKeys.has(`${Math.round(e.amount)}_${e.category}`)) {
+          entries.push(e);
+        }
+      }
     }
 
     if (entries.length > 0) {

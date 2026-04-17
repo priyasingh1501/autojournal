@@ -10,7 +10,6 @@ export const SECTION_LABELS: Record<string, { iconName: string; color: string }>
   'Meditation':         { iconName: 'moon',          color: 'rgba(196, 181, 253, 0.90)' },
   'Spending':           { iconName: 'credit-card',   color: 'rgba(224, 242, 254, 0.90)' },
   'Recurring thoughts': { iconName: 'repeat',        color: 'rgba(224, 242, 254, 0.90)' },
-  'Learnings':          { iconName: 'book-open',     color: 'rgba(224, 242, 254, 0.90)' },
 };
 
 // Which section keys are controlled by tracker preferences

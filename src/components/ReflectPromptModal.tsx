@@ -22,6 +22,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WisdomShort } from '../types';
 import { generateReflectPrompt } from '../services/WisdomService';
 
@@ -40,6 +41,7 @@ const FALLBACK_PROMPTS: Record<string, string> = {
 };
 
 export default function ReflectPromptModal({ short, visible, onClose, onSave }: Props) {
+  const insets = useSafeAreaInsets();
   const [prompt, setPrompt]     = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
   const [reflection, setReflection] = useState('');
@@ -119,7 +121,7 @@ export default function ReflectPromptModal({ short, visible, onClose, onSave }: 
           </ScrollView>
 
           {/* ── Done ── */}
-          <TouchableOpacity style={styles.doneBtn} onPress={handleDone}>
+          <TouchableOpacity style={[styles.doneBtn, { marginBottom: Math.max(16, insets.bottom) }]} onPress={handleDone}>
             <Text style={styles.doneBtnText}>Done</Text>
           </TouchableOpacity>
         </View>
@@ -141,7 +143,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    paddingBottom: 0, // handled dynamically via insets in component
     paddingHorizontal: 20,
     minHeight: 380,
     maxHeight: '85%',

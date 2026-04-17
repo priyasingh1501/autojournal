@@ -24,6 +24,14 @@ export interface DailySummary {
   createdAt: number;
   imageUri?: string;       // local file path of generated jellyfish card image
   dailyMacros?: DayMacros; // meal macro estimates extracted during summary generation
+
+  // New adaptive day-summary fields (ff_new_day_summary) — optional for backward compat.
+  // `reflection` is a 2–4 sentence, time-stamped prose paragraph mirroring the day.
+  // `whatTheDayHeld` only lists categories that were actually present — no empty sections.
+  // `moodArc` is null when the day didn't span enough entries across morning/afternoon/evening.
+  reflection?: string;
+  whatTheDayHeld?: Array<{ label: string; content: string }>;
+  moodArc?: { morning: string; afternoon: string; evening: string } | null;
 }
 
 export interface AppSettings {
@@ -37,6 +45,8 @@ export interface AppSettings {
   elevenLabsApiKey?: string;   // ElevenLabs API key for Call mode
   elevenLabsVoiceId?: string;  // ElevenLabs voice ID for Call mode
   enabledTrackers?: ('meals' | 'workout' | 'meditation' | 'spending')[]; // which trackers to show in home + summaries
+  notificationsEnabled?: boolean;  // smart daily notification (default: false until opted in)
+  notificationTime?: string;       // HH:MM local time for the daily notification, default "19:30"
 }
 
 export interface EmotionCount {
@@ -205,7 +215,25 @@ export interface Mind {
   era: string;               // e.g. "Roman Emperor · 161–180 AD"
   philosophy: string;        // one-line description
   accent: string;            // rgba colour for UI accent
-  symbol: string;            // single emoji/symbol for avatar
+  symbol: string;            // single emoji/symbol for avatar (fallback)
+  teaser: string;            // static characteristic opener shown in the picker
+  image: number;             // require()'d local asset
+}
+
+// ── V2 mind roster (ff_new_minds_system) ────────────────────────────────────
+// The V2 shape keeps every field the legacy UI uses, plus the new explicit
+// opening lines + system prompt the rewritten roster owns directly (rather
+// than looking up in ConversationService.MIND_PROMPTS). `tradition` is a
+// one-word tag used by the picker. `image` is optional — Companion has no
+// avatar asset and renders a fallback icon.
+export interface MindV2 extends Omit<Mind, 'image'> {
+  image?: number;
+  tradition: string;
+  openingLines: readonly string[];
+  openingLinesWithContext: readonly string[];
+  /** Only set on Companion — used when wellbeingState === 'hard_stretch'. */
+  openingLinesDistress?: readonly string[];
+  systemPrompt: string;
 }
 
 export interface MindHighlight {
@@ -231,6 +259,26 @@ export interface ConversationMessage {
 
 // ── Wisdom Shorts ─────────────────────────────────────────────────────────────
 
+// Stance describes how a short meets the reader (ff_new_minds_system).
+//  - comforting : "you are not alone in this ache"
+//  - clarifying : "here is language for what you are feeling"
+//  - disruptive : "who is the one who is lonely?"
+// Existing shorts without a stance default to "clarifying" on read.
+export type Stance = 'comforting' | 'clarifying' | 'disruptive';
+
+// How long the user has been in their current dominant emotional pattern.
+//   fresh    — < 3 days (comfort preferred)
+//   building — 3–14 days (clarifying preferred)
+//   stuck    — > 14 days (disruption preferred — the Vedantic move)
+export type LoopState = 'fresh' | 'building' | 'stuck';
+
+// Where a wisdom short is being surfaced. Each placement has its own stance bias.
+export type Placement =
+  | 'wisdom_tab'          // "For you today" + main feed
+  | 'end_of_day_summary'  // short at bottom of day summary (lean clarifying)
+  | 'home_warm_line'      // home screen warm line source (lean comforting)
+  | 'smart_notification'; // push nudge (disruptive if stuck, else clarifying)
+
 export interface WisdomShort {
   id: string;
   title: string;
@@ -246,6 +294,7 @@ export interface WisdomShort {
   cognitive_style: string[];
   values: string[];
   depth: 'entry' | 'mid' | 'deep';
+  stance?: Stance;      // ff_new_minds_system — defaults to 'clarifying' on read
   imageUri?: string;    // local cached file path for the generated image
   imagePrompt?: string; // DALL-E prompt used to generate the image
 }
@@ -258,6 +307,137 @@ export interface JournalSignal {
   enneagram_hints: number[];
   depth_preference: 'entry' | 'mid' | 'deep';
   extractedAt?: number; // Unix ms — used for freshness checks
+}
+
+// ── Patterns tab (ff_patterns_tab) ──────────────────────────────────────────
+// Observational, archive-grounded replacement for the Insights tab. Sections
+// fade in as more history accumulates — see THRESHOLDS in PatternsService.
+export type AcrossTimeType =
+  | 'whats_loud'
+  | 'returning_question'
+  | 'mind_moving'
+  | 'wondering_about'
+  | 'gone_quiet'
+  | 'whats_pulling_you'
+  | 'stated_vs_actual'
+  | 'recurring_cast'
+  | 'thinking_texture';
+
+export interface PatternsEvidence {
+  excerpt: string;
+  date: string; // YYYY-MM-DD
+}
+
+export interface AcrossTimeObservation {
+  type: AcrossTimeType;
+  title: string;
+  body: string;
+  evidence: PatternsEvidence[];
+  window: string;       // "last 30 days" / "last 60 days" etc
+  dismissible: boolean; // only true for "wondering_about"
+}
+
+export interface PatternsReport {
+  generatedAt: number;
+  archiveDays: number;
+  entryCount: number;
+  thisMonth: {
+    reflection: string;
+    whatsLoud: string[];
+    intentionsProgress: Array<{ intention: string; note: string }> | null;
+    emotionalArc: Array<{ week: number; dominantEmotion: string; note: string }> | null;
+  };
+  acrossTime: AcrossTimeObservation[];
+}
+
+// ── Rewritten user context (ff_new_minds_system) ────────────────────────────
+// Replacement for the classification-heavy legacy UserContext sent to Claude
+// in mind conversations. Observational, derived from newer systems (Patterns,
+// Intentions, Day Summary reflections). NOT a personality assessment.
+export type WellbeingState = 'regulated' | 'tender' | 'hard_stretch';
+
+export interface UserContextIntention {
+  id: string;
+  text: string;
+}
+
+export interface UserContextPattern {
+  type: string;   // AcrossTimeType — kept as string to decouple from the enum
+  body: string;
+}
+
+export interface UserContextRecentMind {
+  mindId: string;            // 'companion' for the null-persona Companion
+  lastTalkedAt: number;
+  conversationShape: string; // one-line Haiku-summarized shape
+}
+
+export interface UserContextV2 {
+  recentDays: string;                 // 2–3 sentences drawn from recent Day Summary reflections
+  activeIntentions: UserContextIntention[]; // up to 5
+  currentPatterns: UserContextPattern[];    // top 2–3 from latest PatternsReport
+  wellbeingState: WellbeingState;
+  recentMinds: UserContextRecentMind[];     // distinct minds in the last 30 days
+  tenureDays: number;                 // days since first TranscriptEntry
+  builtAt: number;
+}
+
+// ── Day Digest (ff_day_close_model) ─────────────────────────────────────────
+// Lightweight, device-computed snapshot of today-so-far. Distinct from
+// DailySummary: a digest is factual, a summary is reflective. The digest is
+// what renders in the "today" view before the day closes at 23:59 local.
+export interface DayDigestHourBucket {
+  hour: number;  // 0–23
+  count: number;
+}
+
+export interface DayDigest {
+  date: string;                        // YYYY-MM-DD (rollover-aware — see dayRollover.ts)
+  entryCount: number;
+  entriesByHour: DayDigestHourBucket[]; // always 24 buckets, sparse counts
+  dominantEmotions: string[];           // top 2–3 emotion tags by frequency
+  intentionsMentioned: string[];        // ids of active intentions referenced in today's entries
+  computedAt: number;
+}
+
+// ── Intentions (ff_intentions) ──────────────────────────────────────────────
+// Replaces the fixed tracker list. Users declare goals (or the system detects
+// them from entries); intentions surface contextually in Day Summary +
+// Patterns rather than as a fixed carousel.
+export type IntentionCadence = 'daily' | 'weekly' | 'loose' | null;
+export type IntentionSource = 'manual' | 'detected' | 'starter_pack';
+
+export interface Intention {
+  id: string;
+  text: string;
+  source: IntentionSource;
+  createdAt: number;
+  cadence: IntentionCadence;
+  active: boolean;
+  declaredInEntryId?: string;
+}
+
+/** A detected-but-not-yet-accepted intention awaiting the user's yes/no. */
+export interface SuggestedIntention {
+  id: string;
+  text: string;
+  detectedAt: number;
+  sourceEntryId: string;
+}
+
+// ── Week Review (ff_journal_merge) ──────────────────────────────────────────
+export interface WeekReviewDay {
+  date: string;     // YYYY-MM-DD
+  oneLiner: string; // single-sentence pulled/derived from the day's summary
+}
+
+export interface WeekReview {
+  weekStart: string;   // YYYY-MM-DD (Monday)
+  weekEnd: string;     // YYYY-MM-DD (Sunday)
+  reflection: string;  // 4–6 sentence prose reflection across the week
+  days: WeekReviewDay[];
+  generatedAt: number;
+  entryCount: number;
 }
 
 export interface FeedSelection {

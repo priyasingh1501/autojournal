@@ -1,5 +1,6 @@
 import { claudeProxy } from './AIProxy';
 import { StorageService } from './StorageService';
+import { saveInsightSnapshot } from './InsightSnapshotService';
 import {
   WhoYouAreAnalysis, WhatYouCareAboutAnalysis,
   HowYouThinkAnalysis, YourStoryAnalysis, ArcType,
@@ -254,14 +255,26 @@ export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAre
     if (!isStale(cached, currentCount, FRESHNESS.you)) return cached!;
   }
   const { text, dates } = await buildContext(FRESHNESS.you.windowDays);
-  const raw = await callClaude(
+  let raw = await callClaude(
     WHO_SYSTEM,
     `Here are the journal entries:\n\n${text}\n\nPlease write the character portrait.`,
-    1400,
+    1600,
   );
   let parsed: any;
-  try { parsed = JSON.parse(extractJson(raw)); }
-  catch { throw new Error(`Parse error (Who You Are). Raw: ${raw.slice(0, 200)}`); }
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    try {
+      raw = await callClaude(
+        WHO_SYSTEM,
+        `Here are the journal entries:\n\n${text}\n\nPlease write the character portrait. Be concise — keep all string values under 25 words each.`,
+        1600,
+      );
+      parsed = JSON.parse(extractJson(raw));
+    } catch {
+      throw new Error(`Parse error (Who You Are). Raw: ${raw.slice(0, 200)}`);
+    }
+  }
 
   const result: WhoYouAreAnalysis = {
     generatedAt: Date.now(),
@@ -274,6 +287,7 @@ export async function generateWhoYouAre(forceRefresh = false): Promise<WhoYouAre
     sourceEntries: parsed.sourceEntries ?? dates.slice(0, 6),
   };
   await StorageService.saveWhoYouAre(result);
+  saveInsightSnapshot('who', result).catch(() => {}); // fire-and-forget
   return result;
 }
 
@@ -320,14 +334,26 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
     if (!isStale(cached, currentCount, FRESHNESS.values)) return cached!;
   }
   const { text, dates } = await buildContext(FRESHNESS.values.windowDays);
-  const raw = await callClaude(
+  let raw = await callClaude(
     VALUES_SYSTEM,
     `Here are the journal entries:\n\n${text}\n\nPlease map what the writer actually cares about.`,
-    1100,
+    1400,
   );
   let parsed: any;
-  try { parsed = JSON.parse(extractJson(raw)); }
-  catch { throw new Error(`Parse error (Values). Raw: ${raw.slice(0, 200)}`); }
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    try {
+      raw = await callClaude(
+        VALUES_SYSTEM,
+        `Here are the journal entries:\n\n${text}\n\nPlease map what the writer actually cares about. Be concise — keep all string values under 25 words each.`,
+        1400,
+      );
+      parsed = JSON.parse(extractJson(raw));
+    } catch {
+      throw new Error(`Parse error (Values). Raw: ${raw.slice(0, 200)}`);
+    }
+  }
 
   const result: WhatYouCareAboutAnalysis = {
     generatedAt: Date.now(),
@@ -339,6 +365,7 @@ export async function generateWhatYouCare(forceRefresh = false): Promise<WhatYou
     sourceEntries: parsed.sourceEntries ?? dates.slice(0, 6),
   };
   await StorageService.saveWhatYouCare(result);
+  saveInsightSnapshot('values', result).catch(() => {}); // fire-and-forget
   return result;
 }
 
@@ -440,14 +467,27 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
     if (!isStale(cached, currentCount, FRESHNESS.thinking)) return cached!;
   }
   const { text, dates } = await buildThinkingContext();
-  const raw = await callClaude(
+  let raw = await callClaude(
     THINK_SYSTEM,
     `Here are the journal entries — processed summaries, raw voice notes, and written notes:\n\n${text}\n\nPlease map how the writer thinks. Use voice notes for Systems vs Stories and Resolves vs Sits With. Use written notes for Zoomed In vs Out and Internal vs External. Note any meaningful gap between how they think out loud vs how they write.`,
-    1100,
+    1600,
   );
   let parsed: any;
-  try { parsed = JSON.parse(extractJson(raw)); }
-  catch { throw new Error(`Parse error (How You Think). Raw: ${raw.slice(0, 200)}`); }
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    // First attempt failed — retry with a tighter prompt that produces less prose
+    try {
+      raw = await callClaude(
+        THINK_SYSTEM,
+        `Here are the journal entries:\n\n${text}\n\nMap how the writer thinks. Be concise — keep all string values under 25 words each.`,
+        1600,
+      );
+      parsed = JSON.parse(extractJson(raw));
+    } catch {
+      throw new Error(`Parse error (How You Think). Raw: ${raw.slice(0, 200)}`);
+    }
+  }
 
   const result: HowYouThinkAnalysis = {
     generatedAt: Date.now(),
@@ -459,6 +499,7 @@ export async function generateHowYouThink(forceRefresh = false): Promise<HowYouT
     repeatingLoops:    parsed.repeatingLoops    ?? [],
   };
   await StorageService.saveHowYouThink(result);
+  saveInsightSnapshot('thinking', result).catch(() => {}); // fire-and-forget
   return result;
 }
 
@@ -537,14 +578,26 @@ export async function generateYourStory(forceRefresh = false): Promise<YourStory
   const { text, dates } = await buildLongContext();
   const arcHistory = await StorageService.getArcHistory();
 
-  const raw = await callClaude(
+  let raw = await callClaude(
     STORY_SYSTEM,
     `Here are the journal entries:\n\n${text}\n\nPlease write the writer's story.`,
-    1200,
+    1600,
   );
   let parsed: any;
-  try { parsed = JSON.parse(extractJson(raw)); }
-  catch { throw new Error(`Parse error (Your Story). Raw: ${raw.slice(0, 200)}`); }
+  try {
+    parsed = JSON.parse(extractJson(raw));
+  } catch {
+    try {
+      raw = await callClaude(
+        STORY_SYSTEM,
+        `Here are the journal entries:\n\n${text}\n\nPlease write the writer's story. Be concise — keep all string values under 25 words each.`,
+        1600,
+      );
+      parsed = JSON.parse(extractJson(raw));
+    } catch {
+      throw new Error(`Parse error (Your Story). Raw: ${raw.slice(0, 200)}`);
+    }
+  }
 
   // Maintain arc history — append if type changed
   const newType = parsed.arcPattern?.type as ArcType;
@@ -577,5 +630,6 @@ export async function generateYourStory(forceRefresh = false): Promise<YourStory
     sourceEntries: parsed.sourceEntries ?? dates.slice(0, 6),
   };
   await StorageService.saveYourStory(result);
+  saveInsightSnapshot('story', result).catch(() => {}); // fire-and-forget
   return result;
 }

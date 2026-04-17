@@ -21,7 +21,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { WisdomShort } from '../types';
+import { WisdomShort, JournalSignal } from '../types';
 import { getCachedImageUri, generateAndCacheImage } from '../services/WisdomImageService';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -76,10 +76,31 @@ interface Props {
   onReflect: (short: WisdomShort) => void;
   onShare:   (short: WisdomShort) => void;
   onRead?:   (short: WisdomShort) => void;
+  journalSignal?: JournalSignal | null;
+}
+
+function getBecauseTopic(short: WisdomShort, signal: JournalSignal | null | undefined): string | null {
+  if (!signal) return null;
+  // Prefer an exact intersection with the short's own tags
+  for (const e of signal.emotional_states) {
+    if (short.emotional_states.includes(e)) return `feeling ${e}`;
+  }
+  for (const c of signal.cognitive_patterns) {
+    if (short.cognitive_patterns.includes(c)) return c;
+  }
+  for (const t of signal.themes) {
+    if (short.themes.includes(t)) return t;
+  }
+  // No exact match — fall back to the most prominent signal topic so every
+  // card still shows the label when a journal signal is present
+  if (signal.emotional_states.length > 0) return `feeling ${signal.emotional_states[0]}`;
+  if (signal.cognitive_patterns.length > 0) return signal.cognitive_patterns[0];
+  if (signal.themes.length > 0) return signal.themes[0];
+  return null;
 }
 
 export default function ShortCard({
-  short, isSaved, onSave, onUnsave, onReflect, onShare, onRead,
+  short, isSaved, onSave, onUnsave, onReflect, onShare, onRead, journalSignal,
 }: Props) {
   const [imageUri,     setImageUri]     = useState<string | null>(short.imageUri ?? null);
   const [generating,   setGenerating]   = useState(false);
@@ -91,6 +112,7 @@ export default function ShortCard({
 
   const accent = accentFor(short.source_author);
   const gradientColors = DEPTH_GRADIENT[short.depth] ?? DEPTH_GRADIENT.mid;
+  const becauseTopic = getBecauseTopic(short, journalSignal);
 
   // ── Load / generate image ─────────────────────────────────────────────────
 
@@ -237,6 +259,16 @@ export default function ShortCard({
         {/* Title */}
         <Text style={styles.title}>{short.title.toUpperCase()}</Text>
 
+        {/* Because you talked about... */}
+        {becauseTopic && (
+          <View style={styles.becauseRow}>
+            <Feather name="book-open" size={10} color="rgba(152,212,250,0.45)" />
+            <Text style={styles.becauseText}>
+              Because you talked about <Text style={styles.becauseTopic}>{becauseTopic}</Text>
+            </Text>
+          </View>
+        )}
+
         {/* Gold separator */}
         <View style={[styles.titleSeparator, { backgroundColor: accent }]} />
 
@@ -249,11 +281,6 @@ export default function ShortCard({
             </Text>
           </TouchableOpacity>
         )}
-
-        {/* Pull quote — warm golden to match the luminous image palette */}
-        <View style={styles.pullWrap}>
-          <Text style={styles.pullText}>"{short.pullquote}"</Text>
-        </View>
 
         {/* Theme chips */}
         {short.themes.length > 0 && (
@@ -490,6 +517,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'GillSans-Light',
     color: 'rgba(255,255,255,0.52)',
+  },
+
+  becauseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 10,
+  },
+  becauseText: {
+    fontSize: 11,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.45)',
+    fontStyle: 'italic',
+  },
+  becauseTopic: {
+    color: 'rgba(152,212,250,0.72)',
+    fontStyle: 'italic',
   },
 
   divider: {

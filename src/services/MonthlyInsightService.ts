@@ -117,7 +117,7 @@ Rules for spendCategories: include only categories actually mentioned in the ent
 
 function buildPrompt(summaries: DailySummary[], monthStart: string, monthEnd: string): string {
   const dayLines = summaries
-    .map(s => `--- ${s.date} ---\n${s.summary}`)
+    .map(s => `--- ${s.date} ---\n${s.insightText ?? s.summary}`)
     .join('\n\n');
 
   return `Here are my journal summaries from this month (${monthStart} to ${monthEnd}).
@@ -159,7 +159,7 @@ export async function generateMonthlyInsight(
   const prompt = buildPrompt(summaries, monthStart, monthEnd);
 
   const response = await claudeProxy.messages.create({
-    model: 'claude-opus-4-5',
+    model: 'claude-sonnet-4-6',  // sonnet is sufficient for monthly insights
     max_tokens: 2200,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: prompt }],

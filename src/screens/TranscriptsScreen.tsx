@@ -4,6 +4,7 @@ import {
   View,
   Text,
   SectionList,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   TextInput,
@@ -48,9 +49,39 @@ type JournalItem =
 
 type DaySection = { date: string; title: string; data: JournalItem[] };
 
+type FilterKey = 'spend' | 'food' | 'workout' | 'meditation';
+
+const FILTERS: { key: FilterKey; label: string; icon: string; pattern: RegExp }[] = [
+  {
+    key: 'spend',
+    label: 'Spend',
+    icon: 'credit-card',
+    pattern: /[₹$£€]|\b(spent|spend|paid|pay|bought|buy|ordered|order|cost|costs|charged|charge|fee|bill|receipt|purchase|expense|rupees?|rs\.?|inr|bucks?|grand)\b/i,
+  },
+  {
+    key: 'food',
+    label: 'Food',
+    icon: 'coffee',
+    pattern: /\b(ate|eat|eating|food|meal|lunch|dinner|breakfast|snack|drink|coffee|tea|restaurant|cook|cooking|cooked|calories?|protein|carbs?|diet|nutrition|hungry|hunger|roti|sabzi|dal|rice|biryani|pizza|burger|salad)\b/i,
+  },
+  {
+    key: 'workout',
+    label: 'Workout',
+    icon: 'activity',
+    pattern: /\b(workout|exercise|gym|run|running|ran|walk|walked|walking|jog|jogging|lift|lifting|weights?|strength|cardio|yoga|cycling|swim|swimming|hiit|sets?|reps?|push.?up|pull.?up|squat|deadlift|bench|trained|training|steps?)\b/i,
+  },
+  {
+    key: 'meditation',
+    label: 'Meditation',
+    icon: 'wind',
+    pattern: /\b(meditat|meditation|meditated|mindful|mindfulness|breath|breathing|breathwork|calm|relax|relaxed|relaxation|gratitude|journal|reflect|reflection|intention|mantra|visuali[sz]|affirmation|anxiety relief|stress relief|present|presence|aware|awareness)\b/i,
+  },
+];
+
 export default function TranscriptsScreen() {
   const [sections, setSections]         = useState<DaySection[]>([]);
   const [search, setSearch]             = useState('');
+  const [activeFilter, setActiveFilter] = useState<FilterKey | null>(null);
   const [selectMode, setSelectMode]     = useState(false);
   const [selected, setSelected]         = useState<Set<string>>(new Set());
   const [loading, setLoading]           = useState(false);
@@ -112,20 +143,33 @@ export default function TranscriptsScreen() {
   };
 
   const filteredSections = useMemo(() => {
-    if (!search.trim()) return sections;
-    const q = search.toLowerCase();
+    const filterDef = activeFilter ? FILTERS.find(f => f.key === activeFilter) : null;
+    const q = search.trim().toLowerCase();
+
     return sections
       .map((s) => ({
         ...s,
         data: s.data.filter((item) => {
-          if (item.kind === 'transcript' || item.kind === 'manual') {
-            return item.data.text.toLowerCase().includes(q);
+          const text = item.kind !== 'clip' ? (item.data as TranscriptEntry).text : '';
+
+          // Search filter
+          if (q) {
+            const matchesSearch = text.toLowerCase().includes(q) ||
+              formatTime(item.data.timestamp).includes(q);
+            if (!matchesSearch) return false;
           }
-          return formatTime(item.data.timestamp).includes(q);
+
+          // Category filter
+          if (filterDef) {
+            if (item.kind === 'clip') return false; // clips have no text
+            return filterDef.pattern.test(text);
+          }
+
+          return true;
         }),
       }))
       .filter((s) => s.data.length > 0);
-  }, [sections, search]);
+  }, [sections, search, activeFilter]);
 
   // ── Select mode ────────────────────────────────────────────────────────────
   const toggleSelect = (id: string) => {
@@ -372,6 +416,37 @@ export default function TranscriptsScreen() {
         )}
       </View>
 
+      {/* Filter chips */}
+      {!selectMode && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+          style={styles.filterWrap}
+        >
+          {FILTERS.map(f => {
+            const active = activeFilter === f.key;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.filterChip, active && styles.filterChipActive]}
+                onPress={() => setActiveFilter(active ? null : f.key)}
+                activeOpacity={0.75}
+              >
+                <Feather
+                  name={f.icon as any}
+                  size={11}
+                  color={active ? '#0a1223' : 'rgba(152,212,250,0.70)'}
+                />
+                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
       {/* Select-mode toolbar */}
       {selectMode && (
         <View style={styles.selectBar}>
@@ -400,7 +475,9 @@ export default function TranscriptsScreen() {
         stickySectionHeadersEnabled
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {search ? 'No results found' : 'No recordings yet'}
+            {search || activeFilter
+              ? `No notes match${activeFilter ? ` "${FILTERS.find(f=>f.key===activeFilter)?.label}"` : ''}${search ? ` "${search}"` : ''}`
+              : 'No recordings yet'}
           </Text>
         }
       />
@@ -434,6 +511,31 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: 'rgba(224, 242, 254, 0.95)', fontSize: 14, fontFamily: 'GillSans-Light' },
   actionBtn: { color: 'rgba(152, 212, 250, 0.85)', fontSize: 15, fontWeight: '500', fontFamily: 'GillSans-Light' },
   disabled: { opacity: 0.35 },
+
+  // ── Filter chips ─────────────────────────────────────────────────────────
+  filterWrap: {
+    borderBottomWidth: 1, borderBottomColor: 'rgba(152,212,250,0.07)',
+    flexGrow: 0, flexShrink: 0,
+  },
+  filterRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 10, gap: 8,
+  },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.20)',
+    backgroundColor: 'rgba(152,212,250,0.04)',
+  },
+  filterChipActive: {
+    backgroundColor: 'rgba(152,212,250,0.85)',
+    borderColor: 'rgba(152,212,250,0.85)',
+  },
+  filterChipText: {
+    fontSize: 13, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.75)',
+  },
+  filterChipTextActive: { color: '#0a1223', fontWeight: '600' },
 
   // ── Select bar ────────────────────────────────────────────────────────────
   selectBar: {

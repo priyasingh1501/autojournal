@@ -4,7 +4,7 @@ import {
   LayoutAnimation, UIManager, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { WhoYouAreAnalysis, EnneagramResponse, MotivationEntry } from '../../types';
+import { WhoYouAreAnalysis, EnneagramResponse, MotivationEntry, SelfLabel } from '../../types';
 import { StorageService } from '../../services/StorageService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -48,6 +48,79 @@ const src = StyleSheet.create({
   chipText: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.70)' },
 });
 
+// ── Self Labels ───────────────────────────────────────────────────────────────
+
+const VALENCE_COLOR: Record<string, string> = {
+  positive: 'rgba(110,231,183,0.80)',
+  negative: 'rgba(252,165,165,0.80)',
+  neutral:  'rgba(152,212,250,0.55)',
+};
+
+function SelfLabelsSection({ labels }: { labels: SelfLabel[] }) {
+  if (!labels.length) return null;
+  return (
+    <View style={sl2.wrap}>
+      <Text style={sl2.heading}>Words you use about yourself</Text>
+      <Text style={sl2.sub}>Recurring "I am…" patterns detected in your writing</Text>
+      <View style={sl2.chips}>
+        {labels.map((l, i) => {
+          const color = VALENCE_COLOR[l.valence] ?? VALENCE_COLOR.neutral;
+          return (
+            <View key={i} style={[sl2.chip, { borderColor: color.replace(/[\d.]+\)$/, '0.22)'), backgroundColor: color.replace(/[\d.]+\)$/, '0.05)') }]}>
+              <Text style={[sl2.chipText, { color }]}>{l.label}</Text>
+              <Text style={sl2.chipFreq}>{l.frequency}×</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const sl2 = StyleSheet.create({
+  wrap:     { gap: 10 },
+  heading:  { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', letterSpacing: 0.5, textTransform: 'uppercase' },
+  sub:      { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', lineHeight: 16, marginTop: -4 },
+  chips:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip:     { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
+  chipText: { fontSize: 13, fontFamily: 'GillSans-Light', lineHeight: 18 },
+  chipFreq: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)' },
+});
+
+// ── Motivation Pulse ──────────────────────────────────────────────────────────
+
+const PULSE_COLOR: Record<string, string> = {
+  achievement: 'rgba(94,234,212,0.85)',
+  connection:  'rgba(236,72,153,0.85)',
+  meaning:     'rgba(196,181,253,0.85)',
+  safety:      'rgba(147,197,253,0.85)',
+};
+const PULSE_BG: Record<string, string> = {
+  achievement: 'rgba(94,234,212,0.07)',
+  connection:  'rgba(236,72,153,0.07)',
+  meaning:     'rgba(196,181,253,0.07)',
+  safety:      'rgba(147,197,253,0.07)',
+};
+
+function MotivationPulse({ pulse, rationale }: { pulse: string; rationale: string }) {
+  const color = PULSE_COLOR[pulse] ?? 'rgba(224,242,254,0.70)';
+  const bg    = PULSE_BG[pulse]    ?? 'rgba(152,212,250,0.05)';
+  return (
+    <View style={[mp.card, { backgroundColor: bg, borderColor: color.replace(/[\d.]+\)$/, '0.20)') }]}>
+      <Text style={mp.label}>What's pulling you right now</Text>
+      <Text style={[mp.pulse, { color }]}>{pulse.charAt(0).toUpperCase() + pulse.slice(1)}</Text>
+      <Text style={mp.rationale}>{rationale}</Text>
+    </View>
+  );
+}
+
+const mp = StyleSheet.create({
+  card:      { borderRadius: 14, borderWidth: 1, padding: 14, gap: 6 },
+  label:     { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', textTransform: 'uppercase', letterSpacing: 0.4 },
+  pulse:     { fontSize: 22, fontFamily: 'Baskerville', fontWeight: '500' },
+  rationale: { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.65)', lineHeight: 19 },
+});
+
 // ── Enneagram hypothesis card ─────────────────────────────────────────────────
 
 const ENNEAGRAM_NAMES: Record<number, string> = {
@@ -69,7 +142,7 @@ function EnneagramCard({
   const confirmed = response?.response === 'confirmed' || response?.response === 'partly';
   return (
     <View style={eg.card}>
-      <Text style={eg.headline}>Enneagram Hypothesis</Text>
+      <Text style={eg.headline}>How you're wired</Text>
       <Text style={eg.sub}>Based on patterns in my entries — unconfirmed. Does this feel true?</Text>
 
       {enneagram.types.map(t => (
@@ -163,6 +236,18 @@ const DRIVER_META: Record<string, { icon: string; color: string }> = {
   pleasure: { icon: 'sun',      color: 'rgba(252,165,165,0.85)' },
 };
 
+/** What the user actually avoids — the opposite/fear side of each driver. */
+const AVOIDANCE_LABEL: Record<string, string> = {
+  status:   'Irrelevance',
+  security: 'Instability',
+  freedom:  'Being controlled',
+  love:     'Rejection',
+  mastery:  'Incompetence',
+  control:  'Chaos',
+  meaning:  'Purposelessness',
+  pleasure: 'Discomfort',
+};
+
 function DriverRow({ entry }: { entry: MotivationEntry }) {
   const meta  = DRIVER_META[entry.driver] ?? { icon: 'circle', color: 'rgba(152,212,250,0.60)' };
   const isAway = entry.type === 'away';
@@ -177,7 +262,11 @@ function DriverRow({ entry }: { entry: MotivationEntry }) {
       </View>
       <View style={md.info}>
         <View style={md.labelRow}>
-          <Text style={md.driverName}>{entry.driver.charAt(0).toUpperCase() + entry.driver.slice(1)}</Text>
+          <Text style={md.driverName}>
+            {isAway
+              ? (AVOIDANCE_LABEL[entry.driver] ?? entry.driver.charAt(0).toUpperCase() + entry.driver.slice(1))
+              : entry.driver.charAt(0).toUpperCase() + entry.driver.slice(1)}
+          </Text>
           <Text style={[md.badge, isAway ? md.badgeAway : md.badgeToward]}>
             {isAway ? 'avoids' : 'moves toward'}
           </Text>
@@ -197,19 +286,19 @@ function MotivationSection({ drivers }: { drivers: MotivationEntry[] }) {
 
   return (
     <View style={md.card}>
-      <Text style={md.headline}>Motivation & Avoidance</Text>
+      <Text style={md.headline}>What moves you</Text>
       <Text style={md.sub}>What pulls you forward and what you instinctively move away from</Text>
 
       {toward.length > 0 && (
         <View style={md.group}>
-          <Text style={md.groupLabel}>MOVES TOWARD</Text>
+          <Text style={md.groupLabel}>moves toward</Text>
           {toward.map((d, i) => <DriverRow key={i} entry={d} />)}
         </View>
       )}
 
       {away.length > 0 && (
         <View style={md.group}>
-          <Text style={md.groupLabel}>AVOIDS</Text>
+          <Text style={md.groupLabel}>avoids</Text>
           {away.map((d, i) => <DriverRow key={i} entry={d} />)}
         </View>
       )}
@@ -243,9 +332,12 @@ interface Props {
   enneagramResponse: EnneagramResponse | null;
   onEnneagramRespond: (r: EnneagramResponse) => void;
   onJump?: (date: string) => void;
+  selfLabels?: SelfLabel[];
+  motivationPulse?: string;
+  motivationRationale?: string;
 }
 
-export default function WhoYouAreTab({ data, enneagramResponse, onEnneagramRespond, onJump }: Props) {
+export default function WhoYouAreTab({ data, enneagramResponse, onEnneagramRespond, onJump, selfLabels, motivationPulse, motivationRationale }: Props) {
   const handleRespond = async (typeId: number, response: 'confirmed' | 'partly' | 'rejected') => {
     const r: EnneagramResponse = { typeId, response, date: new Date().toISOString().split('T')[0] };
     await StorageService.saveEnneagramResponse(r);
@@ -254,7 +346,10 @@ export default function WhoYouAreTab({ data, enneagramResponse, onEnneagramRespo
 
   return (
     <View style={s.root}>
-      {/* Enneagram — top */}
+      {/* Self labels — moved here from Story tab */}
+      {selfLabels?.length ? <SelfLabelsSection labels={selfLabels} /> : null}
+
+      {/* Enneagram */}
       <EnneagramCard
         enneagram={data.enneagram}
         response={enneagramResponse}
@@ -263,15 +358,20 @@ export default function WhoYouAreTab({ data, enneagramResponse, onEnneagramRespo
         onJump={onJump}
       />
 
-      {/* Motivation & Avoidance Drivers */}
+      {/* What moves you — drivers */}
       {data.motivationDrivers?.length ? (
         <MotivationSection drivers={data.motivationDrivers} />
       ) : (
         <View style={s.pending}>
           <Feather name="clock" size={12} color="rgba(152,212,250,0.30)" />
-          <Text style={s.pendingText}>Motivation drivers — generating from your entries…</Text>
+          <Text style={s.pendingText}>What moves you — generating from your entries…</Text>
         </View>
       )}
+
+      {/* Motivation pulse — moved here from Values tab */}
+      {motivationPulse && motivationRationale ? (
+        <MotivationPulse pulse={motivationPulse} rationale={motivationRationale} />
+      ) : null}
 
       {/* Global source */}
       <SourceExpand dates={data.sourceEntries} onJump={onJump} />

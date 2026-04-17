@@ -48,6 +48,7 @@ const ENABLED_KEY  = 'wellbeing_enabled';
 const EVENTS_KEY   = 'wellbeing_events';
 const REENTRY_KEY  = 'wellbeing_reentry';
 const LOG_KEY      = 'wellbeing_log';
+const FP_KEY       = 'wellbeing_false_positives'; // array of unix timestamps
 
 // ── Logging ────────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,39 @@ async function saveDistressEvent(event: DistressEvent): Promise<void> {
   // Cap at 90 events (≈3 months of daily journaling)
   if (all.length > 90) all = all.slice(-90);
   await AsyncStorage.setItem(EVENTS_KEY, JSON.stringify(all));
+}
+
+// ── False-positive feedback & per-user threshold calibration ──────────────────
+
+/**
+ * Record that the user dismissed a wellbeing alert as a false positive
+ * ("I was just venting"). Used to calibrate the Tier 2 threshold upward
+ * so that repeat false positives become progressively less likely.
+ */
+export async function recordFalsePositive(): Promise<void> {
+  try {
+    const json = await AsyncStorage.getItem(FP_KEY);
+    let timestamps: number[] = json ? JSON.parse(json) : [];
+    timestamps.push(Date.now());
+    // Keep only last 30 days to avoid unbounded growth
+    const cutoff = Date.now() - 30 * 86_400_000;
+    timestamps = timestamps.filter(t => t > cutoff);
+    await AsyncStorage.setItem(FP_KEY, JSON.stringify(timestamps));
+  } catch { /* never throw */ }
+}
+
+async function getRecentFalsePositiveCount(days = 14): Promise<number> {
+  const json = await AsyncStorage.getItem(FP_KEY);
+  const timestamps: number[] = json ? JSON.parse(json) : [];
+  const cutoff = Date.now() - days * 86_400_000;
+  return timestamps.filter(t => t > cutoff).length;
+}
+
+async function getLastFalsePositiveTimestamp(): Promise<number | null> {
+  const json = await AsyncStorage.getItem(FP_KEY);
+  const timestamps: number[] = json ? JSON.parse(json) : [];
+  if (timestamps.length === 0) return null;
+  return Math.max(...timestamps);
 }
 
 // ── Re-entry check-in ──────────────────────────────────────────────────────────
@@ -310,6 +344,26 @@ Return ONLY valid JSON: {"tier":1|2|3}`,
           }
         }
       } catch { /* confirmation is best-effort — keep original tier */ }
+    }
+
+    // ── Per-user calibration ─────────────────────────────────────────────────
+    // If the user has dismissed ≥2 Tier 2 alerts as false positives in the last
+    // 14 days, raise their effective threshold from 40 → 55. This means their
+    // scores need to be more clearly distressed before we interrupt them.
+    const [fpCount, lastFpTs] = await Promise.all([
+      getRecentFalsePositiveCount(14),
+      getLastFalsePositiveTimestamp(),
+    ]);
+    const userTier2Threshold = fpCount >= 2 ? 55 : 40;
+    if (tier === 2 && score < userTier2Threshold) {
+      tier = 1;
+    }
+
+    // Never fire Tier 3 within 24 h of the user marking a false positive.
+    // A Tier 3 appearing the morning after someone said "I was just venting"
+    // destroys trust and desensitises them to real future alerts.
+    if (tier === 3 && lastFpTs !== null && (Date.now() - lastFpTs) < 86_400_000) {
+      tier = 2;
     }
 
     const analysis: WellbeingAnalysis = { tier, score };

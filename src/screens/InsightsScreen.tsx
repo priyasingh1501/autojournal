@@ -13,6 +13,7 @@ import {
   NOT_ENOUGH_DATA, FRESHNESS,
 } from '../services/InsightV2Service';
 import InsightFreshnessBadge from '../components/insights/InsightFreshnessBadge';
+import { track } from '../services/AnalyticsService';
 import { StorageService } from '../services/StorageService';
 import { SubscriptionService } from '../services/SubscriptionService';
 import PaywallModal from '../components/PaywallModal';
@@ -30,12 +31,11 @@ import YourStoryTab          from '../components/insights/YourStoryTab';
 
 type TabKey = 'you' | 'values' | 'thinking' | 'story';
 
-// Ordered by update frequency — most dynamic first
 const TABS: { key: TabKey; label: string; icon: string; full: string; sub: string }[] = [
-  { key: 'values',   label: 'Values',   icon: 'heart',   full: 'What You Care About',  sub: 'Values · Motivation'  }, // 10 entries / 14d
-  { key: 'you',      label: 'Me',       icon: 'user',    full: 'Who You Are',          sub: 'Big Five · Enneagram' }, // 20 entries / 30d
-  { key: 'thinking', label: 'Thinking', icon: 'cpu',     full: 'How You Think',        sub: 'Cognitive styles'     }, // 25 entries / 30d
-  { key: 'story',    label: 'Story',    icon: 'book',    full: 'Your Story',           sub: 'Chapter · Arc'        }, // 30 entries / 30d
+  { key: 'story',    label: 'My Story',     icon: 'book',  full: 'My Story',        sub: 'Chapter · Arc'          }, // 30 entries / 30d
+  { key: 'you',      label: 'Who I Am',     icon: 'user',  full: 'Who I Am',        sub: 'Identity · Enneagram'   }, // 20 entries / 30d
+  { key: 'values',   label: 'What I Value', icon: 'heart', full: 'What I Value',    sub: 'Values · What I focus on'}, // 10 entries / 14d
+  { key: 'thinking', label: 'How I Think',  icon: 'cpu',   full: 'How I Think',     sub: 'Cognitive styles'       }, // 25 entries / 30d
 ];
 
 // ── Empty / error states ───────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ const es = StyleSheet.create({
 
 export default function InsightsScreen() {
   const navigation = useNavigation<any>();
-  const [activeTab, setActiveTab] = useState<TabKey>('values');
+  const [activeTab, setActiveTab] = useState<TabKey>('story');
   const scrollRef = useRef<ScrollView>(null);
 
   const [currentEntryCount, setCurrentEntryCount] = useState(0);
@@ -146,10 +146,12 @@ export default function InsightsScreen() {
       setShowPaywall(true);
       return;
     }
+    track('insight_generated', { tab });
     generate(tab);
   };
 
   const switchTab = (tab: TabKey) => {
+    track('insight_tab_viewed', { tab });
     setActiveTab(tab);
     scrollRef.current?.scrollTo({ y: 0, animated: false });
     // Try cache silently on first visit
@@ -246,6 +248,9 @@ export default function InsightsScreen() {
                       enneagramResponse={enneagramResp}
                       onEnneagramRespond={setEnneagramResp}
                       onJump={handleJump}
+                      selfLabels={storyData?.selfLabels}
+                      motivationPulse={valuesData?.motivationPulse}
+                      motivationRationale={valuesData?.motivationRationale}
                     />
                   </>
                 : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => gatedGenerate('you')} />
@@ -276,7 +281,10 @@ export default function InsightsScreen() {
                       onRefresh={() => gatedGenerate('thinking')}
                       refreshing={!!loading['thinking']}
                     />
-                    <HowYouThinkTab data={thinkData} onJump={handleJump} />
+                    <HowYouThinkTab
+                      data={thinkData}
+                      onJump={handleJump}
+                    />
                   </>
                 : <EmptyState noData={tabNoData} loading={isLoading} onGenerate={() => gatedGenerate('thinking')} />
             )}

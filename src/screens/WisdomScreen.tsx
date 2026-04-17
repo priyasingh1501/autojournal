@@ -9,7 +9,7 @@
  *     while the mood is selected; reverts when cleared.
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -24,15 +24,23 @@ import {
 } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-import { useFocusEffect } from '@react-navigation/native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect, useRoute } from '@react-navigation/native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 
-import { WisdomShort, JournalSignal, TranscriptEntry } from '../types';
+import { WisdomShort, JournalSignal, TranscriptEntry, LoopState } from '../types';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
 import { StorageService } from '../services/StorageService';
-import { buildFeed, flattenFeed, MOODS, Mood, extractJournalSignal } from '../services/WisdomService';
+import { FeatureFlagsService } from '../services/FeatureFlagsService';
+import {
+  buildFeed, flattenFeed, MOODS, Mood, extractJournalSignal,
+  computeLoopState, pickShortForPlacement,
+} from '../services/WisdomService';
+import { getCachedReport } from '../services/PatternsService';
 import { getShortsLibrary } from '../services/SupabaseService';
+import { track } from '../services/AnalyticsService';
+import { UserContextService } from '../services/UserContextService';
 import ShortCard from '../components/ShortCard';
 import ReflectPromptModal from '../components/ReflectPromptModal';
 import ShareModal from '../components/ShareModal';
@@ -59,6 +67,7 @@ function FilterSheet({
   onClear: () => void;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal
       visible={visible}
@@ -124,7 +133,7 @@ function FilterSheet({
           </TouchableOpacity>
         )}
 
-        <View style={{ height: Platform.OS === 'ios' ? 28 : 16 }} />
+        <View style={{ height: Math.max(16, insets.bottom) }} />
       </View>
     </Modal>
   );
@@ -226,11 +235,13 @@ const sheetStyles = StyleSheet.create({
 });
 
 export default function WisdomScreen() {
+  const route = useRoute<any>();
   const [savedIds, setSavedIds]               = useState<Set<string>>(new Set());
   const [seenIds, setSeenIds]                 = useState<Set<string>>(new Set());
   const [journalSignal, setJournalSignal]     = useState<JournalSignal | null>(null);
   const [selectedMoodId, setSelectedMoodId]   = useState<string | null>(null);
   const [selectedEmotion, setSelectedEmotion] = useState<string | null>(null);
+  const [becauseFilter, setBecauseFilter]     = useState<{ signal: JournalSignal; label: string } | null>(null);
   const [showSaved, setShowSaved]             = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [reflectShort, setReflectShort]       = useState<WisdomShort | null>(null);
@@ -238,6 +249,10 @@ export default function WisdomScreen() {
   const [customShorts, setCustomShorts]       = useState<WisdomShort[]>([]);
   // Supabase library — starts with bundled shorts for instant display, refreshes from remote
   const [remoteLibrary, setRemoteLibrary]     = useState<WisdomShort[]>(SHORTS_LIBRARY);
+  // Stance / loop state (ff_new_minds_system)
+  const [stanceEnabled, setStanceEnabled]     = useState(false);
+  const [loopState, setLoopState]             = useState<LoopState>('fresh');
+  const [forYouToday, setForYouToday]         = useState<WisdomShort | null>(null);
   // Pagination
   const [currentIndex, setCurrentIndex]       = useState(0);
   const currentIndexRef                       = useRef(0);
@@ -257,31 +272,32 @@ export default function WisdomScreen() {
     useCallback(() => {
       let active = true;
       (async () => {
-        const [saved, seen, sig, customs] = await Promise.all([
+        const [saved, seen, sig, customs, flagOn] = await Promise.all([
           StorageService.getSavedShorts(),
           StorageService.getSeenShortIds(),
           StorageService.getJournalSignal(),
           StorageService.getCustomShorts(),
+          FeatureFlagsService.getFlag('ff_new_minds_system'),
         ]);
         if (!active) return;
         setSavedIds(new Set(saved.map(s => s.shortId)));
         setSeenIds(new Set(seen));
         setCustomShorts(customs);
+        setStanceEnabled(flagOn);
 
         const SIGNAL_TTL = 24 * 60 * 60 * 1000; // 24 hours
         const signalStale = !sig?.extractedAt || (Date.now() - sig.extractedAt > SIGNAL_TTL);
 
         if (sig && !signalStale) {
-          // Fresh signal — use immediately
           setJournalSignal(sig);
         } else {
-          // Stale or missing — use what we have (may be null) and refresh in background
           setJournalSignal(sig);
           const summaries = await StorageService.getSummaryDates();
           if (summaries.length > 0 && active) {
             const latest = await StorageService.getSummaryForDate(summaries[0]);
-            if (latest?.summary && active) {
-              extractJournalSignal(latest.summary)
+            const latestText = latest?.insightText ?? latest?.summary;
+            if (latestText && active) {
+              extractJournalSignal(latestText)
                 .then(fresh => { if (active && fresh) setJournalSignal(fresh); })
                 .catch(() => {});
             }
@@ -293,6 +309,16 @@ export default function WisdomScreen() {
           if (active) setRemoteLibrary(fresh);
         });
         if (active && lib.length > 0) setRemoteLibrary(lib);
+
+        // Stance: derive loop state and pick "For you today" (ff_new_minds_system)
+        if (flagOn) {
+          const report = await getCachedReport();
+          const loop = computeLoopState(report);
+          if (active) setLoopState(loop);
+          const library = lib.length > 0 ? lib : SHORTS_LIBRARY;
+          const today = await pickShortForPlacement('wisdom_tab', sig, loop, library);
+          if (active) setForYouToday(today);
+        }
       })();
       return () => { active = false; };
     }, []),
@@ -317,17 +343,62 @@ export default function WisdomScreen() {
     if (showSaved) {
       return fullLibrary.filter(s => savedIds.has(s.id));
     }
-    const feedSelection = buildFeed(activeSignal, savedIds, seenIds, selectedEmotion ?? undefined, fullLibrary);
-    return flattenFeed(feedSelection);
-  }, [activeSignal, savedIds, seenIds, selectedEmotion, showSaved, fullLibrary]);
+
+    // Because filter: rank the full library using the day's extracted signal so
+    // the cards shown are genuinely related to what was written that day.
+    if (becauseFilter) {
+      const feedSelection = buildFeed(becauseFilter.signal, savedIds, seenIds, undefined, fullLibrary);
+      return flattenFeed(feedSelection);
+    }
+
+    const feedOptions = stanceEnabled
+      ? { loopState, placement: 'wisdom_tab' as const, stanceEnabled: true }
+      : undefined;
+    const feedSelection = buildFeed(
+      activeSignal, savedIds, seenIds, selectedEmotion ?? undefined, fullLibrary, feedOptions,
+    );
+    let flat = flattenFeed(feedSelection);
+
+    // Prepend "For you today" as the first card when the flag is on and not
+    // already at position 0. Deduplicate its occurrence further in the feed.
+    if (stanceEnabled && forYouToday) {
+      flat = [forYouToday, ...flat.filter(s => s.id !== forYouToday.id)];
+    }
+
+    return flat;
+  }, [activeSignal, savedIds, seenIds, selectedEmotion, becauseFilter, showSaved, fullLibrary, stanceEnabled, loopState, forYouToday]);
+
+  // ── Deep-link: scroll to a specific short (from notification tap) ─────────
+  useEffect(() => {
+    const shortId = route.params?.shortId as string | undefined;
+    if (!shortId || feed.length === 0) return;
+    const idx = feed.findIndex(s => s.id === shortId);
+    if (idx !== -1) scrollToIndex(idx, false);
+  }, [route.params?.shortId, feed]);
+
+  // ── Because filter: set from navigation params (e.g. tapping a summary card) ─
+  useEffect(() => {
+    const raw = route.params?.becauseSignal as string | undefined;
+    const label = route.params?.becauseLabel as string | undefined;
+    if (!raw || !label) return;
+    try {
+      const signal = JSON.parse(raw) as JournalSignal;
+      setBecauseFilter({ signal, label });
+      setSelectedEmotion(null);
+      setSelectedMoodId(null);
+      scrollToIndex(0, false);
+    } catch { /* malformed param — ignore */ }
+  }, [route.params?.becauseSignal, route.params?.becauseLabel]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const handleSave = useCallback(async (id: string) => {
+    track('wisdom_short_saved', { short_id: id });
     await StorageService.saveShort(id);
     setSavedIds(prev => new Set([...prev, id]));
   }, []);
 
   const handleUnsave = useCallback(async (id: string) => {
+    track('wisdom_short_unsaved', { short_id: id });
     await StorageService.unsaveShort(id);
     setSavedIds(prev => {
       const next = new Set(prev);
@@ -342,16 +413,23 @@ export default function WisdomScreen() {
   }, []);
 
   const handleReflect = useCallback((short: WisdomShort) => {
+    track('wisdom_short_reflected', { short_id: short.id, author: short.source_author });
+    // Persist last-reflected short so UserContext can surface it in AI chat
+    AsyncStorage.setItem('wisdom_last_reflected', short.id).catch(() => {});
+    UserContextService.invalidate();
     setReflectShort(short);
   }, []);
 
   const handleShare = useCallback((short: WisdomShort) => {
+    track('wisdom_short_shared', { short_id: short.id, author: short.source_author });
     setShareShort(short);
   }, []);
 
   const handleMoodPress = useCallback((mood: Mood) => {
+    track('mood_selected', { mood: mood.id });
     setSelectedMoodId(prev => prev === mood.id ? null : mood.id);
-    setSelectedEmotion(null); // clear emotion filter when mood changes
+    setSelectedEmotion(null);
+    setBecauseFilter(null);
     scrollToIndex(0, false);
   }, [scrollToIndex]);
 
@@ -418,6 +496,23 @@ export default function WisdomScreen() {
       </View>
 
 
+      {/* ── Because filter banner ── */}
+      {becauseFilter && (
+        <View style={styles.becauseBanner}>
+          <Feather name="book-open" size={12} color="rgba(152,212,250,0.65)" />
+          <Text style={styles.becauseBannerText} numberOfLines={1}>
+            Because you talked about{' '}
+            <Text style={styles.becauseBannerTopic}>{becauseFilter.label}</Text>
+          </Text>
+          <TouchableOpacity
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            onPress={() => { setBecauseFilter(null); scrollToIndex(0, false); }}
+          >
+            <Feather name="x" size={13} color="rgba(152,212,250,0.55)" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* ── Paginated feed ── */}
       {feed.length === 0 ? (
         <View style={styles.emptyState}>
@@ -454,24 +549,33 @@ export default function WisdomScreen() {
           ref={flatListRef}
           data={feed}
           keyExtractor={item => item.id}
-          renderItem={({ item }) => (
-            <ScrollView
-              style={{ width: SCREEN_WIDTH }}
-              contentContainerStyle={styles.page}
-              showsVerticalScrollIndicator={false}
-              directionalLockEnabled
-            >
-              <ShortCard
-                short={item}
-                isSaved={savedIds.has(item.id)}
-                onSave={handleSave}
-                onUnsave={handleUnsave}
-                onReflect={handleReflect}
-                onShare={handleShare}
-                onRead={handleRead}
-              />
-            </ScrollView>
-          )}
+          renderItem={({ item, index }) => {
+            const isForYouToday = stanceEnabled && forYouToday?.id === item.id && index === 0;
+            return (
+              <ScrollView
+                style={{ width: SCREEN_WIDTH }}
+                contentContainerStyle={styles.page}
+                showsVerticalScrollIndicator={false}
+                directionalLockEnabled
+              >
+                {isForYouToday && (
+                  <View style={styles.forYouLabel}>
+                    <Text style={styles.forYouLabelText}>For you today</Text>
+                  </View>
+                )}
+                <ShortCard
+                  short={item}
+                  isSaved={savedIds.has(item.id)}
+                  onSave={handleSave}
+                  onUnsave={handleUnsave}
+                  onReflect={handleReflect}
+                  onShare={handleShare}
+                  onRead={handleRead}
+                  journalSignal={becauseFilter?.signal ?? activeSignal}
+                />
+              </ScrollView>
+            );
+          }}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
@@ -552,7 +656,8 @@ export default function WisdomScreen() {
         selectedEmotion={selectedEmotion}
         onSelect={(emotion) => {
           setSelectedEmotion(emotion);
-          setSelectedMoodId(null); // clear mood when filtering by emotion
+          setSelectedMoodId(null);
+          setBecauseFilter(null);
         }}
         onClear={() => setSelectedEmotion(null)}
         onClose={() => setShowFilterSheet(false)}
@@ -704,6 +809,30 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
 
+  // ── For you today label ──
+  forYouLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginHorizontal: 20,
+    marginBottom: 6,
+    marginTop: 2,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.28)',
+    backgroundColor: 'rgba(152,212,250,0.07)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  forYouLabelText: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: 'rgba(152,212,250,0.70)',
+    fontFamily: 'GillSans-Light',
+  },
+
   // ── Bottom nav ──
   navRow: {
     flexDirection: 'row',
@@ -731,6 +860,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(152, 212, 250, 0.60)',
     fontFamily: 'GillSans-Light',
+  },
+
+  becauseBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(152,212,250,0.06)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.18)',
+  },
+  becauseBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.55)',
+    fontStyle: 'italic',
+  },
+  becauseBannerTopic: {
+    color: 'rgba(152,212,250,0.85)',
+    fontStyle: 'italic',
   },
 
   matchBanner: {

@@ -80,7 +80,7 @@ const BIAS_FREQ_COLOR: Record<string, string> = {
 };
 
 function DecisionStyleCard({ data }: { data: HowYouThinkAnalysis['decisionStyle'] }) {
-  if (!data) return <Pending text="Decision style — generating from your entries…" />;
+  if (!data) return <Pending text="How you decide — generating from your entries…" />;
   return (
     <View style={ds.card}>
       <View style={ds.styleRow}>
@@ -104,9 +104,9 @@ function DecisionStyleCard({ data }: { data: HowYouThinkAnalysis['decisionStyle'
 
 const ds = StyleSheet.create({
   card:       { backgroundColor: 'rgba(147,197,253,0.04)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(147,197,253,0.14)', padding: 16, gap: 10 },
-  styleRow:   { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
-  styleLabel: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', textTransform: 'uppercase', letterSpacing: 0.3 },
-  styleName:  { fontSize: 18, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.92)' },
+  styleRow:   { flexDirection: 'row', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' },
+  styleLabel: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', textTransform: 'uppercase', letterSpacing: 0.3, flexShrink: 0 },
+  styleName:  { fontSize: 18, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.92)', flexShrink: 1 },
   desc:       { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.70)', lineHeight: 18 },
   patterns:   { gap: 6, marginTop: 2 },
   patternRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
@@ -115,7 +115,7 @@ const ds = StyleSheet.create({
 });
 
 function BiasCard({ biases }: { biases: BiasPattern[] }) {
-  if (!biases.length) return <Pending text="Bias patterns — generating from your entries…" />;
+  if (!biases.length) return <Pending text="Blind spots — generating from your entries…" />;
   return (
     <View style={bp.card}>
       {biases.map((b, i) => (
@@ -146,6 +146,7 @@ const bp = StyleSheet.create({
 type GaugeItem = { label: string; leftPole: string; rightPole: string; value: number; color: string };
 
 function ExecutionCard({ patterns }: { patterns: ExecutionPatterns }) {
+  const [expanded, setExpanded] = useState(false);
   const gauges: GaugeItem[] = [
     { label: 'Completion',   leftPole: 'More starters',  rightPole: 'More finishers', value: patterns.startsFinishesRatio, color: 'rgba(94,234,212,0.80)' },
     { label: 'Rhythm',       leftPole: 'Burst mode',     rightPole: 'Consistent',     value: patterns.consistencyScore,    color: 'rgba(167,139,250,0.80)' },
@@ -153,12 +154,25 @@ function ExecutionCard({ patterns }: { patterns: ExecutionPatterns }) {
   ];
 
   return (
-    <View style={ep.card}>
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => { LayoutAnimation.easeInEaseOut(); setExpanded(v => !v); }}
+      style={ep.card}
+    >
       {gauges.map((g, i) => {
         const pct = Math.max(4, Math.min(96, g.value));
         return (
           <View key={i} style={[ep.gauge, i < gauges.length - 1 && ep.gaugeBorder]}>
-            <Text style={ep.gaugeLabel}>{g.label}</Text>
+            <View style={ep.gaugeLabelRow}>
+              <Text style={ep.gaugeLabel}>{g.label}</Text>
+              {i === 0 && (
+                <Feather
+                  name={expanded ? 'chevron-up' : 'chevron-down'}
+                  size={13}
+                  color="rgba(152,212,250,0.30)"
+                />
+              )}
+            </View>
             <View style={ep.track}>
               <View style={[ep.fill, { width: `${pct}%`, backgroundColor: g.color.replace(/[\d.]+\)$/, '0.18)') }]} />
               <View style={[ep.dot, { left: `${pct}%`, backgroundColor: g.color }]} />
@@ -170,7 +184,7 @@ function ExecutionCard({ patterns }: { patterns: ExecutionPatterns }) {
           </View>
         );
       })}
-      {patterns.observations.length > 0 && (
+      {expanded && patterns.observations.length > 0 && (
         <View style={ep.obsWrap}>
           {patterns.observations.map((o, i) => (
             <View key={i} style={ep.obsRow}>
@@ -180,7 +194,7 @@ function ExecutionCard({ patterns }: { patterns: ExecutionPatterns }) {
           ))}
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -188,6 +202,7 @@ const ep = StyleSheet.create({
   card:        { backgroundColor: 'rgba(94,234,212,0.03)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(94,234,212,0.12)', padding: 16, gap: 0 },
   gauge:       { paddingVertical: 12, gap: 6 },
   gaugeBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(152,212,250,0.07)' },
+  gaugeLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   gaugeLabel:  { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)' },
   track:       { height: 8, borderRadius: 4, backgroundColor: 'rgba(152,212,250,0.08)', position: 'relative', overflow: 'visible' },
   fill:        { height: '100%', borderRadius: 4, position: 'absolute', left: 0, top: 0 },
@@ -219,7 +234,14 @@ function DimensionSlider({ dim, color, onJump }: { dim: CognitiveDimension; colo
       style={[sl2.card, { borderColor: color.replace(/[\d.]+\)$/, '0.14)') }]}
       activeOpacity={0.85}
     >
-      <Text style={sl2.name}>{dim.name}</Text>
+      <View style={sl2.nameRow}>
+        <Text style={sl2.name}>{dim.name}</Text>
+        <Feather
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={13}
+          color="rgba(152,212,250,0.30)"
+        />
+      </View>
       <View style={sl2.trackWrap}>
         <View style={sl2.track}>
           <View style={[sl2.fillLeft, { width: `${pct}%`, backgroundColor: color.replace(/[\d.]+\)$/, '0.18)') }]} />
@@ -230,18 +252,21 @@ function DimensionSlider({ dim, color, onJump }: { dim: CognitiveDimension; colo
           <Text style={sl2.pole}>{dim.rightLabel}</Text>
         </View>
       </View>
-      <Text style={sl2.observation}>{dim.observation}</Text>
-      {expanded && dim.sourceEntries?.length ? (
-        <SourceExpand dates={dim.sourceEntries} onJump={onJump} />
-      ) : dim.sourceEntries?.length ? (
-        <Text style={sl2.tapHint}>tap to see source entries</Text>
-      ) : null}
+      {expanded && (
+        <>
+          <Text style={sl2.observation}>{dim.observation}</Text>
+          {dim.sourceEntries?.length ? (
+            <SourceExpand dates={dim.sourceEntries} onJump={onJump} />
+          ) : null}
+        </>
+      )}
     </TouchableOpacity>
   );
 }
 
 const sl2 = StyleSheet.create({
   card:        { backgroundColor: 'rgba(152,212,250,0.03)', borderRadius: 16, borderWidth: 1, padding: 16, gap: 10 },
+  nameRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   name:        { fontSize: 13, fontFamily: 'Baskerville', fontWeight: '500', color: 'rgba(224,242,254,0.88)' },
   trackWrap:   { gap: 5 },
   track:       { height: 8, borderRadius: 4, backgroundColor: 'rgba(152,212,250,0.08)', position: 'relative', overflow: 'visible' },
@@ -308,35 +333,35 @@ export default function HowYouThinkTab({ data, onJump }: Props) {
         </Text>
       </View>
 
-      {/* ── 1. Decision making ── */}
+      {/* ── 1. How you decide ── */}
       <View style={s.section}>
-        <SectionLabel text="Decision making style" />
+        <SectionLabel text="How you decide" />
         <DecisionStyleCard data={data.decisionStyle} />
       </View>
 
-      {/* ── 2. Bias patterns ── */}
+      {/* ── 2. Blind spots ── */}
       <View style={s.section}>
-        <SectionLabel text="Bias patterns" />
+        <SectionLabel text="Blind spots" />
         {data.biasPatterns?.length ? (
           <BiasCard biases={data.biasPatterns} />
         ) : (
-          <Pending text="Bias patterns — generating from your entries…" />
+          <Pending text="Blind spots — generating from your entries…" />
         )}
       </View>
 
-      {/* ── 3. Execution patterns (behavioural) ── */}
+      {/* ── 3. From idea to action ── */}
       <View style={s.section}>
-        <SectionLabel text="Execution patterns" />
+        <SectionLabel text="From idea to action" />
         {data.executionPatterns ? (
           <ExecutionCard patterns={data.executionPatterns} />
         ) : (
-          <Pending text="Execution patterns — generating from your entries…" />
+          <Pending text="From idea to action — generating from your entries…" />
         )}
       </View>
 
-      {/* ── 4. Cognitive style (existing sliders) ── */}
+      {/* ── 4. How your mind moves ── */}
       <View style={s.section}>
-        <SectionLabel text="Cognitive style · tap a card to expand" />
+        <SectionLabel text="How your mind moves · tap to expand" />
         {data.dimensions.map((dim, i) => (
           <DimensionSlider
             key={dim.name}
@@ -347,15 +372,15 @@ export default function HowYouThinkTab({ data, onJump }: Props) {
         ))}
       </View>
 
-      {/* ── 5. Repeating loops ── */}
+      {/* ── 5. Patterns you keep returning to ── */}
       <View style={s.section}>
-        <SectionLabel text="Repeating loops" />
+        <SectionLabel text="Patterns you keep returning to" />
         {data.repeatingLoops?.length ? (
           data.repeatingLoops.map((loop, i) => (
             <LoopCard key={i} loop={loop} index={i} />
           ))
         ) : (
-          <Pending text="Repeating loops — generating from your entries…" />
+          <Pending text="Patterns you keep returning to — generating from your entries…" />
         )}
       </View>
 

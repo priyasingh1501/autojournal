@@ -20,6 +20,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SubscriptionService, ProPlan } from '../services/SubscriptionService';
 
 interface Props {
@@ -56,6 +57,7 @@ const PLANS: { key: ProPlan; label: string; price: string; sub: string; badge?: 
 ];
 
 export default function PaywallModal({ visible, onClose, onSuccess, featureHint }: Props) {
+  const insets = useSafeAreaInsets();
   const [selectedPlan, setSelectedPlan] = useState<ProPlan>('annual');
   const [loading, setLoading]           = useState(false);
   const [restoring, setRestoring]       = useState(false);
@@ -108,7 +110,7 @@ export default function PaywallModal({ visible, onClose, onSuccess, featureHint 
           <Feather name="x" size={20} color="rgba(152,212,250,0.55)" />
         </TouchableOpacity>
 
-        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: Math.max(40, insets.bottom + 16) }]} showsVerticalScrollIndicator={false}>
 
           {/* Hero */}
           <View style={s.hero}>
@@ -210,7 +212,7 @@ export default function PaywallModal({ visible, onClose, onSuccess, featureHint 
 const s = StyleSheet.create({
   root:             { flex: 1, backgroundColor: '#02060E' },
   closeBtn:         { position: 'absolute', top: 16, right: 20, zIndex: 10, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  scroll:           { paddingHorizontal: 24, paddingTop: 52, paddingBottom: 40 },
+  scroll:           { paddingHorizontal: 24, paddingTop: 52, paddingBottom: 0 },
 
   hero:             { alignItems: 'center', marginBottom: 32 },
   heroEyebrow:      { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.55)', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 4 },

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { YourStoryAnalysis, ArcType, SelfLabel, NarrativePattern, InternalContradiction } from '../../types';
+import { YourStoryAnalysis, ArcType, NarrativePattern } from '../../types';
 import {
   getCachedStoryImage, generateStoryImage,
   chapterImagePrompt, castImagePrompt, arcImagePrompt,
@@ -343,7 +343,7 @@ function RecurringCast({ cast }: { cast: YourStoryAnalysis['recurringCast'] }) {
   if (!cast.length) return null;
   return (
     <View style={rc.section}>
-      <Text style={rc.label}>RECURRING CAST</Text>
+      <Text style={rc.label}>Recurring cast</Text>
       <Text style={rc.sub}>People and tensions that keep appearing — drawn from what you wrote, unnamed</Text>
       <ScrollView
         horizontal
@@ -394,7 +394,7 @@ function ArcPattern({ arcPattern }: { arcPattern: YourStoryAnalysis['arcPattern'
       />
 
       <View style={ap.inner}>
-        <Text style={ap.label}>ARC PATTERN · updates quarterly</Text>
+        <Text style={ap.label}>Arc pattern · updates quarterly</Text>
 
         <View style={ap.heroRow}>
           <View style={[ap.iconWrap, { backgroundColor: iconBg, borderColor: border }]}>
@@ -457,105 +457,6 @@ const ap = StyleSheet.create({
   timelineLine:      { flex: 1, height: 1, marginTop: 5, minWidth: 12 },
 });
 
-// ── Self Labels ───────────────────────────────────────────────────────────────
-
-const VALENCE_COLOR: Record<string, string> = {
-  positive: 'rgba(110,231,183,0.80)',
-  negative: 'rgba(252,165,165,0.80)',
-  neutral:  'rgba(152,212,250,0.55)',
-};
-
-function SelfLabelsSection({ labels }: { labels: SelfLabel[] }) {
-  return (
-    <View style={self.wrap}>
-      <Text style={self.heading}>Self Labels</Text>
-      <Text style={self.sub}>Recurring "I am…" statements detected in your writing</Text>
-      <View style={self.chips}>
-        {labels.map((l, i) => {
-          const color = VALENCE_COLOR[l.valence];
-          return (
-            <View key={i} style={[self.chip, { borderColor: color.replace(/[\d.]+\)$/, '0.22)'), backgroundColor: color.replace(/[\d.]+\)$/, '0.05)') }]}>
-              <Text style={[self.chipText, { color }]}>{l.label}</Text>
-              <Text style={self.chipFreq}>{l.frequency}×</Text>
-            </View>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
-const self = StyleSheet.create({
-  wrap:      { gap: 10 },
-  heading:   { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', letterSpacing: 0.5, textTransform: 'uppercase' },
-  sub:       { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', lineHeight: 16, marginTop: -4 },
-  chips:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip:      { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
-  chipText:  { fontSize: 13, fontFamily: 'GillSans-Light', lineHeight: 18 },
-  chipFreq:  { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)' },
-});
-
-// ── Narrative Patterns + Internal Contradictions ──────────────────────────────
-
-function NarrativePatternsSection({
-  patterns, contradictions,
-}: {
-  patterns: NarrativePattern[];
-  contradictions: InternalContradiction[];
-}) {
-  return (
-    <View style={np.wrap}>
-      {patterns.length > 0 && (
-        <View style={np.block}>
-          <Text style={np.heading}>Narrative Patterns</Text>
-          {patterns.map((p, i) => (
-            <View key={i} style={[np.row, i < patterns.length - 1 && np.rowBorder]}>
-              <Text style={np.pattern}>{p.pattern}</Text>
-              <Text style={np.obs}>{p.observation}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {contradictions.length > 0 && (
-        <View style={np.block}>
-          <Text style={np.heading}>Internal Contradictions</Text>
-          <Text style={np.sub}>Things that seem to be in tension in how you see yourself</Text>
-          {contradictions.map((c, i) => (
-            <View key={i} style={np.contradictionCard}>
-              <Text style={np.statement}>{c.statement1}</Text>
-              <View style={np.vsRow}>
-                <View style={np.vsLine} />
-                <Text style={np.vs}>vs</Text>
-                <View style={np.vsLine} />
-              </View>
-              <Text style={np.statement}>{c.statement2}</Text>
-              <Text style={np.tension}>{c.tension}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
-const np = StyleSheet.create({
-  wrap:             { gap: 18 },
-  block:            { gap: 10 },
-  heading:          { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', letterSpacing: 0.5, textTransform: 'uppercase' },
-  sub:              { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', lineHeight: 16, marginTop: -4 },
-  row:              { paddingVertical: 10, gap: 3 },
-  rowBorder:        { borderBottomWidth: 1, borderBottomColor: 'rgba(152,212,250,0.07)' },
-  pattern:          { fontSize: 13, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.85)' },
-  obs:              { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', lineHeight: 17 },
-  contradictionCard:{ backgroundColor: 'rgba(252,165,165,0.04)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(252,165,165,0.14)', padding: 14, gap: 8 },
-  statement:        { fontSize: 13, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.82)', lineHeight: 18, fontStyle: 'italic' },
-  vsRow:            { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  vsLine:           { flex: 1, height: 1, backgroundColor: 'rgba(252,165,165,0.20)' },
-  vs:               { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(252,165,165,0.50)', letterSpacing: 1 },
-  tension:          { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', lineHeight: 16, marginTop: 2 },
-});
-
 // ── Pending placeholder ───────────────────────────────────────────────────────
 
 function Pending({ text }: { text: string }) {
@@ -571,6 +472,30 @@ const pend = StyleSheet.create({
   text: { flex: 1, fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.35)', fontStyle: 'italic' },
 });
 
+// ── Stories you keep telling ──────────────────────────────────────────────────
+
+function StoriesSection({ patterns }: { patterns: NarrativePattern[] }) {
+  if (!patterns.length) return null;
+  return (
+    <View style={ns.wrap}>
+      {patterns.map((p, i) => (
+        <View key={i} style={[ns.row, i < patterns.length - 1 && ns.rowBorder]}>
+          <Text style={ns.pattern}>{p.pattern}</Text>
+          <Text style={ns.obs}>{p.observation}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const ns = StyleSheet.create({
+  wrap:      { backgroundColor: 'rgba(196,181,253,0.03)', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(196,181,253,0.12)', padding: 16, gap: 0 },
+  row:       { paddingVertical: 10, gap: 3 },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(152,212,250,0.07)' },
+  pattern:   { fontSize: 13, fontFamily: 'Baskerville', color: 'rgba(224,242,254,0.85)' },
+  obs:       { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.60)', lineHeight: 17 },
+});
+
 // ── Main tab ───────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -584,18 +509,9 @@ export default function YourStoryTab({ data, onJump }: Props) {
       <View style={s.intro}>
         <Feather name="edit-3" size={11} color="rgba(152,212,250,0.35)" />
         <Text style={s.introText}>
-          These are narratives about you, built from what you wrote — your patterns, your cast, your arc.
+          Your chapter, the people in it, and the arc you're living — built from what you wrote.
         </Text>
       </View>
-
-      {/* Self Labels */}
-      {data.selfLabels?.length ? (
-        <SelfLabelsSection labels={data.selfLabels} />
-      ) : (
-        <Pending text="Self labels — generating from your entries…" />
-      )}
-
-      <View style={s.divider} />
 
       <CurrentChapter
         chapter={data.currentChapter}
@@ -608,26 +524,24 @@ export default function YourStoryTab({ data, onJump }: Props) {
       <RecurringCast cast={data.recurringCast} />
 
       <View style={s.divider} />
-
-      {/* Narrative Patterns + Contradictions */}
-      {(data.narrativePatterns?.length || data.internalContradictions?.length) ? (
-        <NarrativePatternsSection
-          patterns={data.narrativePatterns ?? []}
-          contradictions={data.internalContradictions ?? []}
-        />
-      ) : (
-        <Pending text="Narrative patterns — generating from your entries…" />
-      )}
-
-      <View style={s.divider} />
       <ArcPattern arcPattern={data.arcPattern} />
+
+      {data.narrativePatterns?.length ? (
+        <>
+          <View style={s.divider} />
+          <Text style={s.sectionLabel}>Stories you keep telling</Text>
+          <StoriesSection patterns={data.narrativePatterns} />
+        </>
+      ) : null}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:      { gap: 4 },
-  divider:   { height: 1, backgroundColor: 'rgba(152,212,250,0.07)', marginVertical: 12 },
-  intro:     { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: 'rgba(152,212,250,0.04)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.08)', padding: 10, marginBottom: 10 },
-  introText: { flex: 1, fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', lineHeight: 16 },
+  root:         { gap: 4 },
+  divider:      { height: 1, backgroundColor: 'rgba(152,212,250,0.07)', marginVertical: 12 },
+  intro:        { flexDirection: 'row', alignItems: 'flex-start', gap: 6, backgroundColor: 'rgba(152,212,250,0.04)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(152,212,250,0.08)', padding: 10, marginBottom: 10 },
+  introText:    { flex: 1, fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', lineHeight: 16 },
+  sectionLabel: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.40)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
 });
+

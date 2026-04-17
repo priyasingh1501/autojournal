@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  FlatList,
+  Image,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,10 +23,45 @@ import {
 } from '../services/ConversationService';
 import { MINDS } from '../services/MindService';
 import { StorageService } from '../services/StorageService';
+import { recordCompletedConversation } from '../services/ConversationHistoryService';
+import { useActiveMindsRoster } from '../hooks/useActiveMindsRoster';
+import { FeatureFlagsService } from '../services/FeatureFlagsService';
+import { getUserContextV2 } from '../services/UserContextService';
+import {
+  detectHandoff,
+  generateTransferSummary,
+  buildHandoffSourceContext,
+} from '../services/handoffDetector';
+import {
+  INITIAL_HANDOFF_STATE,
+  canOfferHandoff,
+  advanceTurn,
+  applyDetectedOffer,
+  recordStay,
+  recordNotYet,
+  recordAccept,
+  HandoffState,
+} from '../services/handoffState';
+import { track } from '../services/AnalyticsService';
+import { MIND_DISPLAY_NAMES } from '../services/mindCuration';
+import type { SourceContext } from '../services/openingLineSelector';
 
 interface Props {
   summary?: DailySummary;
   onClose: () => void;
+  onCallRequested?: (mindId: string | null) => void;
+  /**
+   * When provided, skip the mind-picker carousel and jump straight into a
+   * conversation with this mindId. `null` = Companion. Used by the curated
+   * picker flow (ff_new_minds_system) so we don't show two pickers in a row.
+   */
+  initialMindId?: string | null;
+  /**
+   * Optional context describing what the user tapped in from (pattern /
+   * day / wisdom short). Threaded to getOpeningMessage so the V2 opener
+   * can acknowledge the context implicitly.
+   */
+  sourceContext?: import('../services/openingLineSelector').SourceContext | null;
 }
 
 type ConvState = 'selecting' | 'loading' | 'thinking' | 'idle' | 'error';
@@ -40,22 +78,195 @@ function formatDate(date: string): string {
 
 // ── Mind picker ───────────────────────────────────────────────────────────────
 
+const SCREEN_W = Dimensions.get('window').width;
+
+// Default companion entry (treated like a Mind for the picker)
+const COMPANION = {
+  id:         null as null,
+  name:       'Untangle',
+  era:        'Your personal AI',
+  philosophy: 'Decisions, reflection, and life — all in one place',
+  accent:     'rgba(152,212,250,0.90)',
+  symbol:     '✦',
+  image:      require('../../assets/icon.png') as number,
+};
+
+type PickerItem = (typeof COMPANION | (typeof MINDS)[number]) & { image: number };
+
+// Key used in openingMessages map: 'default' for companion, mindId for minds
+function itemKey(item: PickerItem): string {
+  return item.id ?? 'default';
+}
+
 function MindPicker({
   onSelect,
+  onCall,
   onClose,
   date,
+  summary,
 }: {
-  onSelect: (mindId: string | null) => void;
+  onSelect: (mindId: string | null, openingMsg: string) => void;
+  onCall?: (mindId: string | null) => void;
   onClose: () => void;
   date: string;
+  summary: DailySummary;
 }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const currentIndexRef = useRef(0);
+  const flatListRef = useRef<FlatList<PickerItem>>(null);
+  // Map of itemKey → fetched opening message (undefined = loading, null = error)
+  const [openingMessages, setOpeningMessages] = useState<Record<string, string | null>>({});
+
+  // Flag-aware roster — V2 when ff_new_minds_system is on, legacy otherwise.
+  // The local COMPANION card (rendered with mindId=null) stays as the first
+  // item for both rosters, so V2's 'companion' entry is filtered out to
+  // avoid a duplicate row.
+  const activeRoster = useActiveMindsRoster();
+  const rosterWithoutCompanion = activeRoster.filter(m => m.id !== 'companion');
+  // Cast via `any` because the V2 Mind has optional image while PickerItem
+  // requires image — Companion-special is handled by the static COMPANION
+  // card, and the rest of the V2 roster all have images. The `filter` above
+  // guarantees that invariant at runtime.
+  const items: PickerItem[] = [COMPANION, ...(rosterWithoutCompanion as any)];
+
+  // Lazily fetch opening messages: only load the current card plus one on each side.
+  // This avoids a burst of 12+ API calls on mount — messages for off-screen cards
+  // are fetched on demand as the user swipes toward them.
+  const fetchOpeningMessage = useCallback(async (item: PickerItem, active: { value: boolean }) => {
+    const key = itemKey(item);
+    setOpeningMessages(prev => {
+      if (key in prev) return prev; // already fetched or in-flight
+      return { ...prev }; // trigger re-render so the loading state shows
+    });
+    try {
+      const settings = await StorageService.getSettings();
+      const apiKey = settings?.anthropicApiKey?.trim() ?? '';
+      const msg = await getOpeningMessage(summary, apiKey || undefined, item.id);
+      if (active.value) setOpeningMessages(prev => ({ ...prev, [key]: msg }));
+    } catch {
+      if (active.value) setOpeningMessages(prev => ({ ...prev, [key]: null }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary]);
+
+  useEffect(() => {
+    const active = { value: true };
+    // Fetch current + one neighbour on each side
+    const indices = [currentIndex - 1, currentIndex, currentIndex + 1]
+      .filter(i => i >= 0 && i < items.length);
+    indices.forEach(i => fetchOpeningMessage(items[i], active));
+    return () => { active.value = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex]);
+
+  const scrollToIndex = useCallback((idx: number) => {
+    currentIndexRef.current = idx;
+    setCurrentIndex(idx);
+    flatListRef.current?.scrollToIndex({ index: idx, animated: true });
+  }, []);
+
+  const prev = currentIndex > 0 ? items[currentIndex - 1] : null;
+  const next = currentIndex < items.length - 1 ? items[currentIndex + 1] : null;
+
+  const renderItem = ({ item }: { item: PickerItem }) => {
+    const accentFull  = item.accent;
+    const accentDim   = accentFull.replace(/[\d.]+\)$/, '0.60)');
+    const accentFaint = accentFull.replace(/[\d.]+\)$/, '0.10)');
+    const borderColor = accentFull.replace(/[\d.]+\)$/, '0.25)');
+    const chatBg      = accentFull.replace(/[\d.]+\)$/, '0.12)');
+    const chatBorder  = accentFull.replace(/[\d.]+\)$/, '0.35)');
+    const firstName   = item.name.split(' ')[0];
+    const key         = itemKey(item);
+    const opening     = openingMessages[key]; // undefined = loading, null = error, string = ready
+
+    const cardBg      = accentFull.replace(/[\d.]+\)$/, '0.07)');
+    const btnActiveBg = accentFull.replace(/[\d.]+\)$/, '0.28)');
+    const btnDimBg    = accentFull.replace(/[\d.]+\)$/, '0.08)');
+
+    return (
+      <ScrollView
+        style={{ width: SCREEN_W, backgroundColor: cardBg }}
+        contentContainerStyle={styles.page}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Portrait */}
+        <View style={[styles.portraitRing, { borderColor: accentFull.replace(/[\d.]+\)$/, '0.50)') }]}>
+          <Image
+            source={item.image}
+            style={styles.portraitImg}
+            resizeMode="cover"
+          />
+        </View>
+
+        {/* Name + era */}
+        <Text style={styles.pageName}>{item.name}</Text>
+        <Text style={styles.pageEra}>{item.era}</Text>
+
+        {/* Philosophy tag */}
+        <View style={[styles.philTag, { backgroundColor: accentFull.replace(/[\d.]+\)$/, '0.15)'), borderColor }]}>
+          <Text style={styles.philText}>{item.philosophy}</Text>
+        </View>
+
+        {/* Opening message */}
+        <View style={[styles.openingWrap, { backgroundColor: accentFull.replace(/[\d.]+\)$/, '0.08)'), borderColor: accentFull.replace(/[\d.]+\)$/, '0.18)') }]}>
+          {opening === undefined ? (
+            <View style={styles.openingLoading}>
+              <ActivityIndicator size="small" color="rgba(224,242,254,0.60)" />
+              <Text style={styles.openingLoadingText}>
+                Reading your day…
+              </Text>
+            </View>
+          ) : opening === null ? (
+            <Text style={styles.openingText}>
+              "I'm here. What would you like to explore today?"
+            </Text>
+          ) : (
+            <Text style={styles.openingText}>
+              "{opening}"
+            </Text>
+          )}
+        </View>
+
+        {/* Action buttons */}
+        <View style={styles.actionRow}>
+          {/* Chat button */}
+          <TouchableOpacity
+            style={[
+              styles.chatBtn, styles.actionBtn,
+              { backgroundColor: opening !== undefined ? btnActiveBg : btnDimBg, borderColor },
+              opening === undefined && styles.chatBtnDisabled,
+            ]}
+            onPress={() => opening != null && onSelect(item.id, opening)}
+            activeOpacity={0.8}
+            disabled={opening === undefined}
+          >
+            <Feather name="message-circle" size={15} color="rgba(224,242,254,0.90)" />
+            <Text style={styles.chatBtnText}>Chat</Text>
+          </TouchableOpacity>
+
+          {/* Call button */}
+          {onCall && (
+            <TouchableOpacity
+              style={[styles.chatBtn, styles.actionBtn, { backgroundColor: btnActiveBg, borderColor }]}
+              onPress={() => onCall(item.id)}
+              activeOpacity={0.8}
+            >
+              <Feather name="phone" size={15} color="rgba(224,242,254,0.90)" />
+              <Text style={styles.chatBtnText}>Call</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </ScrollView>
+    );
+  };
+
   return (
     <LinearGradient colors={['#02060E', '#041628', '#02060E']} style={styles.pickerRoot}>
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         {/* Header */}
         <View style={styles.pickerHeader}>
           <View>
-            <Text style={styles.pickerTitle}>Start a conversation with</Text>
+            <Text style={styles.pickerTitle}>Get a new perspective</Text>
             <Text style={styles.pickerSub}>{formatDate(date)}</Text>
           </View>
           <TouchableOpacity
@@ -67,69 +278,145 @@ function MindPicker({
           </TouchableOpacity>
         </View>
 
-        <ScrollView
+        {/* Paged list */}
+        <FlatList
+          ref={flatListRef}
+          data={items}
+          keyExtractor={item => String(item.id)}
+          renderItem={renderItem}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          decelerationRate="fast"
+          getItemLayout={(_, index) => ({
+            length: SCREEN_W, offset: SCREEN_W * index, index,
+          })}
+          onMomentumScrollEnd={e => {
+            const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+            currentIndexRef.current = idx;
+            setCurrentIndex(idx);
+          }}
+          onScrollToIndexFailed={info => {
+            setTimeout(() => flatListRef.current?.scrollToIndex({ index: info.index, animated: false }), 100);
+          }}
           style={{ flex: 1 }}
-          contentContainerStyle={styles.pickerContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Default companion — full width */}
-          <TouchableOpacity
-            style={styles.defaultCard}
-            onPress={() => onSelect(null)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.defaultLeft}>
-              <Text style={styles.defaultSymbol}>✦</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.defaultName}>My Untangle Companion</Text>
-                <Text style={styles.defaultDesc}>
-                  Your personal AI, here to help you with decisions, reflection, and life.
-                </Text>
-              </View>
-            </View>
-            <Feather name="arrow-right" size={16} color="rgba(152,212,250,0.50)" />
-          </TouchableOpacity>
+        />
 
-          <Text style={styles.orLabel}>— or reflect with a mind —</Text>
+        {/* Bottom nav — mind names */}
+        <View style={styles.navRow}>
+          {prev ? (
+            <TouchableOpacity style={styles.navBtn} onPress={() => scrollToIndex(currentIndex - 1)}>
+              <Feather name="chevron-left" size={14} color="rgba(152,212,250,0.60)" />
+              <Text style={styles.navBtnText}>{prev.name.split(' ')[0]}</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.navPlaceholder} />
+          )}
 
-          {/* 2-col grid of minds */}
-          <View style={styles.pickerGrid}>
-            {MINDS.reduce<(typeof MINDS)[]>((rows, m, i) => {
-              if (i % 2 === 0) rows.push([m]);
-              else rows[rows.length - 1].push(m);
-              return rows;
-            }, []).map((pair, pi) => (
-              <View key={pi} style={styles.pickerRow}>
-                {pair.map(mind => {
-                  const bg     = mind.accent.replace(/[\d.]+\)$/, '0.08)');
-                  const border = mind.accent.replace(/[\d.]+\)$/, '0.22)');
-                  return (
-                    <TouchableOpacity
-                      key={mind.id}
-                      style={[styles.mindCard, { backgroundColor: bg, borderColor: border }]}
-                      onPress={() => onSelect(mind.id)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.mindReflectWith, { color: mind.accent.replace(/[\d.]+\)$/, '0.45)') }]}>Reflect with</Text>
-                      <Text style={styles.mindName}>{mind.name}</Text>
-                      <Text style={styles.mindEra}>{mind.era}</Text>
-                      <Text style={styles.mindPhil} numberOfLines={2}>{mind.philosophy}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                {pair.length === 1 && <View style={{ flex: 1 }} />}
-              </View>
+          {/* Dot indicators */}
+          <View style={styles.dots}>
+            {items.map((_, i) => (
+              <View
+                key={i}
+                style={[styles.dot, i === currentIndex && styles.dotActive]}
+              />
             ))}
           </View>
-        </ScrollView>
+
+          {next ? (
+            <TouchableOpacity style={styles.navBtn} onPress={() => scrollToIndex(currentIndex + 1)}>
+              <Text style={styles.navBtnText}>{next.name.split(' ')[0]}</Text>
+              <Feather name="chevron-right" size={14} color="rgba(152,212,250,0.60)" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.navPlaceholder} />
+          )}
+        </View>
       </SafeAreaView>
     </LinearGradient>
   );
 }
 
+// ── Handoff pills ────────────────────────────────────────────────────────────
+// Rendered inline below Companion's last message when a handoff has been
+// offered. Three options — "Stay with you" / "Meet X" / "Not yet".
+function HandoffPills({
+  toMindId,
+  transitioning,
+  onStay,
+  onAccept,
+  onNotYet,
+}: {
+  toMindId: string;
+  transitioning: boolean;
+  onStay: () => void;
+  onAccept: () => void;
+  onNotYet: () => void;
+}) {
+  const displayName = MIND_DISPLAY_NAMES[toMindId] ?? toMindId;
+  return (
+    <View style={handoffStyles.wrap}>
+      <TouchableOpacity
+        style={handoffStyles.pill}
+        onPress={onStay}
+        disabled={transitioning}
+        activeOpacity={0.75}
+      >
+        <Text style={handoffStyles.pillText}>Stay with you</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[handoffStyles.pill, handoffStyles.pillPrimary]}
+        onPress={onAccept}
+        disabled={transitioning}
+        activeOpacity={0.85}
+      >
+        {transitioning
+          ? <ActivityIndicator size="small" color="rgba(224,242,254,0.90)" />
+          : <Text style={handoffStyles.pillTextPrimary}>Meet {displayName}</Text>}
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={handoffStyles.pill}
+        onPress={onNotYet}
+        disabled={transitioning}
+        activeOpacity={0.75}
+      >
+        <Text style={handoffStyles.pillText}>Not yet</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const handoffStyles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 8,
+    marginBottom: 6,
+  },
+  pill: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.25)',
+    backgroundColor: 'rgba(9,41,173,0.12)',
+  },
+  pillPrimary: {
+    borderColor: 'rgba(152,212,250,0.55)',
+    backgroundColor: 'rgba(9,41,173,0.50)',
+  },
+  pillText: {
+    fontSize: 12, letterSpacing: 0.2,
+    color: 'rgba(152,212,250,0.80)',
+    fontFamily: 'GillSans-Light',
+  },
+  pillTextPrimary: {
+    fontSize: 12, letterSpacing: 0.2,
+    color: 'rgba(224,242,254,0.95)',
+    fontFamily: 'GillSans-Light',
+  },
+});
+
 // ── Main chat screen ──────────────────────────────────────────────────────────
 
-export default function ChatScreen({ summary, onClose }: Props) {
+export default function ChatScreen({ summary, onClose, onCallRequested, initialMindId, sourceContext }: Props) {
   // Standalone chats (no summary) get a minimal stub so ConversationService always has context
   const effectiveSummary: DailySummary = summary ?? {
     date: new Date().toISOString().split('T')[0],
@@ -138,11 +425,44 @@ export default function ChatScreen({ summary, onClose }: Props) {
     createdAt: Date.now(),
   };
   const [messages,         setMessages]  = useState<ConversationMessage[]>([]);
-  const [convState,        setConvState] = useState<ConvState>('selecting');
+  // Skip the in-screen picker when the curated picker flow already chose a mind.
+  const [convState,        setConvState] = useState<ConvState>(
+    initialMindId === undefined ? 'selecting' : 'loading',
+  );
   const [draft,            setDraft]     = useState('');
   const [error,            setError]     = useState<string | null>(null);
   const [savingReflection, setSaving]    = useState(false);
   const [selectedMindId,   setSelectedMindId] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+
+  // Track when the current conversation started so ConversationHistoryService
+  // can key records by mind+startedAt. Reset via handleBackToPicker.
+  const conversationStartedAtRef = useRef<number>(0);
+
+  // ── Handoff state (ff_new_minds_system, Companion-only) ────────────────────
+  // Kept in a ref so handleSend's async closure reads the latest value without
+  // stale-state pitfalls; mirrored into React state only to trigger re-render
+  // of the pills UI.
+  const handoffStateRef = useRef<HandoffState>(INITIAL_HANDOFF_STATE);
+  const [handoffUi, setHandoffUi] = useState<HandoffState['activeOffer']>(null);
+  const [newMindsOn, setNewMindsOn] = useState(false);
+  const wellbeingRef = useRef<'regulated' | 'tender' | 'hard_stretch'>('regulated');
+  // The source context can be updated mid-session (on handoff) — keep it in a
+  // ref so the subsequent getOpeningMessage call sees the latest value.
+  const sourceContextRef = useRef<SourceContext | null>(sourceContext ?? null);
+  const [handoffTransitioning, setHandoffTransitioning] = useState(false);
+
+  useEffect(() => {
+    FeatureFlagsService.getFlag('ff_new_minds_system').then(setNewMindsOn).catch(() => {});
+    getUserContextV2()
+      .then(c => { wellbeingRef.current = c.wellbeingState; })
+      .catch(() => {});
+  }, []);
+
+  const applyHandoffState = (next: HandoffState) => {
+    handoffStateRef.current = next;
+    setHandoffUi(next.activeOffer);
+  };
 
   // Go back to the mind picker from an active conversation
   const handleBackToPicker = () => {
@@ -170,8 +490,10 @@ export default function ChatScreen({ summary, onClose }: Props) {
   }, [messages, convState]);
 
   // ── Start conversation after mind is selected ─────────────────────────
-  const startConversation = async (mindId: string | null) => {
+  // preloadedOpening: already-fetched message from the picker — skips the API call
+  const startConversation = async (mindId: string | null, preloadedOpening?: string) => {
     setSelectedMindId(mindId);
+    conversationStartedAtRef.current = Date.now();
     setConvState('loading');
     try {
       const settings = await StorageService.getSettings();
@@ -193,7 +515,16 @@ export default function ChatScreen({ summary, onClose }: Props) {
         whatYouCare: whatYouCare.status === 'fulfilled' ? whatYouCare.value ?? undefined : undefined,
       };
 
-      const opening = await getOpeningMessage(effectiveSummary, apiKeyRef.current || undefined, mindId);
+      // Use pre-fetched opening from picker if available, otherwise fetch now.
+      // sourceContextRef carries either the original prop OR an updated
+      // handoff-transfer context set just before a mid-session transition.
+      const opening = preloadedOpening
+        ?? await getOpeningMessage(
+          effectiveSummary,
+          apiKeyRef.current || undefined,
+          mindId,
+          sourceContextRef.current,
+        );
       if (!activeRef.current) return;
 
       const msg: ConversationMessage = {
@@ -206,6 +537,93 @@ export default function ChatScreen({ summary, onClose }: Props) {
       if (!activeRef.current) return;
       setError(e?.message ?? 'Could not start conversation.');
       setConvState('error');
+    }
+  };
+
+  // Auto-start when the caller handed us an initialMindId (curated picker flow).
+  useEffect(() => {
+    if (initialMindId !== undefined) {
+      startConversation(initialMindId);
+    }
+    // Only on mount — the curated flow unmounts the screen when the user
+    // closes it and re-mounts with a fresh prop if they re-open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Handoff pill handlers ────────────────────────────────────────────────
+  const handleHandoffStay = () => {
+    const offer = handoffStateRef.current.activeOffer;
+    if (!offer) return;
+    track('handoff_declined', { to: offer.mindId, reason: 'stay' });
+    applyHandoffState(recordStay(handoffStateRef.current));
+  };
+
+  const handleHandoffNotYet = () => {
+    const offer = handoffStateRef.current.activeOffer;
+    if (!offer) return;
+    track('handoff_declined', { to: offer.mindId, reason: 'not_yet' });
+    applyHandoffState(recordNotYet(handoffStateRef.current));
+  };
+
+  const handleHandoffAccept = async () => {
+    const offer = handoffStateRef.current.activeOffer;
+    if (!offer || handoffTransitioning) return;
+    const toMindId = offer.mindId;
+    track('handoff_accepted', { to: toMindId });
+    applyHandoffState(recordAccept(handoffStateRef.current));
+    setHandoffTransitioning(true);
+
+    // Record the Companion conversation for recentMinds + save reflection
+    // (fire-and-forget; we don't want the user staring at a spinner).
+    if (conversationStartedAtRef.current > 0) {
+      recordCompletedConversation({
+        mindId: 'companion',
+        messages: messagesRef.current.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          text: m.text,
+        })),
+        startedAt: conversationStartedAtRef.current,
+        endedAt: Date.now(),
+      }).catch(() => {});
+    }
+    if (apiKeyRef.current && messagesRef.current.some(m => m.role === 'user')) {
+      generateReflection(effectiveSummary, messagesRef.current, apiKeyRef.current, 'chat')
+        .then(reflection => {
+          if (summary) {
+            StorageService.saveSummary({ ...effectiveSummary, reflectionText: reflection }).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+
+    // Generate the transfer summary, then pivot this same ChatScreen
+    // session over to the specialist with continuity context.
+    try {
+      const transfer = await generateTransferSummary(messagesRef.current);
+      sourceContextRef.current = transfer
+        ? buildHandoffSourceContext(transfer)
+        // Fallback: a minimal hand-off context so the opener still feels continuous
+        : {
+            kind: 'day',
+            description:
+              `Companion has brought this user to you. The conversation has revealed something ${MIND_DISPLAY_NAMES[toMindId] ?? 'you'} would meet well.`,
+          };
+
+      // Reset conversation state to a clean slate for the specialist.
+      setMessages([]);
+      messagesRef.current = [];
+      setDraft('');
+      setError(null);
+      detectedIntentRef.current = null;
+      handoffStateRef.current = INITIAL_HANDOFF_STATE;
+      setHandoffUi(null);
+
+      // startConversation will read sourceContextRef.current when it calls
+      // getOpeningMessage, so the specialist's opening line reflects the
+      // handoff context.
+      await startConversation(toMindId);
+    } finally {
+      setHandoffTransitioning(false);
     }
   };
 
@@ -256,6 +674,38 @@ export default function ChatScreen({ summary, onClose }: Props) {
       setMessages(final);
       setConvState('idle');
       setTimeout(() => inputRef.current?.focus(), 100);
+
+      // ── Handoff detection ──────────────────────────────────────────────
+      // Runs after Companion responses only, from turn 3 onward, respecting
+      // the cooldown and declined-set state machine. Fire-and-forget so it
+      // never blocks the user from typing their next message.
+      if (newMindsOn && selectedMindId === null) {
+        applyHandoffState(advanceTurn(handoffStateRef.current));
+        const eligible = canOfferHandoff({
+          state: handoffStateRef.current,
+          isCompanion: true,
+          wellbeingState: wellbeingRef.current,
+        });
+        if (eligible) {
+          detectHandoff(final).then(decision => {
+            if (!activeRef.current || !decision || !decision.mindId) return;
+            // Re-check eligibility — wellbeing or declined-set may have shifted
+            // while Haiku was thinking.
+            if (!canOfferHandoff({
+              state: handoffStateRef.current,
+              isCompanion: true,
+              wellbeingState: wellbeingRef.current,
+            })) return;
+            const next = applyDetectedOffer(handoffStateRef.current, {
+              mindId: decision.mindId,
+              reason: decision.reason ?? '',
+            });
+            if (next === handoffStateRef.current) return; // declined earlier, dropped silently
+            applyHandoffState(next);
+            track('handoff_offered', { from: 'companion', to: decision.mindId });
+          }).catch(() => { /* silent — never break the loop */ });
+        }
+      }
     } catch (e: any) {
       if (!activeRef.current) return;
       setError(e?.message ?? 'Could not get response.');
@@ -277,6 +727,16 @@ export default function ChatScreen({ summary, onClose }: Props) {
         }
       } catch { /* reflection is best-effort */ }
     }
+    // Record the conversation for UserContextV2.recentMinds — no-op when
+    // ff_new_minds_system is off, and skipped when there were no user turns.
+    if (conversationStartedAtRef.current > 0) {
+      recordCompletedConversation({
+        mindId: selectedMindId,
+        messages: messagesRef.current.map(m => ({ role: m.role as 'user' | 'assistant', text: m.text })),
+        startedAt: conversationStartedAtRef.current,
+        endedAt: Date.now(),
+      }).catch(() => {});
+    }
     onClose();
   };
 
@@ -284,23 +744,28 @@ export default function ChatScreen({ summary, onClose }: Props) {
   if (convState === 'selecting') {
     return (
       <MindPicker
-        onSelect={startConversation}
+        onSelect={(mindId, openingMsg) => startConversation(mindId, openingMsg)}
+        onCall={onCallRequested}
         onClose={onClose}
         date={effectiveSummary.date}
+        summary={effectiveSummary}
       />
     );
   }
 
   const canSend   = draft.trim().length > 0 && convState === 'idle';
-  const insets    = useSafeAreaInsets();
-  const activeMind = selectedMindId ? MINDS.find(m => m.id === selectedMindId) : null;
+  // Look up the active mind from the SAME flag-aware roster the picker
+  // used — otherwise picking Rumi/Munger under ff_new_minds_system yields
+  // null here and the active-mind UI blanks.
+  const fullRoster = useActiveMindsRoster();
+  const activeMind = selectedMindId ? fullRoster.find(m => m.id === selectedMindId) : null;
 
   // ── Chat UI ───────────────────────────────────────────────────────────
   return (
     <KeyboardAvoidingView
       style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={insets.top}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={insets.top + 8}
     >
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
@@ -361,6 +826,7 @@ export default function ChatScreen({ summary, onClose }: Props) {
           contentContainerStyle={styles.threadContent}
           showsVerticalScrollIndicator={false}
           keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
         >
           {convState === 'loading' && (
             <View style={styles.loadingRow}>
@@ -371,24 +837,42 @@ export default function ChatScreen({ summary, onClose }: Props) {
             </View>
           )}
 
-          {messages.map(msg => (
-            <View
-              key={msg.id}
-              style={[styles.bubble, msg.role === 'user' ? styles.bubbleUser : styles.bubbleAI]}
-            >
-              {msg.role === 'assistant' && activeMind && (
-                <Text style={[styles.bubbleSender, { color: activeMind.accent.replace(/[\d.]+\)$/, '0.65)') }]}>
-                  {activeMind.name}
-                </Text>
-              )}
-              <Text style={[
-                styles.bubbleText,
-                msg.role === 'user' ? styles.bubbleTextUser : styles.bubbleTextAI,
-              ]}>
-                {msg.text}
-              </Text>
-            </View>
-          ))}
+          {messages.map((msg, i) => {
+            const isLast = i === messages.length - 1;
+            const attachPills =
+              isLast &&
+              msg.role === 'assistant' &&
+              selectedMindId === null &&
+              handoffUi != null;
+            return (
+              <View key={msg.id}>
+                <View
+                  style={[styles.bubble, msg.role === 'user' ? styles.bubbleUser : styles.bubbleAI]}
+                >
+                  {msg.role === 'assistant' && activeMind && (
+                    <Text style={[styles.bubbleSender, { color: activeMind.accent.replace(/[\d.]+\)$/, '0.65)') }]}>
+                      {activeMind.name}
+                    </Text>
+                  )}
+                  <Text style={[
+                    styles.bubbleText,
+                    msg.role === 'user' ? styles.bubbleTextUser : styles.bubbleTextAI,
+                  ]}>
+                    {msg.text}
+                  </Text>
+                </View>
+                {attachPills && handoffUi && (
+                  <HandoffPills
+                    toMindId={handoffUi.mindId}
+                    transitioning={handoffTransitioning}
+                    onStay={handleHandoffStay}
+                    onAccept={handleHandoffAccept}
+                    onNotYet={handleHandoffNotYet}
+                  />
+                )}
+              </View>
+            );
+          })}
 
           {convState === 'thinking' && (
             <View style={[styles.bubble, styles.bubbleAI, styles.thinkingBubble]}>
@@ -458,43 +942,97 @@ const styles = StyleSheet.create({
     fontSize: 12, color: 'rgba(152,212,250,0.55)',
     fontFamily: 'GillSans-Light', marginTop: 2,
   },
-  pickerContent: { paddingHorizontal: 20, paddingBottom: 40 },
-
-  defaultCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: 'rgba(152,212,250,0.07)',
-    borderRadius: 18, borderWidth: 1,
-    borderColor: 'rgba(152,212,250,0.20)',
-    paddingHorizontal: 18, paddingVertical: 16,
-    marginBottom: 4,
+  // ── Per-page card ─────────────────────────────────────────────────────────
+  page: {
+    paddingHorizontal: 28, paddingTop: 24, paddingBottom: 32,
+    alignItems: 'center',
   },
-  defaultLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  defaultSymbol: { fontSize: 36, color: 'rgba(152,212,250,0.90)' },
-  defaultName: {
-    fontSize: 17, fontFamily: 'Baskerville', fontWeight: '500',
-    color: 'rgba(224,242,254,0.95)',
+  portraitRing: {
+    width: 140, height: 140, borderRadius: 70,
+    borderWidth: 2.5, overflow: 'hidden',
+    marginBottom: 20,
   },
-  defaultDesc: {
+  portraitImg: { width: '100%', height: '100%' },
+  portraitFallback: {
+    width: '100%', height: '100%',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  portraitSymbol: { fontSize: 56 },
+  pageName: {
+    fontSize: 28, fontFamily: 'Baskerville', fontWeight: '500',
+    color: 'rgba(224,242,254,0.95)', textAlign: 'center',
+  },
+  pageEra: {
     fontSize: 12, fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.65)', marginTop: 3, lineHeight: 17,
+    color: 'rgba(152,212,250,0.45)', marginTop: 5, textAlign: 'center',
+  },
+  philTag: {
+    borderRadius: 20, borderWidth: 1,
+    paddingHorizontal: 14, paddingVertical: 7,
+    marginTop: 20,
+  },
+  philText: {
+    fontSize: 12, fontFamily: 'GillSans-Light',
+    textAlign: 'center', lineHeight: 18,
+    color: 'rgba(224,242,254,0.80)',
+  },
+  openingWrap: {
+    marginTop: 28, alignSelf: 'stretch',
+    backgroundColor: 'rgba(152,212,250,0.04)',
+    borderRadius: 16, borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.10)',
+    padding: 18,
+    minHeight: 90, justifyContent: 'center',
+  },
+  openingLoading: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', gap: 10,
+  },
+  openingLoadingText: {
+    fontSize: 13, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.65)',
+  },
+  openingText: {
+    fontSize: 16, fontFamily: 'Baskerville',
+    lineHeight: 26, textAlign: 'center',
+    color: 'rgba(224,242,254,0.90)',
+  },
+  actionRow: {
+    flexDirection: 'row', gap: 12, marginTop: 20, alignSelf: 'stretch',
+  },
+  chatBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14,
+    borderRadius: 18, borderWidth: 1,
+  },
+  actionBtn: { flex: 1 },
+  chatBtnDisabled: { opacity: 0.45 },
+  chatBtnText: {
+    fontSize: 15, fontFamily: 'GillSans-Light', fontWeight: '600',
+    color: 'rgba(224,242,254,0.90)',
   },
 
-  orLabel: {
-    fontSize: 11, fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.35)', textAlign: 'center',
-    marginVertical: 18, letterSpacing: 0.5,
+  // ── Bottom nav ────────────────────────────────────────────────────────────
+  navRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 12,
   },
-
-  pickerGrid: { gap: 12 },
-  pickerRow: { flexDirection: 'row', gap: 12 },
-  mindCard: {
-    flex: 1, borderRadius: 18, borderWidth: 1,
-    padding: 16, minHeight: 140, gap: 4,
+  navBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: 'rgba(152,212,250,0.05)',
+    borderRadius: 12, borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.15)',
+    minWidth: 90,
   },
-  mindReflectWith: { fontSize: 9, fontFamily: 'GillSans-Light', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 2 },
-  mindName: { fontSize: 14, fontFamily: 'Baskerville', fontWeight: '500', lineHeight: 20, color: 'rgba(224,242,254,0.95)' },
-  mindEra: { fontSize: 10, fontFamily: 'GillSans-Light', color: 'rgba(152,212,250,0.45)', lineHeight: 14 },
-  mindPhil: { fontSize: 11, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.55)', lineHeight: 16, marginTop: 2 },
+  navBtnText: {
+    fontSize: 13, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.75)', fontWeight: '500',
+  },
+  navPlaceholder: { minWidth: 90 },
+  dots: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(152,212,250,0.18)' },
+  dotActive: { width: 14, backgroundColor: 'rgba(152,212,250,0.65)' },
 
   // ── Chat header ───────────────────────────────────────────────────────
   header: {

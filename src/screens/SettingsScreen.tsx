@@ -9,6 +9,8 @@ import {
   Alert,
   Switch,
   Linking,
+  Platform,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,7 +23,20 @@ import {
   isWellbeingEnabled,
   setWellbeingEnabled as saveWellbeingEnabled,
 } from '../services/WellbeingService';
+import {
+  requestNotificationPermission,
+  cancelSmartNotifications,
+  scheduleSmartNotifications,
+} from '../services/SmartNotificationService';
 import { AppSettings } from '../types';
+import { getCurrentUser, signOut } from '../services/AuthService';
+import Purchases from 'react-native-purchases';
+import {
+  FeatureFlagsService,
+  ALL_FLAGS,
+  FeatureFlag,
+} from '../services/FeatureFlagsService';
+import IntentionsScreen from './IntentionsScreen';
 
 const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: '',
@@ -47,9 +62,26 @@ export default function SettingsScreen() {
   // Wellbeing check-ins
   const [wellbeingEnabled, setWellbeingEnabled] = useState(true);
 
+  // Smart notifications
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationTime, setNotificationTime] = useState('19:30');
+
+  // Account
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
   // Tracker preferences
   const ALL_TRACKERS: ('meals' | 'workout' | 'meditation' | 'spending')[] = ['meals', 'workout', 'meditation', 'spending'];
   const [enabledTrackers, setEnabledTrackers] = useState<Set<string>>(new Set(ALL_TRACKERS));
+
+  // Developer flags — hidden section, revealed via long-press on the version footer.
+  // Always visible in dev builds; in production the user has to long-press to find it.
+  const [devFlagsVisible, setDevFlagsVisible] = useState<boolean>(__DEV__);
+  const [flagValues, setFlagValues] = useState<Record<FeatureFlag, boolean> | null>(null);
+
+  // Intentions (ff_intentions) — when on, Trackers section is replaced with a
+  // link into IntentionsScreen. When off, the legacy tracker toggles render.
+  const [intentionsOn, setIntentionsOn] = useState(false);
+  const [showIntentions, setShowIntentions] = useState(false);
 
   useFocusEffect(useCallback(() => {
     loadSettings();
@@ -58,7 +90,19 @@ export default function SettingsScreen() {
     SubscriptionService.hasPro().then(setIsPro);
     SubscriptionService.isInTrial().then(setIsTrialing);
     SubscriptionService.getTrialDaysRemaining().then(setTrialDays);
+    getCurrentUser().then(u => setUserEmail(u?.email ?? null));
+    FeatureFlagsService.getAllFlags().then(f => {
+      setFlagValues(f);
+      setIntentionsOn(!!f.ff_intentions);
+    });
   }, []));
+
+  const toggleFlag = async (name: FeatureFlag) => {
+    const current = flagValues?.[name] ?? false;
+    const next = !current;
+    await FeatureFlagsService.setFlag(name, next);
+    setFlagValues(prev => (prev ? { ...prev, [name]: next } : prev));
+  };
 
   const loadSettings = async () => {
     const s = await StorageService.getSettings();
@@ -69,6 +113,8 @@ export default function SettingsScreen() {
       } else {
         setEnabledTrackers(new Set(ALL_TRACKERS));
       }
+      setNotificationsEnabled(s.notificationsEnabled ?? false);
+      setNotificationTime(s.notificationTime ?? '19:30');
     }
   };
 
@@ -76,6 +122,8 @@ export default function SettingsScreen() {
     const updated = {
       ...settings,
       enabledTrackers: ALL_TRACKERS.filter(t => enabledTrackers.has(t)),
+      notificationsEnabled,
+      notificationTime,
     };
     await StorageService.saveSettings(updated);
     setSettings(updated);
@@ -130,7 +178,11 @@ export default function SettingsScreen() {
           ) : (
             <TouchableOpacity
               style={styles.manageBtn}
-              onPress={() => Linking.openURL('https://apps.apple.com/account/subscriptions')}
+              onPress={() => Linking.openURL(
+                Platform.OS === 'android'
+                  ? 'https://play.google.com/store/account/subscriptions'
+                  : 'https://apps.apple.com/account/subscriptions'
+              )}
               activeOpacity={0.8}
             >
               <Text style={styles.manageBtnText}>Manage subscription</Text>
@@ -263,8 +315,9 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Wellbeing Check-ins</Text>
           <Text style={styles.sectionSubtitle}>
-            untangle pays attention to how you're doing over time. If it notices you
-            might need support, it'll gently check in — never alarmed, always warm.
+            untangle uses language patterns to flag entries that might warrant a check-in.
+            It's imprecise and gets it wrong. If it misreads you, tap "I was just venting"
+            — it'll adjust over time.
           </Text>
 
           <View style={styles.lockRow}>
@@ -284,42 +337,156 @@ export default function SettingsScreen() {
           </View>
 
           <Text style={styles.hint}>
-            All pattern detection happens on-device using your journal data only.
-            Nothing is shared externally.
+            All pattern detection runs on-device. Nothing is shared externally.
+            This is not a clinical tool and should not replace professional support.
           </Text>
         </View>
 
-        {/* Trackers */}
+        {/* Notifications */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Trackers</Text>
+          <Text style={styles.sectionTitle}>Notifications</Text>
           <Text style={styles.sectionSubtitle}>
-            Choose what you want to track. Only your selected trackers will appear in your daily home card and summaries.
+            One contextual nudge per day — timed to your entries, mood, and insights. Never spammy.
           </Text>
 
-          {([
-            { key: 'meals',      label: 'Meals & Nutrition', icon: 'coffee' },
-            { key: 'workout',    label: 'Workout & Movement', icon: 'zap' },
-            { key: 'meditation', label: 'Meditation',         icon: 'moon' },
-            { key: 'spending',   label: 'Spending',           icon: 'credit-card' },
-          ] as const).map(({ key, label, icon }) => (
-            <View key={key} style={styles.lockRow}>
-              <View style={styles.lockRowLeft}>
-                <Feather name={icon as any} size={16} color="rgba(152, 212, 250, 0.75)" />
-                <Text style={styles.lockRowLabel}>{label}</Text>
-              </View>
-              <Switch
-                value={enabledTrackers.has(key)}
-                onValueChange={() => toggleTracker(key)}
-                trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
-                thumbColor={enabledTrackers.has(key) ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
-              />
+          <View style={styles.lockRow}>
+            <View style={styles.lockRowLeft}>
+              <Feather name="bell" size={16} color="rgba(152, 212, 250, 0.75)" />
+              <Text style={styles.lockRowLabel}>Daily reflection reminder</Text>
             </View>
-          ))}
+            <Switch
+              value={notificationsEnabled}
+              onValueChange={async (val) => {
+                if (val) {
+                  const granted = await requestNotificationPermission();
+                  if (!granted) {
+                    Alert.alert(
+                      'Permission Required',
+                      'Please allow notifications in your device settings to enable this.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                      ],
+                    );
+                    return;
+                  }
+                  setNotificationsEnabled(true);
+                  const updated = { ...settings, notificationsEnabled: true, notificationTime };
+                  await StorageService.saveSettings(updated);
+                  scheduleSmartNotifications(notificationTime).catch(() => {});
+                } else {
+                  setNotificationsEnabled(false);
+                  const updated = { ...settings, notificationsEnabled: false, notificationTime };
+                  await StorageService.saveSettings(updated);
+                  cancelSmartNotifications().catch(() => {});
+                }
+              }}
+              trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
+              thumbColor={notificationsEnabled ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
+            />
+          </View>
+
+          {notificationsEnabled && (
+            <>
+              <Text style={[styles.label, { marginTop: 18 }]}>Remind me at</Text>
+              <View style={styles.thresholdButtons}>
+                {[
+                  { label: '6:00 pm', value: '18:00' },
+                  { label: '7:00 pm', value: '19:00' },
+                  { label: '7:30 pm', value: '19:30' },
+                  { label: '9:00 pm', value: '21:00' },
+                ].map(({ label, value }) => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[
+                      styles.thresholdButton,
+                      notificationTime === value && styles.thresholdButtonSelected,
+                    ]}
+                    onPress={async () => {
+                      setNotificationTime(value);
+                      const updated = { ...settings, notificationsEnabled: true, notificationTime: value };
+                      await StorageService.saveSettings(updated);
+                    }}
+                  >
+                    <Text style={[
+                      styles.thresholdButtonText,
+                      notificationTime === value && styles.thresholdButtonTextSelected,
+                    ]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
           <Text style={styles.hint}>
-            Changes apply immediately.
+            Personalised based on your mood, insights, and trackers. All logic runs on-device.
           </Text>
         </View>
+
+        {/* Trackers / Intentions — swaps based on ff_intentions */}
+        {intentionsOn ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Intentions</Text>
+            <Text style={styles.sectionSubtitle}>
+              Goals you're trying to live toward. They surface in your summaries
+              when your entries touch on them — not as a scoreboard.
+            </Text>
+            <TouchableOpacity
+              style={styles.lockRow}
+              onPress={() => setShowIntentions(true)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.lockRowLeft}>
+                <Feather name="target" size={16} color="rgba(152, 212, 250, 0.75)" />
+                <Text style={styles.lockRowLabel}>Manage intentions</Text>
+              </View>
+              <Feather name="chevron-right" size={16} color="rgba(152, 212, 250, 0.55)" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Trackers</Text>
+            <Text style={styles.sectionSubtitle}>
+              Choose what you want to track. Only your selected trackers will appear in your daily home card and summaries.
+            </Text>
+
+            {([
+              { key: 'meals',      label: 'Meals & Nutrition', icon: 'coffee' },
+              { key: 'workout',    label: 'Workout & Movement', icon: 'zap' },
+              { key: 'meditation', label: 'Meditation',         icon: 'moon' },
+              { key: 'spending',   label: 'Spending',           icon: 'credit-card' },
+            ] as const).map(({ key, label, icon }) => (
+              <View key={key} style={styles.lockRow}>
+                <View style={styles.lockRowLeft}>
+                  <Feather name={icon as any} size={16} color="rgba(152, 212, 250, 0.75)" />
+                  <Text style={styles.lockRowLabel}>{label}</Text>
+                </View>
+                <Switch
+                  value={enabledTrackers.has(key)}
+                  onValueChange={() => toggleTracker(key)}
+                  trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
+                  thumbColor={enabledTrackers.has(key) ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
+                />
+              </View>
+            ))}
+
+            <Text style={styles.hint}>
+              Changes apply immediately.
+            </Text>
+          </View>
+        )}
+
+        {/* Intentions modal */}
+        <Modal
+          visible={showIntentions}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setShowIntentions(false)}
+        >
+          <IntentionsScreen onBack={() => setShowIntentions(false)} />
+        </Modal>
 
         {/* Storage */}
         <View style={styles.section}>
@@ -352,6 +519,38 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Account */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          {userEmail ? (
+            <Text style={styles.accountEmail}>{userEmail}</Text>
+          ) : null}
+          <TouchableOpacity
+            style={styles.signOutBtn}
+            activeOpacity={0.85}
+            onPress={() => {
+              Alert.alert(
+                'Sign out',
+                'You will need to sign in again to use the app.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Sign out',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try { await Purchases.logOut(); } catch {}
+                      await signOut();
+                    },
+                  },
+                ],
+              );
+            }}
+          >
+            <Feather name="log-out" size={14} color="rgba(252,165,165,0.80)" />
+            <Text style={styles.signOutText}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity style={styles.saveButton} onPress={saveSettings}>
           <Text style={styles.saveButtonText}>Save Settings</Text>
         </TouchableOpacity>
@@ -377,9 +576,38 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.footer}>
+        {/* Developer flags — hidden; long-press version footer to reveal */}
+        {devFlagsVisible && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Developer flags</Text>
+            <Text style={styles.sectionSubtitle}>
+              Phased redesign toggles. Defaults OFF. Changes take effect on next screen render.
+            </Text>
+            {ALL_FLAGS.map((flag) => (
+              <View key={flag} style={styles.lockRow}>
+                <View style={styles.lockRowLeft}>
+                  <Feather name="flag" size={16} color="rgba(152, 212, 250, 0.75)" />
+                  <Text style={styles.lockRowLabel}>{flag}</Text>
+                </View>
+                <Switch
+                  value={flagValues?.[flag] ?? false}
+                  onValueChange={() => toggleFlag(flag)}
+                  trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
+                  thumbColor={flagValues?.[flag] ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
+                />
+              </View>
+            ))}
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={styles.footer}
+          onLongPress={() => setDevFlagsVisible(v => !v)}
+          delayLongPress={1200}
+          activeOpacity={1}
+        >
           <Text style={styles.footerText}>untangle v1.3.0</Text>
-        </View>
+        </TouchableOpacity>
       </ScrollView>
 
       <PaywallModal
@@ -484,6 +712,27 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   saveButtonText: { color: 'rgba(224, 242, 254, 0.95)', fontSize: 17, fontWeight: '500', fontFamily: 'GillSans-Light' },
+
+  accountEmail: {
+    fontSize: 13,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.55)',
+    marginBottom: 14,
+    marginTop: 2,
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(252,165,165,0.25)',
+    backgroundColor: 'rgba(252,165,165,0.05)',
+    alignSelf: 'flex-start',
+  },
+  signOutText: { fontSize: 14, fontFamily: 'GillSans-Light', color: 'rgba(252,165,165,0.80)' },
 
   clearCacheBtn: {
     flexDirection: 'row',

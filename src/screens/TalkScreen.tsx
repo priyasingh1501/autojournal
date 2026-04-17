@@ -23,11 +23,20 @@ import { DailySummary, ConversationMessage } from '../types';
 import { transcribeAudio } from '../services/TranscriptionService';
 import {
   fetchSentences, getOpeningMessage, generateReflection,
-  detectIntent, ConversationIntent, ConversationContext,
+  detectIntent, getSystemPromptWithContext,
+  ConversationIntent, ConversationContext,
 } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
 import { synthesizeSpeech } from '../services/ElevenLabsService';
 import { MINDS } from '../services/MindService';
+import { recordCompletedConversation } from '../services/ConversationHistoryService';
+import { useActiveMindsRoster } from '../hooks/useActiveMindsRoster';
+
+// TODO(handoff): Companion → specialist handoff is text-chat only in v1
+// (see ChatScreen). Voice-mode handoffs add TTS complexity — a mid-call
+// persona swap would need to interrupt the active ElevenLabs stream, speak
+// the handoff offer, then re-stream the specialist's opener. Revisit once
+// the text flow has stabilised.
 import {
   analyzeCallTurn,
   getPendingReentry,
@@ -38,8 +47,11 @@ import {
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
 
 interface Props {
-  summary?: DailySummary;   // optional — calls can start without a day summary
+  summary?: DailySummary;          // optional — calls can start without a day summary
   onClose: () => void;
+  initialMindId?: string | null;   // if provided, skip the mind picker and start immediately
+  /** ff_new_minds_system — what the user tapped in from, for context-aware opener. */
+  sourceContext?: import('../services/openingLineSelector').SourceContext | null;
 }
 
 type ConvState = 'selecting' | 'connecting' | 'speaking' | 'listening' | 'thinking' | 'post-call' | 'error';
@@ -47,7 +59,7 @@ type ConvState = 'selecting' | 'connecting' | 'speaking' | 'listening' | 'thinki
 const { width: SW } = Dimensions.get('window');
 const AVATAR_SIZE   = 110;
 const VAD_THRESHOLD = -38;
-const SILENCE_MS    = 1200;
+const SILENCE_MS    = 800;
 const MIN_SPEECH_MS = 400;
 
 function formatDate(date: string): string {
@@ -137,6 +149,12 @@ function MindPicker({
   onSelect: (mindId: string | null) => void;
   onClose: () => void;
 }) {
+  // Flag-aware roster — V2 when ff_new_minds_system is on, legacy otherwise.
+  // The top "My Untangle Companion" card is kept as a special null-mindId
+  // option for both rosters, so Companion in the V2 array is filtered out
+  // of the grid to avoid rendering it twice.
+  const fullRoster = useActiveMindsRoster();
+  const roster = fullRoster.filter(m => m.id !== 'companion');
   return (
     <LinearGradient colors={['#02060E', '#041628', '#02060E']} style={StyleSheet.absoluteFill}>
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
@@ -181,7 +199,7 @@ function MindPicker({
 
           {/* 2-col grid */}
           <View style={pickerStyles.grid}>
-            {MINDS.reduce<(typeof MINDS)[]>((rows, m, i) => {
+            {roster.reduce<(typeof roster)[]>((rows, m, i) => {
               if (i % 2 === 0) rows.push([m]);
               else rows[rows.length - 1].push(m);
               return rows;
@@ -213,7 +231,7 @@ function MindPicker({
   );
 }
 
-export default function TalkScreen({ summary, onClose }: Props) {
+export default function TalkScreen({ summary, onClose, initialMindId, sourceContext }: Props) {
   // Standalone calls (no summary) get a minimal stub so ConversationService always has context.
   // useMemo keeps the reference stable so useCallback deps don't thrash.
   const effectiveSummary = useMemo<DailySummary>(() => summary ?? {
@@ -223,7 +241,8 @@ export default function TalkScreen({ summary, onClose }: Props) {
     createdAt: Date.now(),
   }, [summary]);
 
-  const [convState, setConvState]   = useState<ConvState>('selecting');
+  // If initialMindId is provided (from the shared mind picker), skip the selecting state
+  const [convState, setConvState]   = useState<ConvState>(initialMindId !== undefined ? 'connecting' : 'selecting');
   const [lastAiText, setLastAiText] = useState('');
   const [callSecs, setCallSecs]     = useState(0);
   const [error, setError]           = useState<string | null>(null);
@@ -255,6 +274,9 @@ export default function TalkScreen({ summary, onClose }: Props) {
 
   // Selected mind — ref so stopAndSend always reads current value without stale closure
   const selectedMindIdRef   = useRef<string | null>(null);
+  // Start time of the current conversation — used by ConversationHistoryService
+  // to key records by mind+startedAt.
+  const conversationStartedAtRef = useRef<number>(0);
   const convContextRef      = useRef<ConversationContext>({});
   const detectedIntentRef   = useRef<ConversationIntent | null>(null);
 
@@ -283,6 +305,14 @@ export default function TalkScreen({ summary, onClose }: Props) {
       thinkPulse.setValue(1);
     }
   }, [convState]);
+
+  // ── Auto-start when initialMindId is provided ─────────────────────────────
+  useEffect(() => {
+    if (initialMindId !== undefined) {
+      startBoot(initialMindId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Cleanup ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -413,7 +443,14 @@ export default function TalkScreen({ summary, onClose }: Props) {
       if (!activeRef.current) return;
 
       setConvState('thinking');
-      const userText = await transcribeAudio(uri);
+      // Build system prompt in parallel with transcription — saves ~100-300 ms
+      // per turn on cache miss; near-zero when cached (turns 2+).
+      const earlyMindId = selectedMindIdRef.current;
+      const earlyIntent = detectedIntentRef.current ?? undefined;
+      const [userText, prebuiltSystem] = await Promise.all([
+        transcribeAudio(uri),
+        getSystemPromptWithContext(earlyMindId, earlyIntent),
+      ]);
       if (!userText.trim()) { if (activeRef.current) startListening(); return; }
 
       allUserTextsRef.current.push(userText.trim());
@@ -451,9 +488,10 @@ export default function TalkScreen({ summary, onClose }: Props) {
       const mindId    = selectedMindIdRef.current;
 
       // Intent detection + context injection apply to untangle companion only
+      // Fire-and-forget: don't block the first turn; result lands in ref for turn 2+
       const isCompanion = mindId === null;
       if (isCompanion && detectedIntentRef.current === null) {
-        detectedIntentRef.current = await detectIntent(userText.trim());
+        detectIntent(userText.trim()).then(i => { detectedIntentRef.current = i; });
       }
 
       const currentTier = callDistressRef.current;
@@ -487,6 +525,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
         distressTierForTurn,
         isCompanion ? detectedIntentRef.current ?? undefined : undefined,
         isCompanion ? convContextRef.current : undefined,
+        prebuiltSystem,
       );
       if (!activeRef.current) return;
 
@@ -535,6 +574,7 @@ export default function TalkScreen({ summary, onClose }: Props) {
   // ── startBoot() — called after mind selection ──────────────────────────────
   const startBoot = useCallback(async (mindId: string | null) => {
     selectedMindIdRef.current = mindId;
+    conversationStartedAtRef.current = Date.now();
     setConvState('connecting');
 
     // Start call timer
@@ -631,7 +671,12 @@ export default function TalkScreen({ summary, onClose }: Props) {
             ? "Last time we spoke, things felt really hard. I've been thinking about you. How are you today?"
             : "Last time we spoke, things felt pretty heavy. How are you today?";
       } else {
-        opening = await getOpeningMessage(effectiveSummary, cachedAnthropicKey.current || undefined, mindId);
+        opening = await getOpeningMessage(
+          effectiveSummary,
+          cachedAnthropicKey.current || undefined,
+          mindId,
+          sourceContext ?? null,
+        );
       }
       if (!activeRef.current) return;
 
@@ -665,6 +710,21 @@ export default function TalkScreen({ summary, onClose }: Props) {
     }
 
     const userMessages = messagesRef.current.filter(m => m.role === 'user');
+
+    // Record the conversation for UserContextV2.recentMinds — no-op under
+    // ff_new_minds_system off, and skipped when there were no user turns.
+    if (userMessages.length > 0 && conversationStartedAtRef.current > 0) {
+      recordCompletedConversation({
+        mindId: selectedMindIdRef.current,
+        messages: messagesRef.current.map(m => ({
+          role: m.role as 'user' | 'assistant',
+          text: m.text,
+        })),
+        startedAt: conversationStartedAtRef.current,
+        endedAt: Date.now(),
+      }).catch(() => {});
+    }
+
     if (userMessages.length > 0 && cachedAnthropicKey.current) {
       // Show post-call overlay and generate reflection in background
       setConvState('post-call');

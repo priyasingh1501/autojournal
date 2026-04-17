@@ -31,13 +31,22 @@ const KEYS = {
   APP_PIN: 'app_pin_hash',
   WISDOM_SAVED: 'wisdom_saved_shorts',
   WISDOM_SEEN: 'wisdom_seen_shorts',
+  WISDOM_SEEN_MIGRATED: 'wisdom_seen_migrated',
   WISDOM_SIGNAL: 'wisdom_journal_signal',
   PUBLISHER_MODE: 'publisher_mode',
   CUSTOM_SHORTS: 'wisdom_custom_shorts',
 };
 
+/** Returns a YYYY-MM-DD string in the device's local timezone. */
+function localDateStr(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function todayKey(): string {
-  return new Date().toISOString().split('T')[0];
+  return localDateStr();
 }
 
 /**
@@ -84,8 +93,14 @@ export const StorageService = {
     return json ? JSON.parse(json) : [];
   },
 
-  async addTranscript(entry: TranscriptEntry): Promise<void> {
-    const date = new Date(entry.timestamp).toISOString().split('T')[0];
+  async addTranscript(
+    entry: TranscriptEntry,
+    opts?: { storageDate?: string },
+  ): Promise<void> {
+    // Callers under ff_day_close_model pass a rollover-aware storageDate
+    // (e.g. 01:30 entries bucket under yesterday). When omitted, keep the
+    // legacy calendar-date-from-timestamp bucketing.
+    const date = opts?.storageDate ?? localDateStr(new Date(entry.timestamp));
     const key = KEYS.TRANSCRIPTS_PREFIX + date;
     const existing = await AsyncStorage.getItem(key);
     const entries: TranscriptEntry[] = existing ? JSON.parse(existing) : [];
@@ -323,9 +338,19 @@ export const StorageService = {
     for (const [monthKey, batch] of byMonth) {
       const key = KEYS.EXPENSE_PREFIX + monthKey;
       const existing: ExpenseEntry[] = JSON.parse((await AsyncStorage.getItem(key)) ?? '[]');
-      // Deduplicate: skip entries whose sourceTranscriptId already has a record this month
+      // Two-layer deduplication:
+      //  1. Transcript-level: if this transcript was already fully processed, skip all its entries
+      //  2. Entry-level: if an entry with the same amount + date + category already exists
+      //     (catches photo-vs-text double-counts and re-processing with new transcript IDs)
       const seenTranscripts = new Set(existing.map(e => e.sourceTranscriptId));
-      const fresh = batch.filter(e => !seenTranscripts.has(e.sourceTranscriptId));
+      const existingKeys = new Set(existing.map(e => `${Math.round(e.amount)}_${e.date}_${e.category}`));
+      const fresh = batch.filter(e => {
+        if (seenTranscripts.has(e.sourceTranscriptId)) return false;
+        const key = `${Math.round(e.amount)}_${e.date}_${e.category}`;
+        if (existingKeys.has(key)) return false;
+        existingKeys.add(key); // prevent within-batch duplicates too
+        return true;
+      });
       if (fresh.length === 0) continue;
       await AsyncStorage.setItem(key, JSON.stringify([...existing, ...fresh]));
     }
@@ -388,16 +413,19 @@ export const StorageService = {
     if (!json) return [];
     const raw: Array<string | { id: string; seenAt: number }> = JSON.parse(json);
 
-    // Migrate legacy string entries to object form so they expire naturally via the
-    // 30-day cutoff rather than reappearing as if never seen.
+    // One-time migration: convert legacy string entries to object form.
+    // We gate on a separate flag so this write only happens once, not on every read.
+    const hasLegacy = raw.some(e => typeof e === 'string');
     const migrated: Array<{ id: string; seenAt: number }> = raw.map(e =>
       typeof e === 'string' ? { id: e, seenAt: 0 } : e,
     );
-
-    // Write back if any migration happened
-    if (raw.some(e => typeof e === 'string')) {
-      const capped = migrated.length > 400 ? migrated.slice(-400) : migrated;
-      await AsyncStorage.setItem(KEYS.WISDOM_SEEN, JSON.stringify(capped)).catch(() => {});
+    if (hasLegacy) {
+      const alreadyMigrated = await AsyncStorage.getItem(KEYS.WISDOM_SEEN_MIGRATED);
+      if (!alreadyMigrated) {
+        const capped = migrated.length > 400 ? migrated.slice(-400) : migrated;
+        AsyncStorage.setItem(KEYS.WISDOM_SEEN, JSON.stringify(capped)).catch(() => {});
+        AsyncStorage.setItem(KEYS.WISDOM_SEEN_MIGRATED, '1').catch(() => {});
+      }
     }
 
     const cutoff = Date.now() - 30 * 86_400_000; // 30 days

@@ -4,7 +4,7 @@
  * then shares the image to WhatsApp, Instagram Stories, or any native target.
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -17,12 +17,14 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import ViewShot from 'react-native-view-shot';
 import * as ExpoSharing from 'expo-sharing';
 import { WisdomShort } from '../types';
+import { getCachedImageUri, generateAndCacheImage } from '../services/WisdomImageService';
 
 // ── Gradient palettes per author / discipline ──────────────────────────────────
 
@@ -74,6 +76,38 @@ interface Props {
 export default function ShareModal({ short, visible, onClose }: Props) {
   const viewShotRef = useRef<ViewShot>(null);
   const [capturing, setCapturing] = useState(false);
+  const [resolvedImageUri, setResolvedImageUri] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !short) {
+      setResolvedImageUri(null);
+      return;
+    }
+    // Already have a URI from Supabase or local cache on the object
+    if (short.imageUri) {
+      setResolvedImageUri(short.imageUri);
+      return;
+    }
+    // Check local cache, then generate
+    let cancelled = false;
+    setImageLoading(true);
+    (async () => {
+      const cached = await getCachedImageUri(short.id);
+      if (cancelled) return;
+      if (cached) {
+        setResolvedImageUri(cached);
+        setImageLoading(false);
+        return;
+      }
+      const generated = await generateAndCacheImage(short);
+      if (!cancelled) {
+        setResolvedImageUri(generated);
+        setImageLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [visible, short?.id]);
 
   if (!short) return null;
 
@@ -114,7 +148,7 @@ export default function ShareModal({ short, visible, onClose }: Props) {
     } else {
       // Fallback: share text on platforms where image sharing isn't available
       await Share.share({
-        message: `"${short.pullquote}"\n\n— ${short.source_author}\n\n${short.title}\n\n_via untangle · ${appLink}_`,
+        message: `${short.title}\n\n${short.short}\n\n— ${short.source_author}\n\n_via untangle · ${appLink}_`,
       });
     }
   };
@@ -200,40 +234,65 @@ export default function ShareModal({ short, visible, onClose }: Props) {
               options={{ format: 'png', quality: 1.0 }}
               style={styles.viewShotWrapper}
             >
-              <LinearGradient
-                colors={colors}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.storyCard}
-              >
-                {/* Top label */}
-                <View style={styles.storyBadge}>
-                  <Text style={[styles.storyBadgeText, { color: accentColor }]}>
-                    {short.source_type.toUpperCase()}
-                  </Text>
-                </View>
+              <View style={styles.storyCard}>
 
-                {/* Pullquote — centred, large */}
-                <View style={styles.quoteWrap}>
-                  <Text style={styles.openQuote}>"</Text>
-                  <Text style={styles.quotePrimary}>{short.pullquote}</Text>
-                  <Text style={styles.closeQuote}>"</Text>
-                </View>
+                {/* Background: image or gradient fallback */}
+                {resolvedImageUri ? (
+                  <Image
+                    source={{ uri: resolvedImageUri }}
+                    style={[StyleSheet.absoluteFill, styles.bgImage]}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <LinearGradient
+                    colors={colors}
+                    start={{ x: 0.2, y: 0 }}
+                    end={{ x: 0.8, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                )}
 
-                {/* Author & title */}
-                <View style={styles.storyFooter}>
-                  <View style={[styles.footerLine, { backgroundColor: accentColor }]} />
-                  <Text style={[styles.storyAuthor, { color: accentColor }]}>
+                {/* Loading indicator centred while generating */}
+                {imageLoading && !resolvedImageUri && (
+                  <ActivityIndicator
+                    size="small"
+                    color="rgba(152,212,250,0.40)"
+                    style={styles.cardSpinner}
+                  />
+                )}
+
+                {/* Gradient scrim — darkens the bottom so the panel is readable */}
+                <LinearGradient
+                  colors={['transparent', 'rgba(2,6,14,0.72)', 'rgba(2,6,14,0.96)']}
+                  style={styles.scrim}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  pointerEvents="none"
+                />
+
+                {/* Author badge — top right */}
+                <View style={[styles.authorBadge, { borderColor: accentColor + '55', backgroundColor: 'rgba(4,13,30,0.55)' }]}>
+                  <Text style={[styles.authorBadgeText, { color: accentColor }]} numberOfLines={1}>
                     {short.source_author}
                   </Text>
-                  <Text style={styles.storyTitle} numberOfLines={2}>
-                    {short.title}
+                </View>
+
+                {/* Glass panel at bottom */}
+                <View style={styles.glassPanel}>
+                  <View style={[styles.accentLine, { backgroundColor: accentColor }]} />
+                  <Text style={styles.panelTitle}>{short.title.toUpperCase()}</Text>
+                  <View style={[styles.titleSep, { backgroundColor: accentColor }]} />
+                  <Text style={styles.panelBody}>
+                    {short.short.length > 260
+                      ? short.short.slice(0, 257) + '…'
+                      : short.short}
                   </Text>
                 </View>
 
-                {/* App watermark */}
+                {/* Watermark */}
                 <Text style={styles.watermark}>untangle · get the app</Text>
-              </LinearGradient>
+
+              </View>
             </ViewShot>
 
             {/* ── Hint ── */}
@@ -341,85 +400,89 @@ const styles = StyleSheet.create({
   storyCard: {
     width: '100%',
     aspectRatio: 9 / 16,
-    padding: 28,
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 30,
-    elevation: 16,
+    overflow: 'hidden',
+    backgroundColor: '#02060e',
   },
 
-  storyBadge: {
-    alignSelf: 'flex-start',
-    borderRadius: 6,
+  bgImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  cardSpinner: {
+    position: 'absolute',
+    top: '45%',
+    alignSelf: 'center',
+  },
+
+  scrim: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '65%',
+  },
+
+  authorBadge: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    maxWidth: '60%',
   },
-  storyBadgeText: {
+  authorBadgeText: {
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-  },
-
-  quoteWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingVertical: 24,
-  },
-  openQuote: {
-    fontSize: 64,
-    lineHeight: 60,
-    color: 'rgba(255,255,255,0.15)',
-    fontFamily: 'Baskerville',
-    marginBottom: -16,
-  },
-  quotePrimary: {
-    fontSize: 22,
-    lineHeight: 34,
-    color: 'rgba(255,255,255,0.95)',
-    fontFamily: 'Baskerville',
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  closeQuote: {
-    fontSize: 64,
-    lineHeight: 60,
-    color: 'rgba(255,255,255,0.15)',
-    fontFamily: 'Baskerville',
-    textAlign: 'right',
-    marginTop: -16,
-  },
-
-  storyFooter: {
-    gap: 6,
-  },
-  footerLine: {
-    height: 1.5,
-    width: 40,
-    borderRadius: 2,
-    marginBottom: 4,
-  },
-  storyAuthor: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     letterSpacing: 0.4,
-  },
-  storyTitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.55)',
     fontFamily: 'GillSans-Light',
-    lineHeight: 17,
   },
+
+  glassPanel: {
+    position: 'absolute',
+    bottom: 44,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 22,
+  },
+  accentLine: {
+    height: 2,
+    width: 28,
+    borderRadius: 2,
+    marginBottom: 10,
+    opacity: 0.80,
+  },
+  panelTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(224,242,254,0.95)',
+    letterSpacing: 2.0,
+    lineHeight: 18,
+    fontFamily: 'Baskerville',
+    marginBottom: 8,
+  },
+  titleSep: {
+    height: 1,
+    width: 28,
+    borderRadius: 1,
+    marginBottom: 10,
+    opacity: 0.50,
+  },
+  panelBody: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.82)',
+    lineHeight: 20,
+    fontFamily: 'GillSans-Light',
+  },
+
   watermark: {
     position: 'absolute',
-    bottom: 20,
-    right: 24,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.25)',
+    bottom: 18,
+    right: 22,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.22)',
     fontFamily: 'Baskerville',
     fontStyle: 'italic',
     letterSpacing: 0.5,

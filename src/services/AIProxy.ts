@@ -76,6 +76,14 @@ export interface VoiceSettings {
 }
 
 /**
+ * Fetches the list of available ElevenLabs voices via the edge function,
+ * keeping the API key server-side.
+ */
+export async function fetchVoices(): Promise<{ voices: any[] }> {
+  return callEdge<{ voices: any[] }>('elevenlabs-tts', { action: 'list_voices' });
+}
+
+/**
  * Sends text to the elevenlabs-tts edge function and returns the
  * synthesised audio as a base64-encoded mp3 string.
  */
