@@ -6,6 +6,9 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "APP_VARIANT": "development"
+      },
       "android": {
         "buildType": "apk"
       },
@@ -14,6 +17,9 @@
       }
     },
     "preview": {
+      "env": {
+        "APP_VARIANT": "preview"
+      },
       "ios": {
         "simulator": true
       },

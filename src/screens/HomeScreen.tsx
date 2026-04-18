@@ -114,7 +114,7 @@ export default function HomeScreen() {
             setReentryPending(r);
           }
         }
-      });
+      }).catch(() => {});
       // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
       // if (Platform.OS === 'android') {
       //   syncSMSTransactionsToNotes().catch(() => {});

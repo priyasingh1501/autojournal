@@ -40,10 +40,26 @@ export const FLAG_DEFAULTS: Record<FeatureFlag, boolean> = {
   ff_new_minds_system: false,
 };
 
+// Preview builds ship with revamp flags on so testers see the full redesign.
+const PREVIEW_DEFAULTS: Partial<Record<FeatureFlag, boolean>> = {
+  ff_new_day_summary:  true,
+  ff_patterns_tab:     true,
+  ff_simple_home:      true,
+  ff_journal_merge:    true,
+  ff_intentions:       true,
+  ff_new_minds_system: true,
+  ff_day_close_model:  true,
+};
+
+const IS_PREVIEW = process.env.APP_VARIANT === 'preview';
+
 export const FeatureFlagsService = {
   async getFlag(name: FeatureFlag, defaultValue?: boolean): Promise<boolean> {
     const raw = await AsyncStorage.getItem(name);
-    if (raw === null) return defaultValue ?? FLAG_DEFAULTS[name];
+    if (raw === null) {
+      if (defaultValue !== undefined) return defaultValue;
+      return IS_PREVIEW ? (PREVIEW_DEFAULTS[name] ?? FLAG_DEFAULTS[name]) : FLAG_DEFAULTS[name];
+    }
     return raw === '1';
   },
 

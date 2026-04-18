@@ -15,6 +15,7 @@ import { openaiImageProxy, claudeProxy } from './AIProxy';
 import { StorageService } from './StorageService';
 import { fetchShortImageUrl } from './SupabaseService';
 import { WisdomShort } from '../types';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/keys';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -62,16 +63,32 @@ async function _generateNow(short: WisdomShort): Promise<string | null> {
       // Download failed — fall through to generation
     }
 
-    const prompt = short.imagePrompt ?? buildAutoPrompt(short);
+    const storedPrompt = short.imagePrompt ?? buildAutoPrompt(short);
 
-    console.log('[WisdomImage] Generating image for:', short.id, '\nPrompt:', prompt);
+    console.log('[WisdomImage] Generating image for:', short.id, '\nPrompt:', storedPrompt);
 
-    const response = await openaiImageProxy.images.generate({
+    let response = await openaiImageProxy.images.generate({
       model: 'dall-e-3',
-      prompt,
+      prompt: storedPrompt,
       size: '1024x1024',
       quality: 'standard',
       n: 1,
+    }).catch(async (err: any) => {
+      // OpenAI safety rejection — retry with a generic prompt that avoids
+      // mentioning real people or content that triggers the safety filter.
+      const msg: string = err?.message ?? '';
+      if (msg.includes('safety') || msg.includes('400') || msg.includes('rejected')) {
+        const fallbackPrompt = buildAutoPrompt(short);
+        console.warn('[WisdomImage] Safety rejection for', short.id, '— retrying with fallback prompt');
+        return openaiImageProxy.images.generate({
+          model: 'dall-e-3',
+          prompt: fallbackPrompt,
+          size: '1024x1024',
+          quality: 'standard',
+          n: 1,
+        });
+      }
+      throw err;
     });
 
     const imageUrl = response.data?.[0]?.url;
@@ -135,8 +152,6 @@ export async function getCachedImageUri(shortId: string): Promise<string | null>
  */
 async function _uploadToSupabase(shortId: string, localPath: string): Promise<void> {
   const { createClient } = await import('@supabase/supabase-js');
-  const SUPABASE_URL      = 'https://hgodsuwrdpmaqcdetjjn.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhnb2RzdXdyZHBtYXFjZGV0ampuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMTI3MjYsImV4cCI6MjA5MDc4ODcyNn0.PrrHGD7Vx0hq51uLcCLTH4tA-smRFMKTnxom1i5lrCw';
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // Read file as base64 and convert to Uint8Array for upload
@@ -316,7 +331,7 @@ Return ONLY the JSON.`;
     system: systemPrompt,
   });
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+  const raw = response.content?.[0]?.type === 'text' ? (response.content[0] as any).text.trim() : '';
 
   // Strip markdown code fences if present
   const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();

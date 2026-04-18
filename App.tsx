@@ -61,9 +61,7 @@ try { initAnalytics(); } catch (e) { console.warn('[Analytics] init failed:', e)
 try {
   Purchases.setLogLevel(LOG_LEVEL.DEBUG);
   Purchases.configure({
-    apiKey: Platform.OS === 'ios'
-      ? 'test_foX0GZ0SexqOQDuqHtMzrjCIjyC'
-      : 'sk_OXaoQGNbDRvWqbUVPRdtPQAwAzPAD',
+    apiKey: 'test_foXOGZOSexqOQDuqHtMzrjCIjyC',
   });
 } catch (e) {
   console.warn('[RevenueCat] Not available in this environment (Expo Go):', e);
@@ -130,6 +128,12 @@ const errStyles = StyleSheet.create({
   stack: { color: 'rgba(152, 212, 250, 0.55)', fontSize: 11, lineHeight: 16 },
 });
 
+function withBoundary<P extends object>(Screen: React.ComponentType<P>): React.ComponentType<P> {
+  return function BoundedScreen(props: P) {
+    return <ErrorBoundary><Screen {...props} /></ErrorBoundary>;
+  };
+}
+
 /** Rendered inside SafeAreaProvider so useSafeAreaInsets() works correctly. */
 function AppTabs() {
   const insets = useSafeAreaInsets();
@@ -171,7 +175,7 @@ function AppTabs() {
           merged tab can take the "Journal" label. */}
       <Tab.Screen
         name="Journal"
-        component={simpleHomeOn ? SimpleHomeScreen : HomeScreen}
+        component={simpleHomeOn ? withBoundary(SimpleHomeScreen) : withBoundary(HomeScreen)}
         options={({ navigation }) => ({
           title: 'Untangle',
           headerTitleStyle: { fontFamily: 'Baskerville', fontSize: 22, fontWeight: '500' },
@@ -194,7 +198,7 @@ function AppTabs() {
           change to reach it. */}
       <Tab.Screen
         name="Notes"
-        component={journalMergeOn ? JournalScreen : TranscriptsScreen}
+        component={journalMergeOn ? withBoundary(JournalScreen) : withBoundary(TranscriptsScreen)}
         options={{
           headerShown: journalMergeOn ? false : undefined,
           tabBarLabel: journalMergeOn ? 'Journal' : 'Notes',
@@ -207,7 +211,7 @@ function AppTabs() {
           continues to work on legacy flows. */}
       <Tab.Screen
         name="Summary"
-        component={SummaryScreen}
+        component={withBoundary(SummaryScreen)}
         options={{
           headerShown: false,
           tabBarIcon: ({ color }) => <Feather name="star" size={18} color={color} />,
@@ -219,7 +223,7 @@ function AppTabs() {
           label, icon, and component swap based on ff_patterns_tab. */}
       <Tab.Screen
         name="Insights"
-        component={patternsOn ? PatternsScreen : InsightsScreen}
+        component={patternsOn ? withBoundary(PatternsScreen) : withBoundary(InsightsScreen)}
         options={{
           headerShown: false,
           tabBarLabel: patternsOn ? 'Patterns' : 'Insights',
@@ -229,7 +233,7 @@ function AppTabs() {
       />
       <Tab.Screen
         name="Wisdom"
-        component={WisdomScreen}
+        component={withBoundary(WisdomScreen)}
         options={{
           headerShown: false,
           tabBarIcon: ({ color }) => <Feather name="compass" size={18} color={color} />,
@@ -237,7 +241,7 @@ function AppTabs() {
       />
       <Tab.Screen
         name="Settings"
-        component={SettingsScreen}
+        component={withBoundary(SettingsScreen)}
         options={({ navigation }) => ({
           title: 'Settings',
           headerLeft: () => (
