@@ -6,7 +6,7 @@
  */
 
 // ── Set this after running the setup script ────────────────────────────────────
-export const ELEVENLABS_AGENT_ID = '';   // <-- fill in after setup
+export const ELEVENLABS_AGENT_ID = 'agent_0601kpfaz1nhe9as35fzy6mwqnjg';
 
 const SUPABASE_URL      = 'https://hgodsuwrdpmaqcdetjjn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhnb2RzdXdyZHBtYXFjZGV0ampuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMTI3MjYsImV4cCI6MjA5MDc4ODcyNn0.PrrHGD7Vx0hq51uLcCLTH4tA-smRFMKTnxom1i5lrCw';

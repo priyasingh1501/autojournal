@@ -31,20 +31,22 @@ const agentPayload = {
       // substituted at session-start time from the React Native client.
       prompt: {
         prompt: '{{full_system_prompt}}',
-        llm: 'custom',
-        custom_llm_extra_body: {},
+        llm: 'custom-llm',
+        custom_llm: {
+          url: LLM_WEBHOOK,
+          api_type: 'chat_completions',
+        },
       },
       first_message: '{{first_message}}',
       language: 'en',
     },
     tts: {
-      model_id: 'eleven_flash_v2_5',
+      model_id: 'eleven_flash_v2',
       voice_id: voiceId,
       stability: 0.45,
       similarity_boost: 0.75,
       use_speaker_boost: false,
     },
-    custom_llm_server_url: LLM_WEBHOOK,
     turn: {
       turn_timeout: 10,
       silence_end_call_timeout: 60,
