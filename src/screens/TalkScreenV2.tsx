@@ -254,12 +254,12 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
         setConvState('error');
       }
     },
-    onMessage: ({ message, source }: { message: string; source: 'user' | 'agent' }) => {
+    onMessage: ({ message, source }: { message: string; source: 'user' | 'ai' }) => {
       if (!activeRef.current) return;
 
       const msg: ConversationMessage = {
         id: `${source}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        role: source === 'agent' ? 'assistant' : 'user',
+        role: source === 'ai' ? 'assistant' : 'user',
         text: message,
         timestamp: Date.now(),
       };

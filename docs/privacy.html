@@ -57,7 +57,7 @@
   <div class="container">
 
     <h1>Privacy Policy</h1>
-    <p class="subtitle">Last updated: April 5, 2026 &nbsp;·&nbsp; App version 1.3.0</p>
+    <p class="subtitle">Last updated: April 18, 2026 &nbsp;·&nbsp; App version 1.3.0</p>
 
     <div class="card">
       <span class="tag">Short version</span>
@@ -73,7 +73,7 @@
     <p>
       untangle is an independently developed app by Priya Singh. If you have any
       questions about this policy, email us at
-      <a href="mailto:privacy@untangle.app">privacy@untangle.app</a>.
+      <a href="mailto:privacy@liveuntangle.com">privacy@liveuntangle.com</a>.
     </p>
 
     <h2>2. What data untangle collects</h2>
@@ -96,11 +96,17 @@
     (via our secure server) solely to generate your summary, and is not retained
     by us or Anthropic beyond that request.</p>
 
-    <p><strong>SMS messages (optional)</strong><br />
-    If you enable the spending tracker, untangle reads SMS messages on your device
-    to detect bank and UPI transaction notifications. This processing happens
-    entirely on your device. Transaction data extracted from SMS is stored
-    locally only and is never transmitted off your device.</p>
+    <p><strong>Account &amp; email address</strong><br />
+    If you sign in, your email address is stored by Supabase Authentication solely
+    to identify your account session. We do not use it for marketing.</p>
+
+    <p><strong>Wellbeing &amp; mood data</strong><br />
+    If you use wellbeing check-ins, your mood and distress scores are stored
+    locally on your device and are never transmitted to our servers.</p>
+
+    <p><strong>Expense data</strong><br />
+    If you log expenses, amounts, categories, and descriptions are stored
+    locally on your device only.</p>
 
     <p><strong>ElevenLabs voice synthesis</strong><br />
     If you use the Call feature, the text of your summary is sent to ElevenLabs
@@ -113,10 +119,11 @@
 
     <p><strong>What we do NOT collect</strong></p>
     <ul>
-      <li>We do not collect your name, email, or any account information</li>
-      <li>We do not use advertising SDKs or analytics trackers</li>
+      <li>We do not collect your name, phone number, location, or contacts</li>
+      <li>We do not use advertising SDKs or sell your data</li>
       <li>We do not build profiles or share data with third parties for marketing</li>
-      <li>We do not have access to your journal, entries, or recordings</li>
+      <li>We do not have access to your journal entries or recordings</li>
+      <li>We do not collect device identifiers (IMEI, Android ID)</li>
     </ul>
 
     <h2>3. Third-party services we use</h2>
@@ -142,6 +149,14 @@
         <strong>Supabase</strong> — hosts the Wisdom Shorts database and our AI proxy functions.<br />
         <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase Privacy Policy</a>
       </li>
+      <li>
+        <strong>RevenueCat</strong> — manages in-app subscription purchases. Receives your subscription status and purchase events.<br />
+        <a href="https://www.revenuecat.com/privacy" target="_blank" rel="noopener">RevenueCat Privacy Policy</a>
+      </li>
+      <li>
+        <strong>PostHog</strong> — product analytics. Receives anonymised event names (e.g. "recording_started", "summary_viewed") and your user ID. No journal content is ever included.<br />
+        <a href="https://posthog.com/privacy" target="_blank" rel="noopener">PostHog Privacy Policy</a>
+      </li>
     </ul>
 
     <h2>4. Permissions</h2>
@@ -149,7 +164,6 @@
     <ul>
       <li><strong>Microphone</strong> — to record your voice for journal entries.</li>
       <li><strong>Camera &amp; Photo Library</strong> — to attach photos to journal entries.</li>
-      <li><strong>SMS (READ_SMS)</strong> — to detect spending transactions for the optional spending tracker. Only transaction-related messages are parsed; all other messages are ignored. Nothing leaves your device.</li>
       <li><strong>Notifications</strong> — to alert you when your daily summary is ready.</li>
     </ul>
 
@@ -179,7 +193,7 @@
     <h2>8. Contact</h2>
     <p>
       Questions or requests about your privacy?<br />
-      Email: <a href="mailto:privacy@untangle.app">privacy@untangle.app</a>
+      Email: <a href="mailto:privacy@liveuntangle.com">privacy@liveuntangle.com</a>
     </p>
 
     <hr />
