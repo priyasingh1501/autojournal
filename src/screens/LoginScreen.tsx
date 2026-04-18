@@ -65,7 +65,7 @@ export default function LoginScreen({ onSuccess, onGoSignup }: Props) {
 
   return (
     <ImageBackground
-      source={require('../../assets/ocean.avif')}
+      source={require('../../assets/ocean.jpg')}
       style={s.bg}
       resizeMode="cover"
     >
