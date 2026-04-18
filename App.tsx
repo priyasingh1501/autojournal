@@ -492,21 +492,25 @@ export default function App() {
   if (ready && !authed) {
     if (authScreen === 'signup') {
       return (
-        <SafeAreaProvider>
-          <SignupScreen
-            onSuccess={() => setAuthed(true)}
-            onGoLogin={() => setAuthScreen('login')}
-          />
-        </SafeAreaProvider>
+        <ErrorBoundary>
+          <SafeAreaProvider>
+            <SignupScreen
+              onSuccess={() => setAuthed(true)}
+              onGoLogin={() => setAuthScreen('login')}
+            />
+          </SafeAreaProvider>
+        </ErrorBoundary>
       );
     }
     return (
-      <SafeAreaProvider>
-        <LoginScreen
-          onSuccess={() => setAuthed(true)}
-          onGoSignup={() => setAuthScreen('signup')}
-        />
-      </SafeAreaProvider>
+      <ErrorBoundary>
+        <SafeAreaProvider>
+          <LoginScreen
+            onSuccess={() => setAuthed(true)}
+            onGoSignup={() => setAuthScreen('signup')}
+          />
+        </SafeAreaProvider>
+      </ErrorBoundary>
     );
   }
 
