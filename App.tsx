@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, Component, useState } from 'react';
-import { registerGlobals } from '@livekit/react-native';
+// registerGlobals imported lazily below to prevent native crash killing the app
 import { AppState, AppStateStatus, Linking, Platform, View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
@@ -44,9 +44,10 @@ import {
   cancelDayCloseNotification,
 } from './src/services/DayCloseScheduler';
 
-// Register LiveKit WebRTC globals — must run before any conversation session.
+// Register LiveKit WebRTC globals lazily — prevents native crash killing the app.
 try {
-  registerGlobals();
+  const livekit = require('@livekit/react-native');
+  livekit.registerGlobals();
 } catch (e) {
   console.warn('[LiveKit] registerGlobals failed:', e);
 }
