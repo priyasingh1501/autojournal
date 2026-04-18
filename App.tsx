@@ -45,13 +45,17 @@ import {
 } from './src/services/DayCloseScheduler';
 
 // Register LiveKit WebRTC globals — must run before any conversation session.
-registerGlobals();
+try {
+  registerGlobals();
+} catch (e) {
+  console.warn('[LiveKit] registerGlobals failed:', e);
+}
 
 // Initialise PostHog as early as possible
-initAnalytics();
+try { initAnalytics(); } catch (e) { console.warn('[Analytics] init failed:', e); }
 
 try {
-  Purchases.setLogLevel(LOG_LEVEL.DEBUG); // remove before production
+  Purchases.setLogLevel(LOG_LEVEL.DEBUG);
   Purchases.configure({
     apiKey: Platform.OS === 'ios'
       ? 'test_foX0GZ0SexqOQDuqHtMzrjCIjyC'
@@ -62,12 +66,14 @@ try {
 }
 
 // Register the widget task handler (Android only).
-// This must be called at the top of App so the background service can invoke
-// widgetTaskHandler even when the UI is not fully mounted.
 if (Platform.OS === 'android') {
-  const { registerWidgetTaskHandler } = require('react-native-android-widget');
-  const { widgetTaskHandler } = require('./src/widgets/widgetTaskHandler');
-  registerWidgetTaskHandler(widgetTaskHandler);
+  try {
+    const { registerWidgetTaskHandler } = require('react-native-android-widget');
+    const { widgetTaskHandler } = require('./src/widgets/widgetTaskHandler');
+    registerWidgetTaskHandler(widgetTaskHandler);
+  } catch (e) {
+    console.warn('[Widget] registerWidgetTaskHandler failed:', e);
+  }
 }
 
 // Show notifications when app is in foreground too
