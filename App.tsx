@@ -1,3 +1,6 @@
+// Polyfills — must be first so globals exist before any other module loads.
+import './src/polyfills';
+
 import React, { useEffect, useRef, Component, useState } from 'react';
 // registerGlobals imported lazily below to prevent native crash killing the app
 import { AppState, AppStateStatus, Linking, Platform, View, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
