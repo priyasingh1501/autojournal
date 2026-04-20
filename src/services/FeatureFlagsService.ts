@@ -51,7 +51,7 @@ const PREVIEW_DEFAULTS: Partial<Record<FeatureFlag, boolean>> = {
   ff_day_close_model:  true,
 };
 
-const IS_PREVIEW = process.env.APP_VARIANT === 'preview';
+const IS_PREVIEW = process.env.EXPO_PUBLIC_APP_VARIANT === 'preview';
 
 export const FeatureFlagsService = {
   async getFlag(name: FeatureFlag, defaultValue?: boolean): Promise<boolean> {
