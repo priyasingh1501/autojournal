@@ -61,9 +61,7 @@ try { initAnalytics(); } catch (e) { console.warn('[Analytics] init failed:', e)
 try {
   Purchases.setLogLevel(LOG_LEVEL.DEBUG);
   Purchases.configure({
-    apiKey: Platform.OS === 'ios'
-      ? 'test_foXOGZOSexqOQDuqHtMzrjCIjyC'
-      : 'sk_OXaoQGNbDRvWqbUVPRdtPQAwAzPAD',
+    apiKey: 'test_foXOGZOSexqOQDuqHtMzrjCIjyC',
   });
 } catch (e) {
   console.warn('[RevenueCat] Not available in this environment (Expo Go):', e);

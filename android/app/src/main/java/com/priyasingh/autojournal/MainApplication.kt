@@ -2,6 +2,7 @@ package com.priyasingh.autojournal
 
 import android.app.Application
 import android.content.res.Configuration
+import android.util.Log
 
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -41,18 +42,32 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    Log.e("RN_INIT", "onCreate: start, newArchEnabled=${BuildConfig.IS_NEW_ARCHITECTURE_ENABLED}, releaseLevel=${BuildConfig.REACT_NATIVE_RELEASE_LEVEL}")
     // Required for @livekit/react-native on Android — initializes the audio
     // device module used by WebRTC (and by @elevenlabs/react-native). Must run
     // before loadReactNative(). Without this, starting an ElevenLabs call
     // throws IllegalStateException: "Audio device module is not initialized!".
-    LiveKitReactNative.setup(this)
+    try {
+      LiveKitReactNative.setup(this)
+      Log.e("RN_INIT", "LiveKitReactNative.setup OK")
+    } catch (t: Throwable) {
+      Log.e("RN_INIT", "LiveKitReactNative.setup FAILED", t)
+    }
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
       ReleaseLevel.STABLE
     }
-    loadReactNative(this)
+    Log.e("RN_INIT", "releaseLevel set, about to loadReactNative")
+    try {
+      loadReactNative(this)
+      Log.e("RN_INIT", "loadReactNative OK")
+    } catch (t: Throwable) {
+      Log.e("RN_INIT", "loadReactNative FAILED", t)
+      throw t
+    }
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
+    Log.e("RN_INIT", "onCreate: done")
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {
