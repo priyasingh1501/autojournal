@@ -15,6 +15,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
+import com.livekit.reactnative.LiveKitReactNative
 
 class MainApplication : Application(), ReactApplication {
 
@@ -40,6 +41,11 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // Required for @livekit/react-native on Android — initializes the audio
+    // device module used by WebRTC (and by @elevenlabs/react-native). Must run
+    // before loadReactNative(). Without this, starting an ElevenLabs call
+    // throws IllegalStateException: "Audio device module is not initialized!".
+    LiveKitReactNative.setup(this)
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {
