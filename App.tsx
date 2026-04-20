@@ -32,7 +32,6 @@ import {
   checkAndAutoGenerate,
   generateIfNeeded,
 } from './src/services/AutoSummaryService';
-import Purchases, { LOG_LEVEL } from 'react-native-purchases';
 import { initAnalytics, analyticsIdentify, analyticsReset, analyticsScreen, track } from './src/services/AnalyticsService';
 import {
   configureNotificationChannel as configureSmartChannel,
@@ -57,15 +56,6 @@ try {
 
 // Initialise PostHog as early as possible
 try { initAnalytics(); } catch (e) { console.warn('[Analytics] init failed:', e); }
-
-try {
-  Purchases.setLogLevel(LOG_LEVEL.DEBUG);
-  Purchases.configure({
-    apiKey: 'test_foXOGZOSexqOQDuqHtMzrjCIjyC',
-  });
-} catch (e) {
-  console.warn('[RevenueCat] Not available in this environment (Expo Go):', e);
-}
 
 // Register the widget task handler (Android only).
 if (Platform.OS === 'android') {
@@ -316,13 +306,11 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setAuthed(!!session);
       if (session?.user?.id) {
-        try { Purchases.logIn(session.user.id); } catch {}
         // Only identify on actual sign-in, not on every INITIAL_SESSION boot
         if (event === 'SIGNED_IN') {
           analyticsIdentify(session.user.id, { email: session.user.email });
         }
       } else {
-        try { Purchases.logOut(); } catch {}
         track('user_signed_out');
         analyticsReset();
         // Clear per-user flags so a new account starts fresh

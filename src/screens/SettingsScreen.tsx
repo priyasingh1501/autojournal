@@ -30,7 +30,6 @@ import {
 } from '../services/SmartNotificationService';
 import { AppSettings } from '../types';
 import { getCurrentUser, signOut } from '../services/AuthService';
-import Purchases from 'react-native-purchases';
 import {
   FeatureFlagsService,
   ALL_FLAGS,
@@ -540,7 +539,6 @@ export default function SettingsScreen() {
                     text: 'Sign out',
                     style: 'destructive',
                     onPress: async () => {
-                      try { await Purchases.logOut(); } catch {}
                       await signOut();
                     },
                   },

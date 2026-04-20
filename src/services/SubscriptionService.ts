@@ -17,7 +17,6 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Purchases, { PurchasesPackage } from 'react-native-purchases';
 
 export type InsightTab = 'you' | 'values' | 'thinking' | 'story' | 'patterns';
 export type ProPlan = 'monthly' | 'annual';
@@ -61,13 +60,7 @@ async function isInTrial(): Promise<boolean> {
 }
 
 async function isSubscribed(): Promise<boolean> {
-  try {
-    const customerInfo = await Purchases.getCustomerInfo();
-    return customerInfo.entitlements.active['pro'] !== undefined;
-  } catch {
-    // Falls back to local flag when RevenueCat is unreachable (no network, Expo Go, etc.)
-    return (await AsyncStorage.getItem(KEYS.IS_SUBSCRIBED)) === 'true';
-  }
+  return (await AsyncStorage.getItem(KEYS.IS_SUBSCRIBED)) === 'true';
 }
 
 /** Returns true when the user has unrestricted access (trial or active subscription). */
@@ -158,39 +151,12 @@ async function recordConversationUsed(): Promise<void> {
 
 // ── Purchase ──────────────────────────────────────────────────────────────────
 
-async function purchasePro(plan: ProPlan): Promise<boolean> {
-  let offerings;
-  try {
-    offerings = await Purchases.getOfferings();
-  } catch {
-    throw new Error('In-app purchases are not available in this environment.');
-  }
-  const current = offerings.current;
-  if (!current) throw new Error('No offerings available. Please try again later.');
-
-  let pkg: PurchasesPackage | null = null;
-  if (plan === 'annual') {
-    pkg = current.annual ?? current.availablePackages.find(p => p.identifier.includes('annual')) ?? null;
-  } else {
-    pkg = current.monthly ?? current.availablePackages.find(p => p.identifier.includes('monthly')) ?? null;
-  }
-  if (!pkg) throw new Error('Selected plan is not available. Please try again later.');
-
-  const { customerInfo } = await Purchases.purchasePackage(pkg);
-  const active = customerInfo.entitlements.active['pro'] !== undefined;
-  await AsyncStorage.setItem(KEYS.IS_SUBSCRIBED, active ? 'true' : 'false');
-  return active;
+async function purchasePro(_plan: ProPlan): Promise<boolean> {
+  throw new Error('In-app purchases are temporarily unavailable.');
 }
 
 async function restorePurchases(): Promise<boolean> {
-  try {
-    const customerInfo = await Purchases.restorePurchases();
-    const active = customerInfo.entitlements.active['pro'] !== undefined;
-    await AsyncStorage.setItem(KEYS.IS_SUBSCRIBED, active ? 'true' : 'false');
-    return active;
-  } catch {
-    throw new Error('In-app purchases are not available in this environment.');
-  }
+  throw new Error('In-app purchases are temporarily unavailable.');
 }
 
 // ── Exports ───────────────────────────────────────────────────────────────────
