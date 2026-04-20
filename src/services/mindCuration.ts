@@ -23,7 +23,7 @@ import type { AcrossTimeType } from '../types';
 // ── Public types ─────────────────────────────────────────────────────────────
 
 export interface CurationContextSourceContent {
-  type: 'pattern' | 'day' | 'short';
+  type: 'pattern' | 'day' | 'short' | 'intention';
   data: any;
   patternType?: AcrossTimeType; // explicit type for pattern observations
 }
@@ -36,6 +36,7 @@ export interface CurationContext {
   dominantThemes: string[];
   activeIntentions: string[];
   tenureDays: number;
+  intentionCategory?: string; // category of the intention being discussed (Rule 2c)
 }
 
 export interface CurationSpecialist {
@@ -114,6 +115,40 @@ function explicitPatternType(ctx: CurationContext): AcrossTimeType | null {
   return ctx.sourceContent?.patternType ?? null;
 }
 
+// ── Category → specialist mapping (Rule 2c) ──────────────────────────────────
+
+const INTENTION_CATEGORY_SPECIALISTS: Partial<Record<string, Array<{ id: string; copy: string }>>> = {
+  health: [
+    { id: 'buddha',             copy: 'for what the body is telling you' },
+    { id: 'krishna',            copy: 'for acting without attachment to the result' },
+  ],
+  relationships: [
+    { id: 'carl_jung',          copy: 'for what this relationship reflects in you' },
+    { id: 'rumi',               copy: 'for the love or longing underneath' },
+  ],
+  work: [
+    { id: 'krishna',            copy: "for what you're called to do here" },
+    { id: 'charlie_munger',     copy: 'for thinking it through clearly' },
+  ],
+  mind: [
+    { id: 'ramana_maharshi',    copy: 'for who is watching the mind' },
+    { id: 'jiddu_krishnamurti', copy: 'for seeing what the mind is doing' },
+  ],
+  creative: [
+    { id: 'rumi',               copy: 'for the longing that wants to make something' },
+    { id: 'carl_jung',          copy: "for what's trying to come through you" },
+  ],
+  spiritual: [
+    { id: 'ramana_maharshi',    copy: 'for the direct experience' },
+    { id: 'adi_shankaracharya', copy: 'for the structure beneath it' },
+  ],
+  financial: [
+    { id: 'charlie_munger',     copy: 'for thinking it through clearly' },
+    { id: 'krishna',            copy: 'for acting without being owned by the outcome' },
+  ],
+  // 'other' intentionally omitted — falls through to theme-based rules
+};
+
 // ── Rules ───────────────────────────────────────────────────────────────────
 // Evaluated top-to-bottom; first match wins.
 
@@ -184,6 +219,25 @@ export const RULES: readonly CurationRule[] = [
           return { specialists: [] }; // yields — unrecognised type falls through
       }
     },
+  },
+
+  // Rule 2c — Tapped from an intention with a known category.
+  // Fires when sourceContent.type === 'intention' and intentionCategory is set.
+  // 'other' category falls through so theme-based rules can match.
+  {
+    id: 'from_intention_category',
+    trigger: ctx => {
+      const cat = ctx.intentionCategory;
+      return (
+        ctx.sourceContent?.type === 'intention' &&
+        !!cat &&
+        cat !== 'other' &&
+        !!INTENTION_CATEGORY_SPECIALISTS[cat]
+      );
+    },
+    output: ctx => ({
+      specialists: INTENTION_CATEGORY_SPECIALISTS[ctx.intentionCategory!] ?? [],
+    }),
   },
 
   // Rule 2 — Tapped in from a specific Patterns observation.

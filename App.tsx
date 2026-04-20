@@ -134,6 +134,21 @@ function withBoundary<P extends object>(Screen: React.ComponentType<P>): React.C
   };
 }
 
+// Pre-wrap every screen at module level so the component reference is stable
+// across AppTabs re-renders. Inline withBoundary() calls inside JSX create a
+// new function on every render, causing React Navigation to unmount+remount
+// the active screen whenever feature-flag state updates — which crashes screens
+// that hold native audio/video resources.
+const BoundedSimpleHomeScreen  = withBoundary(SimpleHomeScreen);
+const BoundedHomeScreen        = withBoundary(HomeScreen);
+const BoundedJournalScreen     = withBoundary(JournalScreen);
+const BoundedTranscriptsScreen = withBoundary(TranscriptsScreen);
+const BoundedSummaryScreen     = withBoundary(SummaryScreen);
+const BoundedPatternsScreen    = withBoundary(PatternsScreen);
+const BoundedInsightsScreen    = withBoundary(InsightsScreen);
+const BoundedWisdomScreen      = withBoundary(WisdomScreen);
+const BoundedSettingsScreen    = withBoundary(SettingsScreen);
+
 /** Rendered inside SafeAreaProvider so useSafeAreaInsets() works correctly. */
 function AppTabs() {
   const insets = useSafeAreaInsets();
@@ -175,7 +190,7 @@ function AppTabs() {
           merged tab can take the "Journal" label. */}
       <Tab.Screen
         name="Journal"
-        component={simpleHomeOn ? withBoundary(SimpleHomeScreen) : withBoundary(HomeScreen)}
+        component={simpleHomeOn ? BoundedSimpleHomeScreen : BoundedHomeScreen}
         options={({ navigation }) => ({
           title: 'Untangle',
           headerTitleStyle: { fontFamily: 'Baskerville', fontSize: 22, fontWeight: '500' },
@@ -198,7 +213,7 @@ function AppTabs() {
           change to reach it. */}
       <Tab.Screen
         name="Notes"
-        component={journalMergeOn ? withBoundary(JournalScreen) : withBoundary(TranscriptsScreen)}
+        component={journalMergeOn ? BoundedJournalScreen : BoundedTranscriptsScreen}
         options={{
           headerShown: journalMergeOn ? false : undefined,
           tabBarLabel: journalMergeOn ? 'Journal' : 'Notes',
@@ -211,7 +226,7 @@ function AppTabs() {
           continues to work on legacy flows. */}
       <Tab.Screen
         name="Summary"
-        component={withBoundary(SummaryScreen)}
+        component={BoundedSummaryScreen}
         options={{
           headerShown: false,
           tabBarIcon: ({ color }) => <Feather name="star" size={18} color={color} />,
@@ -223,7 +238,7 @@ function AppTabs() {
           label, icon, and component swap based on ff_patterns_tab. */}
       <Tab.Screen
         name="Insights"
-        component={patternsOn ? withBoundary(PatternsScreen) : withBoundary(InsightsScreen)}
+        component={patternsOn ? BoundedPatternsScreen : BoundedInsightsScreen}
         options={{
           headerShown: false,
           tabBarLabel: patternsOn ? 'Patterns' : 'Insights',
@@ -233,7 +248,7 @@ function AppTabs() {
       />
       <Tab.Screen
         name="Wisdom"
-        component={withBoundary(WisdomScreen)}
+        component={BoundedWisdomScreen}
         options={{
           headerShown: false,
           tabBarIcon: ({ color }) => <Feather name="compass" size={18} color={color} />,
@@ -241,7 +256,7 @@ function AppTabs() {
       />
       <Tab.Screen
         name="Settings"
-        component={withBoundary(SettingsScreen)}
+        component={BoundedSettingsScreen}
         options={({ navigation }) => ({
           title: 'Settings',
           headerLeft: () => (

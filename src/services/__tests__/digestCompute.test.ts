@@ -23,13 +23,21 @@ function makeEntry(partial: Partial<TranscriptEntry>): TranscriptEntry {
 }
 
 function makeIntention(partial: Partial<Intention>): Intention {
+  const status = partial.status ?? (partial.active === false ? 'paused' : 'active');
   return {
-    id: partial.id ?? `int_${Math.random().toString(36).slice(2, 6)}`,
-    text: partial.text ?? 'call mom weekly',
-    source: partial.source ?? 'manual',
-    createdAt: partial.createdAt ?? 0,
-    cadence: partial.cadence ?? null,
-    active: partial.active ?? true,
+    id:                  partial.id ?? `int_${Math.random().toString(36).slice(2, 6)}`,
+    text:                partial.text ?? 'call mom weekly',
+    shortLabel:          partial.shortLabel ?? 'call mom',
+    source:              partial.source ?? 'manual',
+    createdAt:           partial.createdAt ?? 0,
+    cadence:             partial.cadence ?? null,
+    status,
+    statusChangedAt:     partial.statusChangedAt ?? 0,
+    lastMentionedAt:     partial.lastMentionedAt ?? null,
+    mentionCount:        partial.mentionCount ?? 0,
+    weeklyMentionCounts: partial.weeklyMentionCounts ?? [],
+    nudgeEnabled:        partial.nudgeEnabled ?? true,
+    active:              status === 'active',
   };
 }
 

@@ -18,6 +18,7 @@ import type {
 export async function buildCurationContext(args: {
   sourceSurface: CurationContext['sourceSurface'];
   sourceContent?: CurationContextSourceContent;
+  intentionCategory?: string;
 }): Promise<CurationContext> {
   // UserContextV2 gives us wellbeing, tenure, and intention ids in one read.
   const user = await getUserContextV2().catch(() => null);
@@ -44,5 +45,6 @@ export async function buildCurationContext(args: {
     dominantThemes,
     activeIntentions: (user?.activeIntentions ?? []).map(i => i.id),
     tenureDays: user?.tenureDays ?? 0,
+    ...(args.intentionCategory ? { intentionCategory: args.intentionCategory } : {}),
   };
 }

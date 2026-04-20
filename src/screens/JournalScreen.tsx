@@ -27,6 +27,7 @@ import {
   FlatList,
   Image,
   Alert,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -283,6 +284,7 @@ export default function JournalScreen() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [generatingDate, setGeneratingDate] = useState<string | null>(null);
   const [staleCount, setStaleCount] = useState(0);
+  const [focusTick, setFocusTick] = useState(0);
 
   // Raw entries state
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
@@ -326,6 +328,7 @@ export default function JournalScreen() {
   // ── Load support data once per focus ────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
+      setFocusTick(t => t + 1);
       StorageService.getSettings().then(s => {
         setEnabledTrackers(s?.enabledTrackers ? new Set(s.enabledTrackers) : null);
       }).catch(() => {});
@@ -349,6 +352,20 @@ export default function JournalScreen() {
     }, [route?.params?.view, route?.params?.jumpToDate]),
   );
 
+  // ── Refresh entries when a new transcript is saved (e.g. while transcription
+  //    runs on HomeScreen and the user is already viewing this tab) ─────────────
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('transcriptAdded', ({ date }: { date: string }) => {
+      if (date !== viewingDate) return;
+      StorageService.getTranscriptsForDate(viewingDate).then(e => {
+        setEntries(e);
+        setSummary(prev => prev ? { ...prev } : null);
+        setStaleCount(prev => prev + 1);
+      }).catch(() => {});
+    });
+    return () => sub.remove();
+  }, [viewingDate]);
+
   // ── Load summary + entries when viewing date changes ────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -369,7 +386,7 @@ export default function JournalScreen() {
       setSummaryLoading(false);
     })().catch(() => { if (!cancelled) setSummaryLoading(false); });
     return () => { cancelled = true; };
-  }, [viewingDate]);
+  }, [viewingDate, focusTick]);
 
   // ── Handlers required by NewDaySummaryView ─────────────────────────────────
   const handleGenerate = async (date: string) => {

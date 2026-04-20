@@ -11,17 +11,18 @@
  * canGenerateInsight); subsequent regenerations require Pro.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
   ActivityIndicator,
+  Animated,
+  Image,
   Modal,
   RefreshControl,
-  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -31,6 +32,8 @@ import {
   AcrossTimeObservation,
   AcrossTimeType,
   DailySummary,
+  Intention,
+  IntentionCategory,
   PatternsReport,
 } from '../types';
 import {
@@ -54,6 +57,8 @@ import {
 import { buildCurationContext } from '../services/CurationContextBuilder';
 import PaywallModal from '../components/PaywallModal';
 import TalkScreen from './TalkScreenV2';
+import ObservationCard from '../components/home/ObservationCard';
+import ThisMonthCard from '../components/home/ThisMonthCard';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,12 +71,6 @@ function formatArchiveStart(archiveDays: number): string {
   return start.toLocaleDateString([], { month: 'long', day: 'numeric' });
 }
 
-/**
- * Synthesize a DailySummary whose insightText carries the pattern + evidence.
- * ConversationService.buildContextBlock uses `insightText ?? summary`, so the
- * context flows into Claude's opening message and mind persona without
- * needing any changes to TalkScreen.
- */
 function buildPatternSummary(obs: AcrossTimeObservation): DailySummary {
   const body = [
     `The user is thinking about this pattern: "${obs.body}"`,
@@ -97,202 +96,11 @@ function EmptyArchiveState() {
   return (
     <View style={empty.wrap}>
       <Feather name="feather" size={36} color="rgba(152,212,250,0.35)" style={{ marginBottom: 16 }} />
-      <Text style={empty.title}>Come back after a few days</Text>
+      <Text style={empty.title}>Start your first entry</Text>
       <Text style={empty.sub}>
-        Patterns needs a bit of your own writing to show you anything honest.
-        Journal for a few days and the first observations will appear.
+        Patterns shows up from your very first entry — a texture read, then deeper
+        observations as your archive grows.
       </Text>
-      <View style={empty.milestones}>
-        <MilestoneLine days={14} label="what's been loud lately" />
-        <MilestoneLine days={45} label="questions you keep returning to" />
-        <MilestoneLine days={60} label="things you might be wondering about" />
-      </View>
-    </View>
-  );
-}
-
-function MilestoneLine({ days, label }: { days: number; label: string }) {
-  return (
-    <View style={empty.milestoneRow}>
-      <Text style={empty.milestoneDays}>{days} days</Text>
-      <Text style={empty.milestoneLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function YoungArchiveNudge({ archiveDays }: { archiveDays: number }) {
-  const next = archiveDays < 14 ? 14 : archiveDays < 45 ? 45 : archiveDays < 60 ? 60 : null;
-  if (next === null) return null;
-  const daysAway = next - archiveDays;
-  return (
-    <View style={young.wrap}>
-      <Feather name="clock" size={13} color="rgba(152,212,250,0.55)" />
-      <Text style={young.text}>
-        More will appear as you keep journaling — about {daysAway} day{daysAway !== 1 ? 's' : ''} from the next section.
-      </Text>
-    </View>
-  );
-}
-
-// ── This month ───────────────────────────────────────────────────────────────
-
-type EmotionFamily = 'calm' | 'tense' | 'low' | 'energized' | 'neutral';
-
-function emotionFamily(emotion: string): EmotionFamily {
-  const e = emotion.toLowerCase();
-  if (/calm|content|hopeful|peaceful|grateful|relaxed/.test(e)) return 'calm';
-  if (/anxious|stressed|overwhelmed|worried|frustrated|tense/.test(e)) return 'tense';
-  if (/sad|lonely|grief|down|low|melanchol/.test(e)) return 'low';
-  if (/excited|proud|motivated|energized|happy|joyful|inspired/.test(e)) return 'energized';
-  return 'neutral';
-}
-
-const EMOTION_COLORS: Record<EmotionFamily, string> = {
-  calm:      'rgba(99,211,174,0.85)',
-  tense:     'rgba(251,191,36,0.85)',
-  low:       'rgba(167,139,250,0.85)',
-  energized: 'rgba(248,164,76,0.85)',
-  neutral:   'rgba(152,212,250,0.60)',
-};
-
-function EmotionalArcRow({ arc }: { arc: NonNullable<PatternsReport['thisMonth']['emotionalArc']> }) {
-  return (
-    <View style={arc.length > 0 ? tms.arcWrap : undefined}>
-      <Text style={tms.arcLabel}>EMOTIONAL ARC</Text>
-      <View style={tms.arcRow}>
-        {arc.map(w => {
-          const color = EMOTION_COLORS[emotionFamily(w.dominantEmotion)];
-          return (
-            <View key={w.week} style={tms.arcWeek}>
-              <View style={[tms.arcDot, { backgroundColor: color }]} />
-              <Text style={tms.arcWeekLabel}>W{w.week}</Text>
-              <Text style={[tms.arcEmotion, { color }]} numberOfLines={1}>
-                {w.dominantEmotion}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-
-function ThisMonthSection({ tm }: { tm: PatternsReport['thisMonth'] }) {
-  const hasAny =
-    !!tm.reflection ||
-    (tm.whatsLoud && tm.whatsLoud.length > 0) ||
-    (tm.intentionsProgress && tm.intentionsProgress.length > 0) ||
-    (tm.emotionalArc && tm.emotionalArc.length > 0);
-
-  if (!hasAny) return null;
-
-  return (
-    <View style={tms.wrap}>
-      <Text style={tms.label}>THIS MONTH</Text>
-      {tm.reflection ? <Text style={tms.reflection}>{tm.reflection}</Text> : null}
-      {tm.whatsLoud && tm.whatsLoud.length > 0 && (
-        <View style={tms.chipsRow}>
-          {tm.whatsLoud.map((w, i) => (
-            <View key={`${w}-${i}`} style={tms.chip}>
-              <Text style={tms.chipText}>{w}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-      {tm.intentionsProgress && tm.intentionsProgress.length > 0 && (
-        <View style={tms.intentions}>
-          {tm.intentionsProgress.map((ip, i) => (
-            <View key={i} style={tms.intentionRow}>
-              <Text style={tms.intentionLabel}>{ip.intention}</Text>
-              <Text style={tms.intentionNote}>{ip.note}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-      {tm.emotionalArc && tm.emotionalArc.length >= 2 && (
-        <EmotionalArcRow arc={tm.emotionalArc} />
-      )}
-    </View>
-  );
-}
-
-// ── Observation card ─────────────────────────────────────────────────────────
-
-function ObservationCard({
-  obs,
-  hidden,
-  muted,
-  onSitWith,
-  onDismiss,
-  onExpandSection,
-}: {
-  obs: AcrossTimeObservation;
-  hidden: boolean;
-  muted?: boolean;
-  onSitWith: (obs: AcrossTimeObservation) => void;
-  onDismiss: (obs: AcrossTimeObservation) => void;
-  onExpandSection: (section: AcrossTimeType) => void;
-}) {
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
-
-  if (hidden) return null;
-
-  const toggleEvidence = () => {
-    const next = !evidenceOpen;
-    setEvidenceOpen(next);
-    if (next) onExpandSection(obs.type);
-  };
-
-  return (
-    <View style={[card.wrap, muted && card.wrapMuted]}>
-      <Text style={card.title}>{obs.title}</Text>
-      <Text style={card.body}>{obs.body}</Text>
-
-      <TouchableOpacity style={card.evidenceToggle} onPress={toggleEvidence} activeOpacity={0.7}>
-        <Feather
-          name={evidenceOpen ? 'chevron-up' : 'chevron-down'}
-          size={13}
-          color="rgba(152,212,250,0.70)"
-        />
-        <Text style={card.evidenceToggleText}>
-          {evidenceOpen
-            ? 'Hide evidence'
-            : `From your entries (${obs.evidence.length})`}
-        </Text>
-      </TouchableOpacity>
-
-      {evidenceOpen && (
-        <View style={card.evidenceList}>
-          {obs.evidence.map((e, i) => (
-            <View key={i} style={card.evidenceItem}>
-              <Text style={card.evidenceDate}>{formatDate(e.date)}</Text>
-              <Text style={card.evidenceExcerpt}>“{e.excerpt}”</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      <View style={card.actionsRow}>
-        <TouchableOpacity
-          style={card.sitWithBtn}
-          onPress={() => onSitWith(obs)}
-          activeOpacity={0.85}
-        >
-          <Feather name="compass" size={13} color="rgba(224,242,254,0.92)" />
-          <Text style={card.sitWithText}>Sit with this</Text>
-        </TouchableOpacity>
-        {obs.dismissible && (
-          <TouchableOpacity
-            style={card.dismissBtn}
-            onPress={() => onDismiss(obs)}
-            activeOpacity={0.7}
-          >
-            <Text style={card.dismissText}>Not quite</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      <Text style={card.window}>{obs.window}</Text>
     </View>
   );
 }
@@ -314,12 +122,10 @@ function MindPickerSheet({
 }) {
   if (!observation) return null;
 
-  // Build a unified entry list from mindCuration result when available,
-  // or fall back to the static patternMindMap.
   type PickerEntry = { id: string | null; name: string; sub: string; imageSource?: any };
   const entries: PickerEntry[] = curationResult
     ? [
-        { id: null,  name: 'Companion', sub: curationResult.companion.copy },
+        { id: null, name: 'Companion', sub: curationResult.companion.copy },
         ...curationResult.specialists.map(s => {
           const mind = MINDS.find(m => m.id === s.id);
           return { id: s.id, name: s.displayName, sub: s.copy, imageSource: mind?.image };
@@ -396,11 +202,7 @@ function DismissSheet({
             It won't show up again. Your feedback shapes the next report.
           </Text>
 
-          <TouchableOpacity
-            style={picker.option}
-            onPress={() => onPick('not_quite')}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={picker.option} onPress={() => onPick('not_quite')} activeOpacity={0.8}>
             <View style={[picker.avatar, picker.reasonAvatar]}>
               <Feather name="x" size={16} color="rgba(224,242,254,0.90)" />
             </View>
@@ -410,11 +212,7 @@ function DismissSheet({
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={picker.option}
-            onPress={() => onPick('too_soft')}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={picker.option} onPress={() => onPick('too_soft')} activeOpacity={0.8}>
             <View style={[picker.avatar, picker.reasonAvatar]}>
               <Feather name="cloud" size={16} color="rgba(224,242,254,0.90)" />
             </View>
@@ -442,23 +240,21 @@ export default function PatternsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [hasAnyArchive, setHasAnyArchive] = useState<boolean | null>(null);
 
-  // Curated split — recomputed whenever report changes
   const [curation, setCuration] = useState<CurationResult>({ surfaced: [], additional: [] });
   const [moreExpanded, setMoreExpanded] = useState(false);
+  const moreOpacity = useRef(new Animated.Value(0)).current;
+  const [activeIntentions, setActiveIntentions] = useState<Intention[]>([]);
 
-  // Optimistic hide after a dismiss; survives until next generation refreshes.
   const [locallyHidden, setLocallyHidden] = useState<Set<string>>(new Set());
 
-  // Sheets
-  const [sitWithObs,       setSitWithObs]       = useState<AcrossTimeObservation | null>(null);
-  const [sitWithCuration,  setSitWithCuration]  = useState<MindCurationResult | null>(null);
-  const [dismissObs,       setDismissObs]       = useState<AcrossTimeObservation | null>(null);
-  const [talkSummary, setTalkSummary] = useState<DailySummary | null>(null);
-  const [talkMindId,  setTalkMindId]  = useState<string | null>(null);
+  const [sitWithObs,      setSitWithObs]      = useState<AcrossTimeObservation | null>(null);
+  const [sitWithCuration, setSitWithCuration] = useState<MindCurationResult | null>(null);
+  const [dismissObs,      setDismissObs]      = useState<AcrossTimeObservation | null>(null);
+  const [talkSummary,     setTalkSummary]     = useState<DailySummary | null>(null);
+  const [talkMindId,      setTalkMindId]      = useState<string | null>(null);
   const [talkSourceContext, setTalkSourceContext] =
     useState<import('../services/openingLineSelector').SourceContext | null>(null);
 
-  // Paywall
   const [showPaywall, setShowPaywall] = useState(false);
   const [paywallHint, setPaywallHint] = useState<string | undefined>();
 
@@ -469,14 +265,11 @@ export default function PatternsScreen() {
       getActiveIntentions().catch(() => []),
     ]);
     const previousReport = history.length > 0 ? history[history.length - 1] : null;
-    const result = curate(
-      r,
-      previousReport,
-      dismissed.map(d => d.fingerprint),
-      intentions.map(i => i.text),
-    );
+    const result = curate(r, previousReport, dismissed.map(d => d.fingerprint), intentions);
     setCuration(result);
+    setActiveIntentions(intentions);
     setMoreExpanded(false);
+    moreOpacity.setValue(0);
   }, []);
 
   useFocusEffect(
@@ -486,10 +279,13 @@ export default function PatternsScreen() {
         const cached = await getCachedReport();
         setReport(cached);
         if (cached) runCuration(cached);
-        const dates = await StorageService.getSummaryDates();
-        setHasAnyArchive(dates.length > 0);
-        // Auto-generate first report when we have an archive and nothing cached.
-        if (!cached && dates.length >= 3) {
+        const [summaryDates, transcriptDates] = await Promise.all([
+          StorageService.getSummaryDates(),
+          StorageService.getTranscriptDates(),
+        ]);
+        const hasAny = transcriptDates.length > 0 || summaryDates.length > 0;
+        setHasAnyArchive(hasAny);
+        if (!cached && hasAny) {
           runGenerate(true).catch(() => {});
         }
       })();
@@ -502,7 +298,7 @@ export default function PatternsScreen() {
       setError(null);
       const { report: fresh } = await generatePatterns();
       setReport(fresh);
-      setLocallyHidden(new Set()); // fresh report supersedes local hides
+      setLocallyHidden(new Set());
       await runCuration(fresh);
       await SubscriptionService.recordInsightGenerated('patterns');
     } catch (e: any) {
@@ -540,12 +336,21 @@ export default function PatternsScreen() {
   };
 
   // ── Sit with this flow ─────────────────────────────────────────────────────
+
   const openSitWith = async (obs: AcrossTimeObservation) => {
     let mindCuration: MindCurationResult | null = null;
     try {
+      const bodyLower = obs.body.toLowerCase();
+      const referencedIntention = activeIntentions.find(i =>
+        bodyLower.includes(i.text.toLowerCase()) ||
+        (i.shortLabel && bodyLower.includes(i.shortLabel.toLowerCase())),
+      );
+      const intentionCategory = referencedIntention?.category;
+
       const ctx = await buildCurationContext({
         sourceSurface: 'patterns',
         sourceContent: { type: 'pattern', data: obs, patternType: obs.type },
+        intentionCategory,
       });
       mindCuration = mindCurate(ctx);
       track('curation_rule_fired', {
@@ -553,6 +358,7 @@ export default function PatternsScreen() {
         specialists: mindCuration.specialists.map(s => s.id),
         source_surface: 'patterns',
         pattern_type: obs.type,
+        ...(intentionCategory ? { intention_category: intentionCategory } : {}),
       });
     } catch { /* sheet falls back to patternMindMap */ }
     setSitWithCuration(mindCuration);
@@ -561,15 +367,10 @@ export default function PatternsScreen() {
 
   const pickMind = (mindId: MindCandidate) => {
     if (!sitWithObs) return;
-    track('sit_with_this_opened', {
-      source: 'patterns',
-      mind_id: mindId ?? 'companion',
-    });
+    track('sit_with_this_opened', { source: 'patterns', mind_id: mindId ?? 'companion' });
     const summary = buildPatternSummary(sitWithObs);
     setTalkSummary(summary);
     setTalkMindId(mindId);
-    // Thread pattern source context for the V2 opener — picks from
-    // openingLinesWithContext + runs the Haiku adaptation pass.
     const { patternSourceContext } = require('../services/openingLineSelector');
     setTalkSourceContext(patternSourceContext({ body: sitWithObs.body }));
     setSitWithObs(null);
@@ -577,29 +378,40 @@ export default function PatternsScreen() {
   };
 
   // ── Dismiss flow ───────────────────────────────────────────────────────────
+
   const openDismiss = (obs: AcrossTimeObservation) => setDismissObs(obs);
 
   const confirmDismiss = async (reason: DismissReason) => {
     const obs = dismissObs;
     setDismissObs(null);
     if (!obs) return;
-    track('patterns_observation_dismissed', {
-      section: obs.type,
-      reason,
-    });
+    track('patterns_observation_dismissed', { section: obs.type, reason });
     await addDismissal({ type: obs.type, title: obs.title, reason });
-    // Optimistic hide — stays hidden until next generate overwrites locallyHidden.
     setLocallyHidden(prev => new Set(prev).add(obs.title));
   };
 
   // ── Section-expand telemetry ───────────────────────────────────────────────
+
   const onExpandSection = (section: AcrossTimeType) => {
     track('patterns_section_viewed', { section });
   };
 
+  // ── More expander ──────────────────────────────────────────────────────────
+
+  const toggleMore = () => {
+    if (moreExpanded) {
+      Animated.timing(moreOpacity, { toValue: 0, duration: 180, useNativeDriver: true }).start(() =>
+        setMoreExpanded(false),
+      );
+    } else {
+      setMoreExpanded(true);
+      track('patterns_more_expanded');
+      Animated.timing(moreOpacity, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+    }
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  // Still resolving whether the user has *any* archive at all
   if (hasAnyArchive === null) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -611,14 +423,32 @@ export default function PatternsScreen() {
   }
 
   const archiveDays = report?.archiveDays ?? 0;
+  const visibleAdditional = curation.additional.filter(o => !locallyHidden.has(o.title));
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <Text style={styles.screenTitle}>Patterns</Text>
+        <View>
+          <Text style={styles.screenTitle}>Patterns</Text>
+          {report && (
+            <Text style={styles.subtitle}>
+              {(() => {
+                const n = report.entryCount;
+                const label = n === 1 ? 'entry' : 'entries';
+                if (n < 8)  return `${n} ${label} · patterns form early`;
+                if (n <= 20) return `${n} ${label} · patterns emerging`;
+                return `${n} ${label} · ${archiveDays} days`;
+              })()}
+            </Text>
+          )}
+        </View>
         {report && (
-          <TouchableOpacity onPress={onRegeneratePress} disabled={loading} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <TouchableOpacity
+            onPress={onRegeneratePress}
+            disabled={loading}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             {loading
               ? <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
               : <Text style={styles.topLink}>Regenerate</Text>}
@@ -630,23 +460,10 @@ export default function PatternsScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           report
-            ? <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor="rgba(152,212,250,0.70)"
-              />
+            ? <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="rgba(152,212,250,0.70)" />
             : undefined
         }
       >
-        {/* Subtitle */}
-        {report ? (
-          <Text style={styles.subtitle}>
-            What I'm seeing in your last {archiveDays} day{archiveDays !== 1 ? 's' : ''} of entries
-          </Text>
-        ) : null}
-
-        {/* TODO(Phase 6): Letter banner slot — leave space, don't render yet */}
-
         {/* Body */}
         {!hasAnyArchive || error === NOT_ENOUGH_DATA ? (
           <EmptyArchiveState />
@@ -657,11 +474,12 @@ export default function PatternsScreen() {
           </View>
         ) : (
           <>
-            <ThisMonthSection tm={report.thisMonth} />
+            {/* This month card */}
+            <ThisMonthCard tm={report.thisMonth} />
 
+            {/* Surfaced observations */}
             {curation.surfaced.length > 0 ? (
-              <View style={styles.acrossTimeWrap}>
-                <Text style={styles.sectionLabel}>ACROSS TIME</Text>
+              <>
                 {curation.surfaced.map((obs, i) => (
                   <ObservationCard
                     key={`${obs.type}-${i}`}
@@ -669,54 +487,47 @@ export default function PatternsScreen() {
                     hidden={locallyHidden.has(obs.title)}
                     onSitWith={openSitWith}
                     onDismiss={openDismiss}
-                    onExpandSection={onExpandSection}
+                    onSeeEntries={() => onExpandSection(obs.type)}
                   />
                 ))}
 
-                {curation.additional.length > 0 && (
+                {/* More patterns expander */}
+                {visibleAdditional.length > 0 && (
                   <>
                     <TouchableOpacity
                       style={styles.moreBtn}
-                      onPress={() => {
-                        setMoreExpanded(e => !e);
-                        if (!moreExpanded) track('patterns_more_expanded');
-                      }}
+                      onPress={toggleMore}
                       activeOpacity={0.7}
                     >
-                      <Feather
-                        name={moreExpanded ? 'chevron-up' : 'chevron-down'}
-                        size={13}
-                        color="rgba(152,212,250,0.65)"
-                      />
                       <Text style={styles.moreBtnText}>
                         {moreExpanded
                           ? 'Show less'
-                          : `${curation.additional.filter(o => !locallyHidden.has(o.title)).length} more pattern${curation.additional.filter(o => !locallyHidden.has(o.title)).length !== 1 ? 's' : ''}`}
+                          : `${visibleAdditional.length} more pattern${visibleAdditional.length !== 1 ? 's' : ''} ↓`}
                       </Text>
                     </TouchableOpacity>
 
-                    {moreExpanded && curation.additional.map((obs, i) => (
-                      <ObservationCard
-                        key={`additional-${obs.type}-${i}`}
-                        obs={obs}
-                        hidden={locallyHidden.has(obs.title)}
-                        muted
-                        onSitWith={openSitWith}
-                        onDismiss={openDismiss}
-                        onExpandSection={onExpandSection}
-                      />
-                    ))}
+                    {moreExpanded && (
+                      <Animated.View style={{ opacity: moreOpacity }}>
+                        {curation.additional.map((obs, i) => (
+                          <ObservationCard
+                            key={`additional-${obs.type}-${i}`}
+                            obs={obs}
+                            hidden={locallyHidden.has(obs.title)}
+                            onSitWith={openSitWith}
+                            onDismiss={openDismiss}
+                            onSeeEntries={() => onExpandSection(obs.type)}
+                          />
+                        ))}
+                      </Animated.View>
+                    )}
                   </>
                 )}
-              </View>
-            ) : report.acrossTime.length === 0 ? (
-              <YoungArchiveNudge archiveDays={archiveDays} />
+              </>
             ) : null}
 
             {/* Footer */}
             <Text style={styles.footer}>
-              Updated weekly. Based on {report.entryCount} entr{report.entryCount === 1 ? 'y' : 'ies'} since{' '}
-              {formatArchiveStart(archiveDays)}. These are observations, not conclusions.
+              Updated weekly · since {formatArchiveStart(archiveDays)}
             </Text>
           </>
         )}
@@ -744,7 +555,7 @@ export default function PatternsScreen() {
         onCancel={() => setDismissObs(null)}
       />
 
-      {/* Talk modal — launched after mind pick */}
+      {/* Talk modal */}
       <Modal
         visible={!!talkSummary}
         animationType="slide"
@@ -774,257 +585,93 @@ export default function PatternsScreen() {
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#02060E' },
+  container:    { flex: 1, backgroundColor: '#02060E' },
   loadingCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   topBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 10,
   },
   screenTitle: {
-    fontSize: 22, fontWeight: '500',
-    color: 'rgba(224, 242, 254, 0.95)', fontFamily: 'Baskerville',
+    fontSize: 22,
+    fontWeight: '500',
+    color: 'rgba(224, 242, 254, 0.95)',
+    fontFamily: 'Baskerville',
+  },
+  subtitle: {
+    fontSize: 12,
+    color: 'rgba(152,212,250,0.50)',
+    fontFamily: 'GillSans-Light',
+    marginTop: 2,
   },
   topLink: {
-    fontSize: 14, color: 'rgba(152, 212, 250, 0.80)',
-    fontFamily: 'GillSans-Light', letterSpacing: 0.2,
+    fontSize: 14,
+    color: 'rgba(152, 212, 250, 0.80)',
+    fontFamily: 'GillSans-Light',
+    letterSpacing: 0.2,
+    marginTop: 4,
   },
 
-  scrollContent: { paddingHorizontal: 20, paddingBottom: 32 },
-  subtitle: {
-    fontSize: 13, color: 'rgba(152,212,250,0.65)',
-    fontFamily: 'GillSans-Light',
-    marginTop: 2, marginBottom: 18,
-  },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 48 },
 
   initialLoading: {
-    alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 48, gap: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    gap: 12,
   },
   initialLoadingText: {
-    fontSize: 13, color: 'rgba(152,212,250,0.55)',
+    fontSize: 13,
+    color: 'rgba(152,212,250,0.55)',
     fontFamily: 'GillSans-Light',
   },
-
-  sectionLabel: {
-    fontSize: 10, letterSpacing: 0.8, fontWeight: '500',
-    color: 'rgba(152, 212, 250, 0.60)',
-    fontFamily: 'GillSans-Light',
-    marginBottom: 10, marginTop: 6,
-  },
-  acrossTimeWrap: { marginTop: 18 },
 
   moreBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: 12, paddingHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
     alignSelf: 'flex-start',
-    marginTop: 2, marginBottom: 4,
+    marginTop: 2,
+    marginBottom: 4,
   },
   moreBtnText: {
-    fontSize: 13, letterSpacing: 0.2,
-    color: 'rgba(152,212,250,0.72)',
+    fontSize: 13,
+    color: 'rgba(152,212,250,0.65)',
     fontFamily: 'GillSans-Light',
+    letterSpacing: 0.2,
   },
 
   footer: {
     marginTop: 24,
-    fontSize: 12, lineHeight: 19,
-    color: 'rgba(152,212,250,0.48)',
+    fontSize: 11,
+    lineHeight: 18,
+    color: 'rgba(152,212,250,0.38)',
     fontFamily: 'GillSans-Light',
     textAlign: 'center',
-    paddingHorizontal: 10,
   },
 
   errorBox: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginTop: 16, padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 16,
+    padding: 12,
     borderRadius: 10,
     backgroundColor: 'rgba(252,165,165,0.08)',
-    borderWidth: 1, borderColor: 'rgba(252,165,165,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(252,165,165,0.25)',
   },
   errorText: {
-    flex: 1, fontSize: 12,
+    flex: 1,
+    fontSize: 12,
     color: 'rgba(252,165,165,0.80)',
     fontFamily: 'GillSans-Light',
-  },
-});
-
-// ── This month styles ────────────────────────────────────────────────────────
-
-const tms = StyleSheet.create({
-  wrap: {
-    backgroundColor: 'rgba(3, 18, 40, 0.72)',
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.13)',
-    marginTop: 4,
-  },
-  label: {
-    fontSize: 10, letterSpacing: 0.8, fontWeight: '500',
-    color: 'rgba(152, 212, 250, 0.60)',
-    fontFamily: 'GillSans-Light',
-    marginBottom: 10,
-  },
-  reflection: {
-    fontSize: 15, lineHeight: 23,
-    color: 'rgba(224, 242, 254, 0.90)',
-    fontFamily: 'Baskerville',
-    marginBottom: 12,
-  },
-  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
-  chip: {
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.28)',
-    backgroundColor: 'rgba(9, 41, 173, 0.18)',
-  },
-  chipText: {
-    fontSize: 12,
-    color: 'rgba(224,242,254,0.88)',
-    fontFamily: 'GillSans-Light',
-  },
-  intentions: { marginTop: 14, gap: 8 },
-  intentionRow: { gap: 2 },
-  intentionLabel: {
-    fontSize: 12, letterSpacing: 0.3,
-    color: 'rgba(224,242,254,0.90)',
-    fontFamily: 'GillSans-Light',
-  },
-  intentionNote: {
-    fontSize: 13, lineHeight: 20,
-    color: 'rgba(152,212,250,0.75)',
-    fontFamily: 'GillSans-Light',
-  },
-
-  arcWrap: {
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(152,212,250,0.10)',
-  },
-  arcLabel: {
-    fontSize: 10, letterSpacing: 0.8, fontWeight: '500',
-    color: 'rgba(152,212,250,0.50)',
-    fontFamily: 'GillSans-Light',
-    marginBottom: 10,
-  },
-  arcRow: {
-    flexDirection: 'row',
-    gap: 0,
-    justifyContent: 'space-between',
-  },
-  arcWeek: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  arcDot: {
-    width: 8, height: 8,
-    borderRadius: 4,
-  },
-  arcWeekLabel: {
-    fontSize: 10, letterSpacing: 0.5,
-    color: 'rgba(152,212,250,0.45)',
-    fontFamily: 'GillSans-Light',
-  },
-  arcEmotion: {
-    fontSize: 11, letterSpacing: 0.1,
-    fontFamily: 'GillSans-Light',
-    textAlign: 'center',
-  },
-});
-
-// ── Observation card styles ──────────────────────────────────────────────────
-
-const card = StyleSheet.create({
-  wrap: {
-    backgroundColor: 'rgba(3, 18, 40, 0.60)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.12)',
-  },
-  wrapMuted: {
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(152,212,250,0.22)',
-    opacity: 0.82,
-  },
-  title: {
-    fontSize: 15, fontFamily: 'Baskerville',
-    color: 'rgba(224, 242, 254, 0.92)',
-    marginBottom: 6,
-  },
-  body: {
-    fontSize: 14, lineHeight: 21,
-    color: 'rgba(224, 242, 254, 0.82)',
-    fontFamily: 'GillSans-Light',
-    marginBottom: 10,
-  },
-
-  evidenceToggle: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
-  },
-  evidenceToggleText: {
-    fontSize: 12, letterSpacing: 0.2,
-    color: 'rgba(152,212,250,0.75)',
-    fontFamily: 'GillSans-Light',
-  },
-  evidenceList: {
-    marginTop: 4, marginBottom: 4,
-    paddingLeft: 10,
-    borderLeftWidth: 2,
-    borderLeftColor: 'rgba(152,212,250,0.22)',
-    gap: 8,
-  },
-  evidenceItem: { gap: 2 },
-  evidenceDate: {
-    fontSize: 10, letterSpacing: 0.5,
-    color: 'rgba(152,212,250,0.55)',
-    fontFamily: 'GillSans-Light',
-    textTransform: 'uppercase',
-  },
-  evidenceExcerpt: {
-    fontSize: 13, lineHeight: 20,
-    color: 'rgba(224,242,254,0.80)',
-    fontFamily: 'GillSans-Light',
-    fontStyle: 'italic',
-  },
-
-  actionsRow: {
-    flexDirection: 'row', alignItems: 'center',
-    gap: 10, marginTop: 12,
-  },
-  sitWithBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 8,
-    backgroundColor: 'rgba(9,41,173,0.45)',
-    borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(152,212,250,0.28)',
-  },
-  sitWithText: {
-    fontSize: 13, letterSpacing: 0.2,
-    color: 'rgba(224,242,254,0.92)',
-    fontFamily: 'GillSans-Light',
-  },
-  dismissBtn: {
-    paddingHorizontal: 10, paddingVertical: 8,
-  },
-  dismissText: {
-    fontSize: 12,
-    color: 'rgba(152,212,250,0.55)',
-    fontFamily: 'GillSans-Light',
-  },
-  window: {
-    marginTop: 10,
-    fontSize: 10, letterSpacing: 0.5,
-    color: 'rgba(152,212,250,0.40)',
-    fontFamily: 'GillSans-Light',
-    textTransform: 'uppercase',
   },
 });
 
@@ -1033,59 +680,22 @@ const card = StyleSheet.create({
 const empty = StyleSheet.create({
   wrap: {
     alignItems: 'center',
-    paddingVertical: 36, paddingHorizontal: 10,
+    paddingVertical: 36,
+    paddingHorizontal: 10,
     marginTop: 24,
   },
   title: {
-    fontSize: 18, fontFamily: 'Baskerville',
+    fontSize: 18,
+    fontFamily: 'Baskerville',
     color: 'rgba(224,242,254,0.90)',
     marginBottom: 10,
   },
   sub: {
-    fontSize: 14, lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 22,
     color: 'rgba(152,212,250,0.65)',
     fontFamily: 'GillSans-Light',
     textAlign: 'center',
-    marginBottom: 24,
-  },
-  milestones: {
-    gap: 8,
-    alignSelf: 'stretch',
-    paddingHorizontal: 14,
-  },
-  milestoneRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 6,
-  },
-  milestoneDays: {
-    fontSize: 12, letterSpacing: 0.5,
-    color: 'rgba(152,212,250,0.75)',
-    fontFamily: 'GillSans-Light',
-    textTransform: 'uppercase',
-    width: 64,
-  },
-  milestoneLabel: {
-    flex: 1,
-    fontSize: 13, lineHeight: 20,
-    color: 'rgba(224,242,254,0.78)',
-    fontFamily: 'GillSans-Light',
-  },
-});
-
-const young = StyleSheet.create({
-  wrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 14, paddingHorizontal: 14,
-    marginTop: 16,
-    borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(152,212,250,0.14)',
-    backgroundColor: 'rgba(9,41,173,0.08)',
-  },
-  text: {
-    flex: 1,
-    fontSize: 12, lineHeight: 18,
-    color: 'rgba(152,212,250,0.70)',
-    fontFamily: 'GillSans-Light',
   },
 });
 
@@ -1099,12 +709,16 @@ const picker = StyleSheet.create({
   },
   sheet: {
     backgroundColor: '#02060E',
-    borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    padding: 22, paddingBottom: 32,
-    borderTopWidth: 1, borderTopColor: 'rgba(152,212,250,0.18)',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 22,
+    paddingBottom: 32,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(152,212,250,0.18)',
   },
   title: {
-    fontSize: 17, fontFamily: 'Baskerville',
+    fontSize: 17,
+    fontFamily: 'Baskerville',
     color: 'rgba(224,242,254,0.92)',
     marginBottom: 4,
   },
@@ -1115,32 +729,42 @@ const picker = StyleSheet.create({
     marginBottom: 18,
   },
   option: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 12, paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     borderRadius: 12,
     backgroundColor: 'rgba(9,41,173,0.10)',
-    borderWidth: 1, borderColor: 'rgba(152,212,250,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.14)',
     marginBottom: 8,
   },
   avatar: {
-    width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   companionAvatar: { backgroundColor: 'rgba(9,41,173,0.45)' },
-  reasonAvatar: { backgroundColor: 'rgba(9,41,173,0.45)' },
+  reasonAvatar:    { backgroundColor: 'rgba(9,41,173,0.45)' },
   optionName: {
-    fontSize: 14, letterSpacing: 0.2,
+    fontSize: 14,
+    letterSpacing: 0.2,
     color: 'rgba(224,242,254,0.92)',
     fontFamily: 'GillSans-Light',
     marginBottom: 1,
   },
   optionSub: {
-    fontSize: 12, lineHeight: 17,
+    fontSize: 12,
+    lineHeight: 17,
     color: 'rgba(152,212,250,0.60)',
     fontFamily: 'GillSans-Light',
   },
   cancel: {
-    paddingVertical: 12, alignItems: 'center',
+    paddingVertical: 12,
+    alignItems: 'center',
     marginTop: 6,
   },
   cancelText: {

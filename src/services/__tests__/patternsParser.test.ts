@@ -24,28 +24,64 @@ const META = { generatedAt: 1_700_000_000_000, archiveDays: 90, entryCount: 200 
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
 
-test('allowedAcrossTimeTypes returns [] for a fresh archive (<14 days)', () => {
-  assert.deepEqual(allowedAcrossTimeTypes(3, 5), []);
-  assert.deepEqual(allowedAcrossTimeTypes(13, 50), []);
+test('allowedAcrossTimeTypes returns [] for 0 entries', () => {
+  assert.deepEqual(allowedAcrossTimeTypes(0, 0), []);
+  assert.deepEqual(allowedAcrossTimeTypes(30, 0), []);
 });
 
-test('whats_loud fades in at 14 days', () => {
-  assert.deepEqual(allowedAcrossTimeTypes(14, 10), ['whats_loud']);
+test('allowedAcrossTimeTypes returns [] for 1-2 entries (Claude types need 3+)', () => {
+  assert.deepEqual(allowedAcrossTimeTypes(0, 1), []);
+  assert.deepEqual(allowedAcrossTimeTypes(10, 2), []);
 });
 
-test('returning_question + mind_moving fade in at 45 days', () => {
-  const t = allowedAcrossTimeTypes(45, 100);
+test('early_signal + first_impression appear at 3 entries', () => {
+  const t = allowedAcrossTimeTypes(0, 3);
+  assert.ok(t.includes('early_signal'), 'missing early_signal');
+  assert.ok(t.includes('first_impression'), 'missing first_impression');
+  assert.ok(!t.includes('whats_loud'), 'whats_loud should not appear at 3 entries');
+});
+
+test('first_impression disappears after 8 entries', () => {
+  const t = allowedAcrossTimeTypes(0, 9);
+  assert.ok(!t.includes('first_impression'), 'first_impression should disappear after 8 entries');
+  assert.ok(t.includes('early_signal'));
+});
+
+test('whats_loud fades in at 5 entries', () => {
+  const t = allowedAcrossTimeTypes(0, 5);
   assert.ok(t.includes('whats_loud'));
+  assert.ok(!t.includes('returning_question'));
+});
+
+test('returning_question + mind_moving fade in at 8-10 entries', () => {
+  const t = allowedAcrossTimeTypes(0, 10);
   assert.ok(t.includes('returning_question'));
   assert.ok(t.includes('mind_moving'));
   assert.ok(!t.includes('wondering_about'));
-  assert.ok(!t.includes('gone_quiet'));
 });
 
-test('wondering_about + gone_quiet fade in at 60 days', () => {
-  const t = allowedAcrossTimeTypes(60, 100);
+test('wondering_about fades in at 12 entries', () => {
+  const t = allowedAcrossTimeTypes(0, 12);
   assert.ok(t.includes('wondering_about'));
-  assert.ok(t.includes('gone_quiet'));
+});
+
+test('self_language fades in at 8 entries', () => {
+  assert.ok(!allowedAcrossTimeTypes(0, 7).includes('self_language'), 'self_language needs 8 entries');
+  assert.ok(allowedAcrossTimeTypes(0, 8).includes('self_language'));
+});
+
+test('repeating_story fades in at 12 entries', () => {
+  assert.ok(!allowedAcrossTimeTypes(0, 11).includes('repeating_story'), 'repeating_story needs 12 entries');
+  assert.ok(allowedAcrossTimeTypes(0, 12).includes('repeating_story'));
+});
+
+test('gone_quiet requires both 20 entries AND 21 days', () => {
+  // Enough entries but not enough days
+  assert.ok(!allowedAcrossTimeTypes(10, 20).includes('gone_quiet'), 'gone_quiet needs 21 days');
+  // Enough days but not enough entries
+  assert.ok(!allowedAcrossTimeTypes(30, 19).includes('gone_quiet'), 'gone_quiet needs 20 entries');
+  // Both satisfied
+  assert.ok(allowedAcrossTimeTypes(21, 20).includes('gone_quiet'), 'gone_quiet should appear');
 });
 
 test('every threshold type has a window label', () => {

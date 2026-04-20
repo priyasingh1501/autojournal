@@ -8,7 +8,7 @@
 
 import { DailySummary, PatternsReport, SuggestedIntention } from '../types';
 
-export type WarmLineTarget = 'reentry' | 'intention_suggest' | 'summary' | 'patterns' | 'none';
+export type WarmLineTarget = 'reentry' | 'intention_suggest' | 'intention_nudge' | 'summary' | 'patterns' | 'none';
 
 export interface WarmLine {
   text: string;
@@ -25,10 +25,12 @@ export function firstSentence(s: string | undefined | null): string | null {
   if (!s) return null;
   const trimmed = s.trim();
   if (!trimmed) return null;
+  // Strip section header prefix like "Emotional check-in: " or "Meals: "
+  const stripped = trimmed.replace(/^[A-Z][^:]{0,40}:\s+/, '');
   // First sentence = up to the first terminator; strip the terminator for
   // cleaner UI display.
-  const match = trimmed.match(/^([^.!?]+)([.!?]|$)/);
-  const first = (match?.[1] ?? trimmed).trim();
+  const match = stripped.match(/^([^.!?]+)([.!?]|$)/);
+  const first = (match?.[1] ?? stripped).trim();
   // Very short fragments (e.g. "Ok.") don't read as warm — fall through.
   if (first.length < 12) return null;
   // Cap length so a run-on sentence doesn't dominate the screen.

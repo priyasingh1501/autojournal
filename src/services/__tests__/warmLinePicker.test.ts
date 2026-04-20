@@ -30,7 +30,7 @@ function makeReport(acrossTime: PatternsReport['acrossTime']): PatternsReport {
     generatedAt: 0,
     archiveDays: 90,
     entryCount: 50,
-    thisMonth: { reflection: '', whatsLoud: [], intentionsProgress: null },
+    thisMonth: { reflection: '', whatsLoud: [], intentionsProgress: null, emotionalArc: null },
     acrossTime,
   };
 }
@@ -109,7 +109,7 @@ test('falls back to insightText when reflection absent', () => {
     patternsReport: null,
   });
   assert.equal(out.tapTarget, 'summary');
-  assert.ok(out.text.startsWith('Emotional check-in'), 'uses first sentence of insightText');
+  assert.ok(out.text.startsWith('You were measured'), 'strips section header from insightText');
 });
 
 test('very short reflection fragments fall through to next priority', () => {

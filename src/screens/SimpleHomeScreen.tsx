@@ -1,36 +1,31 @@
 /**
- * SimpleHomeScreen — the ff_simple_home capture-first Home.
+ * SimpleHomeScreen — rendered when ff_simple_home is on.
  *
- * Contents, in order:
- *   1. A single tappable "warm line" at the top (WarmLineService)
- *   2. A large mic button, visually dominant
- *   3. A small FAB cluster bottom-right: compose + "new perspective"
- *
- * Audio / transcription / widget / wellbeing plumbing is identical to
- * HomeScreen — only the UI shell is thinner. Per the non-goals: mic
- * recording logic and VAD are unchanged.
+ * Layout: MicTile (ocean video + breathing orb) at the top, followed by
+ * WarmLineCard and TodayCard, with SecondaryActions pinned at the bottom.
+ * All recording, transcription, wellbeing, and widget logic is identical to
+ * HomeScreen — only the visual shell differs.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
-  Text,
+  ScrollView,
   StyleSheet,
-  TouchableOpacity,
-  Animated,
   Alert,
   ActivityIndicator,
-  ImageBackground,
+  Text,
+  TouchableOpacity,
   Modal,
   Platform,
   AppState,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Feather } from '@expo/vector-icons';
 
-import { audioRecorderService, RecordingStatus } from '../services/AudioRecorderService';
+import { audioRecorderService } from '../services/AudioRecorderService';
 import { transcribePendingClips, BatchProgress, SummaryBannerStatus } from '../services/BatchTranscriptionService';
 import { StorageService } from '../services/StorageService';
 import { track } from '../services/AnalyticsService';
@@ -45,17 +40,25 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   getPendingSuggestion,
+  getActive,
 } from '../services/IntentionsService';
 import { FeatureFlagsService } from '../services/FeatureFlagsService';
-import CuratedMindPicker from '../components/CuratedMindPicker';
 import { curate, CurationResult } from '../services/mindCuration';
+import { intentionTouchesEntry } from '../services/digestCompute';
 import { buildCurationContext } from '../services/CurationContextBuilder';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 import ComposeModal from '../components/ComposeModal';
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
+import CuratedMindPicker from '../components/CuratedMindPicker';
 import TalkScreen from './TalkScreenV2';
 import ChatScreen from './ChatScreen';
 import { TranscriptEntry } from '../types';
+
+import MicTile from '../components/home/MicTile';
+import TodayCard, { TodayCardData } from '../components/home/TodayCard';
+import SecondaryActions from '../components/home/SecondaryActions';
+
+export type MicState = 'idle' | 'recording' | 'processing';
 
 function localDateStr(date: Date = new Date()): string {
   const y = date.getFullYear();
@@ -64,111 +67,150 @@ function localDateStr(date: Date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+async function computeTodayData(): Promise<TodayCardData | null> {
+  try {
+    const today   = localDateStr();
+    const entries = await StorageService.getTranscriptsForDate(today);
+
+    const counts: Record<string, number> = {};
+    for (const e of entries) {
+      for (const tag of e.emotionTags ?? []) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+    }
+    const dominantEmotions = Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([tag]) => tag);
+
+    const actives = await getActive();
+    // Mirror digestCompute.ts: keyword-match each intention against today's entries.
+    const intentionsMentioned = actives
+      .filter(i => entries.some(e => e.text && intentionTouchesEntry(i, e.text)))
+      .slice(0, 6)
+      .map(i => ({
+        id:         i.id,
+        text:       i.text,
+        shortLabel: i.shortLabel || i.text.slice(0, 14),
+        category:   i.category ?? 'other',
+      }));
+
+    const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
+
+    return {
+      entryCount: entries.length,
+      dominantEmotions,
+      intentionsMentioned,
+      lastEntryAt: sorted[0]?.timestamp ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function SimpleHomeScreen() {
   const navigation = useNavigation<any>();
 
-  // Mic state
-  const [status, setStatus] = useState<RecordingStatus>('idle');
+  // ── Mic / recording state ────────────────────────────────────────────────────
+  const [micState, setMicState]       = useState<MicState>('idle');
+  const [audioLevel]                  = useState<number>(0); // AudioRecorderService doesn't expose metering
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [summaryBanner, setSummaryBanner] = useState<SummaryBannerStatus | null>(null);
   const summaryBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pulseAnim] = useState(new Animated.Value(1));
+  const isTranscribingRef     = useRef(false);
+  const batchWellbeingFiredRef = useRef(false);
 
-  // Warm line
-  const [warmLine, setWarmLine] = useState<WarmLine | null>(null);
+  // ── Video play state ─────────────────────────────────────────────────────────
+  const [shouldPlay, setShouldPlay] = useState(true);
 
-  // Modals
-  const [showCompose, setShowCompose] = useState(false);
+  // ── Warm line ────────────────────────────────────────────────────────────────
+  const [warmLine, setWarmLine]         = useState<WarmLine | null>(null);
+  const [warmLineLoading, setWarmLineLoading] = useState(true);
+
+  // ── Today card ───────────────────────────────────────────────────────────────
+  const [todayData, setTodayData] = useState<TodayCardData | null>(null);
+
+  // ── Modals ───────────────────────────────────────────────────────────────────
+  const [showCompose, setShowCompose]     = useState(false);
   const [showPerspective, setShowPerspective] = useState(false);
-  const [callMindId, setCallMindId] = useState<string | null | undefined>(undefined);
-  const [wellbeingAlert, setWellbeingAlert] = useState<WellbeingAnalysis | null>(null);
+  const [callMindId, setCallMindId]       = useState<string | null | undefined>(undefined);
+  const [perspectiveInitialMindId, setPerspectiveInitialMindId] = useState<string | null | undefined>(undefined);
+  const [wellbeingAlert, setWellbeingAlert]   = useState<WellbeingAnalysis | null>(null);
 
-  // ff_new_minds_system — route "new perspective" through the curated picker.
+  // ── ff_new_minds_system ──────────────────────────────────────────────────────
   const [newMindsOn, setNewMindsOn] = useState(false);
   const [curation, setCuration]     = useState<CurationResult | null>(null);
   const [curationWellbeing, setCurationWellbeing] =
     useState<import('../types').WellbeingState | undefined>(undefined);
-  const [initialMindId, setInitialMindId] = useState<string | null | undefined>(undefined);
+
+  // ── On mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     FeatureFlagsService.getFlag('ff_new_minds_system').then(setNewMindsOn).catch(() => {});
+
+    // Load warm line
+    setWarmLineLoading(true);
+    getWarmLine()
+      .then(wl => { setWarmLine(wl); setWarmLineLoading(false); })
+      .catch(() => { setWarmLine(null); setWarmLineLoading(false); });
+
+    // Load today data
+    computeTodayData().then(setTodayData).catch(() => {});
   }, []);
 
-  const isTranscribingRef = useRef(false);
-  const batchWellbeingFiredRef = useRef(false);
-
-  // ── Recorder callbacks (same contract as HomeScreen) ────────────────────────
+  // ── Recorder callbacks ───────────────────────────────────────────────────────
   useEffect(() => {
     audioRecorderService.setCallbacks({
-      onStatus: (s) => setStatus(s),
+      onStatus: (s) => {
+        if (s === 'recording') {
+          setMicState('recording');
+        } else if (s === 'idle') {
+          // Only revert to idle if we're not about to enter processing
+          if (!isTranscribingRef.current) {
+            setMicState('idle');
+          }
+        }
+      },
       onPendingClip: (clip) => {
         track('recording_completed', { duration_ms: clip.duration });
         handleTranscribeNow();
       },
-      onError: (err) => Alert.alert('Error', err),
+      onError: (err) => {
+        Alert.alert('Error', err);
+        isTranscribingRef.current = false;
+        setMicState('idle');
+      },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Mic button pulse ────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (status === 'recording') {
-      const anim = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      anim.start();
-      return () => { anim.stop(); pulseAnim.setValue(1); };
-    }
-    pulseAnim.setValue(1);
-  }, [status, pulseAnim]);
-
-  // ── Warm line: refresh on focus ─────────────────────────────────────────────
-  useFocusEffect(
-    useCallback(() => {
-      getWarmLine().then(setWarmLine).catch(() => setWarmLine(null));
-    }, []),
-  );
-
-  // Retry interrupted batches on foreground (preserves HomeScreen's behavior)
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        isTranscribingRef.current = false;
-        StorageService.getPendingClips().then(clips => {
-          if (clips.length > 0) handleTranscribeNow();
-        }).catch(() => {});
-        // Re-resolve the warm line — reentry or a new summary may have appeared
-        getWarmLine().then(setWarmLine).catch(() => {});
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
-  // Clear banner timer on unmount
+  // ── Banner timer cleanup ─────────────────────────────────────────────────────
   useEffect(() => () => {
     if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current);
   }, []);
 
-  // ── Widget ↔ app sync (android only, unchanged from HomeScreen) ─────────────
-  const updateWidgetState = async (monitoring: boolean) => {
-    if (Platform.OS !== 'android') return;
-    try {
-      await AsyncStorage.setItem(WIDGET_MONITORING_KEY, monitoring ? 'true' : 'false');
-      const { requestWidgetUpdate } = require('react-native-android-widget');
-      const { MicWidget } = require('../widgets/MicWidget');
-      await requestWidgetUpdate({
-        widgetName: 'MicWidget',
-        renderWidget: () => require('react').default.createElement(MicWidget, {}),
-      });
-    } catch { /* widget may not be placed yet */ }
-  };
+  // ── AppState: video pause + foreground recovery ──────────────────────────────
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setShouldPlay(true);
+        isTranscribingRef.current = false;
+        StorageService.getPendingClips().then(clips => {
+          if (clips.length > 0) handleTranscribeNow();
+        }).catch(() => {});
+        getWarmLine().then(setWarmLine).catch(() => {});
+      } else if (state === 'background' || state === 'inactive') {
+        setShouldPlay(false);
+      }
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // ── Android widget sync ──────────────────────────────────────────────────────
   const syncWidgetMonitoringIntent = useCallback(async () => {
     if (Platform.OS !== 'android') return;
     try {
-      const val = await AsyncStorage.getItem(WIDGET_MONITORING_KEY);
+      const val        = await AsyncStorage.getItem(WIDGET_MONITORING_KEY);
       const liveStatus = audioRecorderService.getStatus();
       if (val === 'true' && liveStatus === 'idle') {
         await audioRecorderService.startMonitoring();
@@ -180,17 +222,36 @@ export default function SimpleHomeScreen() {
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-    const sub = AppState.addEventListener('change', (state) => {
+    const sub = AppState.addEventListener('change', state => {
       if (state === 'active') syncWidgetMonitoringIntent();
     });
     return () => sub.remove();
   }, [syncWidgetMonitoringIntent]);
 
-  useFocusEffect(useCallback(() => { syncWidgetMonitoringIntent(); }, [syncWidgetMonitoringIntent]));
+  // ── On screen focus ──────────────────────────────────────────────────────────
+  useFocusEffect(useCallback(() => {
+    computeTodayData().then(setTodayData).catch(() => {});
+    syncWidgetMonitoringIntent();
+  }, [syncWidgetMonitoringIntent]));
 
-  // ── Actions ─────────────────────────────────────────────────────────────────
-  const toggleMonitoring = async () => {
-    if (status === 'idle') {
+  // ── Widget state helper ──────────────────────────────────────────────────────
+  const updateWidgetState = async (monitoring: boolean) => {
+    if (Platform.OS !== 'android') return;
+    try {
+      await AsyncStorage.setItem(WIDGET_MONITORING_KEY, monitoring ? 'true' : 'false');
+      const { requestWidgetUpdate } = require('react-native-android-widget');
+      const { MicWidget } = require('../widgets/MicWidget');
+      await requestWidgetUpdate({
+        widgetName:   'MicWidget',
+        renderWidget: () => require('react').default.createElement(MicWidget, {}),
+      });
+    } catch { /* widget may not be placed yet */ }
+  };
+
+  // ── Mic press ────────────────────────────────────────────────────────────────
+  const handleMicPress = async () => {
+    if (micState === 'processing') return;
+    if (micState === 'idle') {
       track('recording_started');
       await audioRecorderService.startMonitoring();
       await updateWidgetState(true);
@@ -200,9 +261,10 @@ export default function SimpleHomeScreen() {
     }
   };
 
+  // ── Transcription ────────────────────────────────────────────────────────────
   const checkWellbeing = async (entry: TranscriptEntry, batchGuard = false) => {
     if (batchGuard && batchWellbeingFiredRef.current) return;
-    const date = localDateStr(new Date(entry.timestamp));
+    const date     = localDateStr(new Date(entry.timestamp));
     const analysis = await analyzeEntry(entry, date);
     if (analysis && analysis.tier >= 2) {
       if (batchGuard) batchWellbeingFiredRef.current = true;
@@ -212,13 +274,14 @@ export default function SimpleHomeScreen() {
 
   const handleTranscribeNow = async () => {
     if (isTranscribingRef.current) return;
-    isTranscribingRef.current = true;
+    isTranscribingRef.current  = true;
     batchWellbeingFiredRef.current = false;
+    setMicState('processing');
     setBatchProgress({ total: 0, completed: 0, failed: 0 });
     try {
       await transcribePendingClips(
         (p) => setBatchProgress(p),
-        (entry) => { checkWellbeing(entry, true).catch(() => {}); },
+        (entry) => checkWellbeing(entry, true).catch(() => {}),
         (s) => {
           setSummaryBanner(s);
           if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current);
@@ -229,24 +292,27 @@ export default function SimpleHomeScreen() {
       );
     } finally {
       isTranscribingRef.current = false;
+      setMicState('idle');
       setBatchProgress(null);
+      computeTodayData().then(setTodayData).catch(() => {});
+      getWarmLine().then(setWarmLine).catch(() => {});
+      // Retry any clips that arrived during this batch
+      StorageService.getPendingClips().then(remaining => {
+        if (remaining.length > 0) handleTranscribeNow();
+      }).catch(() => {});
     }
   };
 
-  // ── Warm-line tap ───────────────────────────────────────────────────────────
+  // ── Warm-line tap ────────────────────────────────────────────────────────────
   const onWarmLineTap = async () => {
     if (!warmLine || warmLine.tapTarget === 'none') return;
     if (warmLine.tapTarget === 'reentry') {
-      // Accept the gentle call-back: clear the pending re-entry and open
-      // the compose modal so the user can write about it.
       clearPendingReentry().catch(() => {});
       setWarmLine(null);
       setShowCompose(true);
       return;
     }
     if (warmLine.tapTarget === 'intention_suggest') {
-      // Tap opens a yes/no Alert. "Yes" saves it as an active intention;
-      // "Not quite" dismisses into the 30-day blocklist.
       const pending = await getPendingSuggestion();
       if (!pending) { setWarmLine(null); return; }
       Alert.alert(
@@ -254,8 +320,7 @@ export default function SimpleHomeScreen() {
         `"${pending.text}"`,
         [
           {
-            text: 'Not quite',
-            style: 'cancel',
+            text: 'Not quite', style: 'cancel',
             onPress: async () => {
               await dismissSuggestion(pending).catch(() => {});
               getWarmLine().then(setWarmLine).catch(() => setWarmLine(null));
@@ -272,164 +337,113 @@ export default function SimpleHomeScreen() {
       );
       return;
     }
-    if (warmLine.tapTarget === 'summary') {
-      navigation.navigate('Summary');
-      return;
-    }
-    if (warmLine.tapTarget === 'patterns') {
-      // Route name stays "Insights" even under ff_patterns_tab — see App.tsx.
-      navigation.navigate('Insights');
-      return;
-    }
+    if (warmLine.tapTarget === 'summary')         { navigation.navigate('Summary'); return; }
+    if (warmLine.tapTarget === 'patterns')         { navigation.navigate('Insights'); return; }
+    if (warmLine.tapTarget === 'intention_nudge')  { setShowCompose(true); return; }
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-  const isActive = status !== 'idle';
+  // ── Navigation helpers ───────────────────────────────────────────────────────
+
+  const handleCompose = () => setShowCompose(true);
+
+  const handlePerspective = async () => {
+    if (newMindsOn) {
+      try {
+        const ctx    = await buildCurationContext({ sourceSurface: 'home' });
+        const result = curate(ctx);
+        track('curation_rule_fired', {
+          rule:             result.matchedRuleId,
+          specialists:      result.specialists.map(s => s.id),
+          source_surface:   'home',
+        });
+        setCuration(result);
+        setCurationWellbeing(ctx.wellbeingState);
+        return;
+      } catch { /* fall through to legacy */ }
+    }
+    setPerspectiveInitialMindId(undefined);
+    setShowPerspective(true);
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────────
   const isTranscribing = batchProgress !== null;
 
-  const statusLine =
-    status === 'recording' ? 'Listening…'
-    : status === 'monitoring' ? 'Ready when you are'
-    : isTranscribing ? 'Transcribing…'
-    : '';
-
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Warm line — inside a card */}
-      {warmLine && (
-        <TouchableOpacity
-          style={styles.warmLineCard}
-          onPress={onWarmLineTap}
-          disabled={warmLine.tapTarget === 'none'}
-          activeOpacity={warmLine.tapTarget === 'none' ? 1 : 0.7}
-        >
-          <Text
-            style={[
-              styles.warmLineText,
-              warmLine.tapTarget === 'none' && styles.warmLineTextMuted,
-            ]}
-          >
-            {warmLine.text}
-          </Text>
-          {warmLine.tapTarget !== 'none' && (
-            <Feather
-              name="arrow-right"
-              size={13}
-              color="rgba(152,212,250,0.55)"
-              style={{ marginLeft: 8 }}
-            />
-          )}
-        </TouchableOpacity>
-      )}
+    <SafeAreaView style={s.container} edges={['bottom']}>
+      <View style={s.content}>
 
-      {/* Mic — visually dominant */}
-      <View style={styles.micStage}>
-        <ImageBackground
-          source={require('../../assets/jellyfish.jpg')}
-          style={styles.micBg}
-          imageStyle={styles.micBgImage}
-          resizeMode="cover"
+        {/* Scrollable body — MicTile + cards all scroll together */}
+        <ScrollView
+          style={s.scrollArea}
+          contentContainerStyle={s.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.micOverlay} />
-          <View style={styles.micCenter}>
-            <View style={[styles.glowRing, isActive && styles.glowRingActive]}>
-              <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                <TouchableOpacity
-                  style={[styles.micButton, isActive && styles.micButtonActive]}
-                  onPress={toggleMonitoring}
-                  activeOpacity={0.8}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Feather
-                    name={status === 'recording' ? 'square' : 'mic'}
-                    size={36}
-                    color={isActive ? 'rgba(224, 242, 254, 0.95)' : '#98D4FA'}
-                  />
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-            {!!statusLine && <Text style={styles.statusText}>{statusLine}</Text>}
-          </View>
-        </ImageBackground>
-      </View>
+          {/* Mic tile — ocean video + breathing orb + warm line */}
+          <MicTile
+            micState={micState}
+            audioLevel={audioLevel}
+            onMicPress={handleMicPress}
+            shouldPlay={shouldPlay}
+            warmLine={warmLine}
+            warmLineLoading={warmLineLoading}
+          />
 
-      {/* Transcription + summary banners */}
-      {isTranscribing && (
-        <View style={styles.banner}>
-          <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
-          <Text style={styles.bannerText}>Transcribing…</Text>
-        </View>
-      )}
-      {summaryBanner && (
-        <TouchableOpacity
-          style={styles.banner}
-          activeOpacity={summaryBanner === 'ready' ? 0.75 : 1}
-          onPress={() => {
-            if (summaryBanner === 'ready') {
-              setSummaryBanner(null);
-              navigation.navigate('Summary');
-            }
-          }}
-        >
-          {summaryBanner === 'generating' ? (
-            <>
+          {/* Transcription / summary banners */}
+          {isTranscribing && (
+            <View style={s.banner}>
               <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
-              <Text style={styles.bannerText}>Building your summary…</Text>
-            </>
-          ) : (
-            <>
-              <Feather name="star" size={13} color="rgba(152,212,250,0.90)" />
-              <Text style={[styles.bannerText, styles.bannerTextReady]}>
-                Your summary is ready
-              </Text>
-              <Feather name="arrow-right" size={13} color="rgba(152,212,250,0.60)" />
-            </>
+              <Text style={s.bannerText}>Transcribing…</Text>
+            </View>
           )}
-        </TouchableOpacity>
-      )}
+          {summaryBanner && (
+            <TouchableOpacity
+              style={s.banner}
+              activeOpacity={summaryBanner === 'ready' ? 0.75 : 1}
+              onPress={() => {
+                if (summaryBanner === 'ready') {
+                  setSummaryBanner(null);
+                  navigation.navigate('Summary');
+                }
+              }}
+            >
+              {summaryBanner === 'generating' ? (
+                <>
+                  <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
+                  <Text style={s.bannerText}>Building your summary…</Text>
+                </>
+              ) : (
+                <>
+                  <Feather name="star" size={13} color="rgba(152,212,250,0.90)" />
+                  <Text style={[s.bannerText, s.bannerReady]}>Your summary is ready</Text>
+                  <Feather name="arrow-right" size={13} color="rgba(152,212,250,0.60)" />
+                </>
+              )}
+            </TouchableOpacity>
+          )}
 
-      {/* Action tiles — add entry + get perspective */}
-      <View style={styles.tilesRow}>
-        <TouchableOpacity
-          style={styles.tile}
-          onPress={() => setShowCompose(true)}
-          activeOpacity={0.85}
-        >
-          <Feather name="edit-2" size={20} color="rgba(152, 212, 250, 0.80)" />
-          <Text style={styles.tileLabel}>Add a manual entry</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tile}
-          onPress={async () => {
-            if (newMindsOn) {
-              try {
-                const ctx = await buildCurationContext({ sourceSurface: 'home' });
-                const result = curate(ctx);
-                track('curation_rule_fired', {
-                  rule: result.matchedRuleId,
-                  specialists: result.specialists.map(s => s.id),
-                  source_surface: 'home',
-                });
-                setCuration(result);
-                setCurationWellbeing(ctx.wellbeingState);
-                return;
-              } catch { /* fall back to legacy below */ }
-            }
-            setShowPerspective(true);
-          }}
-          activeOpacity={0.85}
-        >
-          <Feather name="compass" size={20} color="rgba(152, 212, 250, 0.80)" />
-          <Text style={styles.tileLabel}>Get a new perspective</Text>
-        </TouchableOpacity>
+          {/* Today card */}
+          <View style={s.cards}>
+            <TodayCard data={todayData} />
+          </View>
+        </ScrollView>
+
+        {/* Bottom actions — always visible, outside the scroll area */}
+        <SecondaryActions
+          onCompose={handleCompose}
+          onPerspective={handlePerspective}
+        />
+
       </View>
 
+      {/* ── Modals ─────────────────────────────────────────────────────────── */}
       <ComposeModal
         visible={showCompose}
         onClose={() => setShowCompose(false)}
         onSaved={(entry) => {
           setShowCompose(false);
           track('manual_note_created', { has_photo: !!entry.photoUri });
+          computeTodayData().then(setTodayData).catch(() => {});
           setTimeout(() => checkWellbeing(entry).catch(() => {}), 600);
         }}
       />
@@ -447,7 +461,7 @@ export default function SimpleHomeScreen() {
         />
       )}
 
-      {/* Perspective modal — ChatScreen picker → optional TalkScreen */}
+      {/* Perspective: ChatScreen → optional TalkScreen */}
       <Modal
         visible={showPerspective}
         animationType="slide"
@@ -456,34 +470,19 @@ export default function SimpleHomeScreen() {
       >
         {showPerspective && callMindId === undefined && (
           <ChatScreen
-            onClose={() => { setShowPerspective(false); setCallMindId(undefined); }}
+            initialMindId={perspectiveInitialMindId}
+            onClose={() => { setShowPerspective(false); setCallMindId(undefined); setPerspectiveInitialMindId(undefined); }}
             onCallRequested={(mindId) => setCallMindId(mindId ?? null)}
           />
         )}
         {showPerspective && callMindId !== undefined && (
           <TalkScreen
             initialMindId={callMindId}
-            onClose={() => { setShowPerspective(false); setCallMindId(undefined); }}
+            onClose={() => { setShowPerspective(false); setCallMindId(undefined); setPerspectiveInitialMindId(undefined); }}
           />
         )}
       </Modal>
 
-      {/* Curated picker flow — goes straight to TalkScreen with a chosen mind */}
-      <Modal
-        visible={initialMindId !== undefined}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setInitialMindId(undefined)}
-      >
-        {initialMindId !== undefined && (
-          <TalkScreen
-            initialMindId={initialMindId}
-            onClose={() => setInitialMindId(undefined)}
-          />
-        )}
-      </Modal>
-
-      {/* Curated mind picker — ff_new_minds_system */}
       <CuratedMindPicker
         visible={!!curation}
         result={curation}
@@ -491,7 +490,8 @@ export default function SimpleHomeScreen() {
         onPick={(mindId) => {
           setCuration(null);
           setCurationWellbeing(undefined);
-          setInitialMindId(mindId);
+          setPerspectiveInitialMindId(mindId ?? null);
+          setShowPerspective(true);
         }}
         onClose={() => {
           setCuration(null);
@@ -502,105 +502,31 @@ export default function SimpleHomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#02060E' },
-
-  // Warm line — inside a card
-  warmLineCard: {
-    flexDirection: 'row', alignItems: 'center',
-    marginHorizontal: 16, marginTop: 14,
-    paddingHorizontal: 18, paddingVertical: 14,
-    backgroundColor: 'rgba(3, 18, 40, 0.80)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.16)',
-  },
-  warmLineText: {
+const s = StyleSheet.create({
+  container: {
     flex: 1,
-    fontSize: 14, lineHeight: 21,
-    color: 'rgba(224, 242, 254, 0.85)',
-    fontFamily: 'Baskerville',
-  },
-  warmLineTextMuted: {
-    color: 'rgba(152,212,250,0.60)',
-  },
-
-  // Action tiles
-  tilesRow: {
-    flexDirection: 'row',
-    marginHorizontal: 16, marginBottom: 14,
-    gap: 10,
-    height: 88,
-  },
-  tile: {
-    flex: 1,
-    backgroundColor: 'rgba(3, 18, 40, 0.82)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  tileLabel: {
-    fontSize: 12,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(224, 242, 254, 0.75)',
-    textAlign: 'center',
-    paddingHorizontal: 8,
-  },
-
-  // Mic stage — fills the middle
-  micStage: {
-    flex: 1,
-    marginHorizontal: 16, marginTop: 10, marginBottom: 10,
-    borderRadius: 22,
-    overflow: 'hidden',
     backgroundColor: '#02060E',
-    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.13)',
   },
-  micBg: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  micBgImage: { opacity: 0.90 },
-  micOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(2,6,14,0.28)',
+  content: {
+    flex: 1,
+    flexDirection: 'column',
   },
-  micCenter: { alignItems: 'center', justifyContent: 'center', gap: 22 },
-
-  glowRing: {
-    width: 188, height: 188, borderRadius: 94,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(2,6,14,0.35)',
-    borderWidth: 1.5, borderColor: 'rgba(152,212,250,0.35)',
-    shadowColor: '#98D4FA',
-    shadowOpacity: 0.55, shadowRadius: 28,
-    shadowOffset: { width: 0, height: 0 },
+  scrollArea: {
+    flex: 1,
   },
-  glowRingActive: {
-    borderColor: 'rgba(152,212,250,0.75)',
-    shadowOpacity: 0.85, shadowRadius: 40,
+  scrollContent: {
+    paddingBottom: 8,
   },
-  micButton: {
-    width: 148, height: 148, borderRadius: 74,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(9, 41, 173, 0.50)',
-    borderWidth: 1, borderColor: 'rgba(152,212,250,0.45)',
-  },
-  micButtonActive: {
-    backgroundColor: 'rgba(9, 41, 173, 0.75)',
+  cards: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
 
-  statusText: {
-    fontSize: 13, letterSpacing: 0.4,
-    color: 'rgba(224, 242, 254, 0.78)',
-    fontFamily: 'GillSans-Light',
-    textTransform: 'lowercase',
-  },
-
-  // Banners (transcribing / summary-ready)
+  // Transcription / summary banners
   banner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: 20, marginBottom: 8,
+    marginHorizontal: 20, marginTop: 8,
     paddingHorizontal: 14, paddingVertical: 10,
     backgroundColor: 'rgba(9,41,173,0.18)',
     borderRadius: 10,
@@ -610,6 +536,5 @@ const styles = StyleSheet.create({
     fontSize: 12, fontFamily: 'GillSans-Light',
     color: 'rgba(152,212,250,0.80)',
   },
-  bannerTextReady: { color: 'rgba(224,242,254,0.92)' },
-
+  bannerReady: { color: 'rgba(224,242,254,0.92)' },
 });

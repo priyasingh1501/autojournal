@@ -8,7 +8,7 @@ import { extractJournalSignal } from './WisdomService';
 import { FeatureFlagsService } from './FeatureFlagsService';
 import { parseSummaryOutput, parseMacrosBody } from './summaryParser';
 import {
-  buildIntentionContextBlock,
+  buildGroupedIntentionContextBlock,
   getActiveIntentions,
   intentionsEnabled,
 } from './IntentionsService';
@@ -81,7 +81,7 @@ export async function generateDailySummary(
   // in the day's entries. Only when ff_intentions is on — otherwise empty block.
   const intentionsOn = await intentionsEnabled();
   const activeIntentions = intentionsOn ? await getActiveIntentions().catch(() => []) : [];
-  const intentionsBlock = buildIntentionContextBlock(activeIntentions);
+  const intentionsBlock = buildGroupedIntentionContextBlock(activeIntentions);
 
   // System prompt — five-section insight + macros (full breakdown is generated on demand)
   const legacyPrompt = `You are an intelligent personal journal assistant.

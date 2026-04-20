@@ -7,7 +7,7 @@ import { generateIfNeeded } from './AutoSummaryService';
 import { claudeProxy } from './AIProxy';
 import { UserContextService } from './UserContextService';
 import { ActionablesService } from './ActionablesService';
-import { detectAndSuggestIntention } from './IntentionsService';
+import { detectAndSuggestIntention, getActive, recordMention } from './IntentionsService';
 import { FeatureFlagsService } from './FeatureFlagsService';
 import { effectiveDateStr } from './dayRollover';
 import { invalidateDigest } from './DigestService';
@@ -48,6 +48,27 @@ Return ONLY valid JSON: {"emotions":["tag1"]} or {"emotions":["tag1","tag2"]} et
   } catch {
     return [];
   }
+}
+
+/**
+ * Scan entry text against active intentions using simple keyword matching.
+ * Calls recordMention() for each match. Never throws.
+ */
+async function detectIntentionMentions(entry: TranscriptEntry): Promise<void> {
+  try {
+    const actives = await getActive();
+    if (actives.length === 0) return;
+    const lower = entry.text.toLowerCase();
+    for (const intention of actives) {
+      const textHit  = lower.includes(intention.text.toLowerCase());
+      const labelHit = intention.shortLabel
+        ? lower.includes(intention.shortLabel.toLowerCase())
+        : false;
+      if (textHit || labelHit) {
+        await recordMention(intention.id, entry.id, entry.timestamp);
+      }
+    }
+  } catch { /* mention detection must never block transcription */ }
 }
 
 export type BatchProgress = {
@@ -158,6 +179,8 @@ export async function transcribePendingClips(
     // Fire-and-forget intention detection — no-op when ff_intentions is off,
     // weekly-throttled inside the service so it can't spam prompts.
     detectAndSuggestIntention(entry).catch(() => {});
+    // Keyword-match active intentions and record any mentions found.
+    detectIntentionMentions(entry).catch(() => {});
     // First-entry trigger: generate an initial summary if none exists for today yet.
     // Only show the banner if generation actually runs (generateIfNeeded returns true).
     // Under ff_day_close_model, summary generation is deferred to the 23:59

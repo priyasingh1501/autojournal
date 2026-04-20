@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import {
   TranscriptEntry, DailySummary, AppSettings, PendingClip, MonthlyInsight,
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
@@ -106,6 +107,7 @@ export const StorageService = {
     const entries: TranscriptEntry[] = existing ? JSON.parse(existing) : [];
     entries.push(entry);
     await AsyncStorage.setItem(key, JSON.stringify(entries));
+    DeviceEventEmitter.emit('transcriptAdded', { date });
   },
 
   async deleteTranscript(id: string, date: string): Promise<void> {

@@ -47,6 +47,17 @@ export const PATTERN_MINDS: Record<AcrossTimeType, MindCandidate[]> = {
 
   // How the writer thinks on the page → awareness of mind's movement.
   thinking_texture:    ['jiddu_krishnamurti', 'adi_shankaracharya', null],
+
+  // Early-stage observations — Companion is the right first voice.
+  early_signal:        [null, 'ramana_maharshi', 'jiddu_krishnamurti'],
+  first_impression:    [null, 'carl_jung', 'ramana_maharshi'],
+  texture_early:       [null],
+
+  // Self-referential language → identity work.
+  self_language:       ['carl_jung', 'jiddu_krishnamurti', null],
+
+  // Calcified narratives → witnessing, questioning fixed beliefs.
+  repeating_story:     ['jiddu_krishnamurti', 'carl_jung', null],
 };
 
 export function mindsFor(type: AcrossTimeType): MindCandidate[] {

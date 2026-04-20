@@ -311,7 +311,7 @@ export interface JournalSignal {
 
 // ── Patterns tab (ff_patterns_tab) ──────────────────────────────────────────
 // Observational, archive-grounded replacement for the Insights tab. Sections
-// fade in as more history accumulates — see THRESHOLDS in PatternsService.
+// fade in as more entries accumulate — see THRESHOLDS in PatternsService.
 export type AcrossTimeType =
   | 'whats_loud'
   | 'returning_question'
@@ -321,7 +321,15 @@ export type AcrossTimeType =
   | 'whats_pulling_you'
   | 'stated_vs_actual'
   | 'recurring_cast'
-  | 'thinking_texture';
+  | 'thinking_texture'
+  | 'early_signal'
+  | 'first_impression'
+  | 'texture_early'
+  | 'self_language'
+  | 'repeating_story';
+
+// Calibrates observation confidence language based on how much data exists.
+export type VoiceMode = 'provisional' | 'emerging' | 'established';
 
 export interface PatternsEvidence {
   excerpt: string;
@@ -341,6 +349,7 @@ export interface PatternsReport {
   generatedAt: number;
   archiveDays: number;
   entryCount: number;
+  voiceMode?: VoiceMode;
   thisMonth: {
     reflection: string;
     whatsLoud: string[];
@@ -406,15 +415,35 @@ export interface DayDigest {
 // Patterns rather than as a fixed carousel.
 export type IntentionCadence = 'daily' | 'weekly' | 'loose' | null;
 export type IntentionSource = 'manual' | 'detected' | 'starter_pack';
+export type IntentionStatus = 'active' | 'paused' | 'completed' | 'released';
+export type IntentionCategory =
+  | 'health' | 'relationships' | 'work' | 'mind'
+  | 'creative' | 'spiritual' | 'financial' | 'other';
 
 export interface Intention {
   id: string;
   text: string;
+  shortLabel: string;
   source: IntentionSource;
   createdAt: number;
-  cadence: IntentionCadence;
-  active: boolean;
   declaredInEntryId?: string;
+  cadence: IntentionCadence;
+  status: IntentionStatus;
+  statusChangedAt: number;
+  statusNote?: string;
+  lastMentionedAt: number | null;
+  lastMentionedEntryId?: string;
+  fadingPromptSentAt?: number;
+  fadingPromptResponse?: 'keep' | 'release' | 'pause' | 'snooze';
+  category?: IntentionCategory;
+  whyText?: string;
+  mentionCount: number;
+  weeklyMentionCounts: Array<{ weekKey: string; count: number }>;
+  targetCadence?: number;
+  nudgeEnabled: boolean;
+  nudgeSnoozedUntil?: number;
+  /** @deprecated Use status === 'active'. Kept for backward compat with IntentionsScreen. */
+  active: boolean;
 }
 
 /** A detected-but-not-yet-accepted intention awaiting the user's yes/no. */

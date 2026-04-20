@@ -406,6 +406,8 @@ export default function SettingsScreen() {
                       setNotificationTime(value);
                       const updated = { ...settings, notificationsEnabled: true, notificationTime: value };
                       await StorageService.saveSettings(updated);
+                      await cancelSmartNotifications().catch(() => {});
+                      scheduleSmartNotifications(value).catch(() => {});
                     }}
                   >
                     <Text style={[

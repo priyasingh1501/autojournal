@@ -21,6 +21,8 @@ import { StorageService } from './StorageService';
 import { getPendingReentry } from './WellbeingService';
 import { getCachedReport } from './PatternsService';
 import { getPendingSuggestion } from './IntentionsService';
+import { claudeProxy } from './AIProxy';
+import type { Intention } from '../types';
 import {
   pickWarmLine,
   WarmLine,
@@ -104,6 +106,59 @@ export async function getWarmLine(): Promise<WarmLine> {
 
   await writeCache({ date: today, text: line.text, tapTarget: line.tapTarget });
   return line;
+}
+
+const INTENTION_TONE_GUIDANCE: Partial<Record<string, string>> = {
+  health:        'gentle, embodied, non-judgmental',
+  relationships: 'warm, curious, about the other person',
+  work:          'grounded, practical, not motivational',
+  mind:          'quiet, inward, spacious',
+  creative:      'alive, playful, inviting',
+  spiritual:     'still, open, non-prescriptive',
+  financial:     'matter-of-fact, calm, non-anxious',
+  other:         'warm and open',
+};
+
+/**
+ * Generate a category-aware warm line for an active intention using Haiku.
+ * The prompt uses tone guidance so health intentions read differently from
+ * work or creative ones. Never throws — returns null on failure.
+ */
+export async function generateIntentionWarmLine(
+  intention: Intention,
+): Promise<WarmLine | null> {
+  try {
+    const category  = intention.category ?? 'other';
+    const toneHint  = INTENTION_TONE_GUIDANCE[category] ?? INTENTION_TONE_GUIDANCE.other!;
+    const prompt =
+      `Write a single warm conversational line (max 12 words) prompting ` +
+      `a user to reflect on this intention: ${intention.text}. ` +
+      `Category: ${category}. ` +
+      `Tone guidance by category:\n` +
+      Object.entries(INTENTION_TONE_GUIDANCE)
+        .map(([k, v]) => `- ${k}: ${v}`)
+        .join('\n') +
+      `\nTone to use for this intention: ${toneHint}. ` +
+      `Sound like a caring friend. Don't use the words ` +
+      `'intention', 'goal', 'track', 'habit', or 'reminder'.`;
+
+    const response = await claudeProxy.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 40,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const text = response.content
+      .filter((b: any) => b.type === 'text')
+      .map((b: any) => b.text)
+      .join('')
+      .trim()
+      .replace(/^["']|["']$/g, ''); // strip surrounding quotes the model sometimes adds
+
+    if (!text || text.length < 4) return null;
+    return { text, tapTarget: 'intention_nudge' as WarmLineTarget };
+  } catch {
+    return null;
+  }
 }
 
 /** Force a recompute on the next call (e.g. after a manual regenerate). */

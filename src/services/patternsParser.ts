@@ -16,45 +16,62 @@ import {
 
 export interface ThresholdRule {
   type: AcrossTimeType;
-  minDays: number;
-  /** Optional extra guard — e.g. gone_quiet needs a previously-loud topic. */
-  extraGuard?: (ctx: { archiveDays: number; entryCount: number }) => boolean;
+  minEntries: number;
+  maxEntries?: number;
+  // Only gone_quiet keeps a day requirement — the concept is meaningless without elapsed time.
+  minDays?: number;
 }
 
 export const THRESHOLDS: ThresholdRule[] = [
-  { type: 'whats_loud',         minDays: 14 },
-  { type: 'returning_question', minDays: 45 },
-  { type: 'mind_moving',        minDays: 45 },
-  { type: 'wondering_about',    minDays: 60 },
-  // gone_quiet also needs evidence of a previously-loud topic that has
-  // dropped off — the prompt is responsible for the topic-level check; we
-  // just gate the calendar window here.
-  { type: 'gone_quiet',         minDays: 60 },
-  { type: 'whats_pulling_you',  minDays: 30 },
-  { type: 'stated_vs_actual',   minDays: 45 },
-  { type: 'recurring_cast',     minDays: 30 },
-  { type: 'thinking_texture',   minDays: 45 },
+  { type: 'texture_early',      minEntries: 1 },
+  { type: 'first_impression',   minEntries: 3,  maxEntries: 8 },
+  { type: 'early_signal',       minEntries: 3 },
+  { type: 'whats_loud',         minEntries: 5 },
+  { type: 'whats_pulling_you',  minEntries: 7 },
+  { type: 'returning_question', minEntries: 8 },
+  { type: 'recurring_cast',     minEntries: 10 },
+  { type: 'thinking_texture',   minEntries: 10 },
+  { type: 'mind_moving',        minEntries: 10 },
+  { type: 'wondering_about',    minEntries: 12 },
+  { type: 'stated_vs_actual',   minEntries: 15 },
+  { type: 'gone_quiet',         minEntries: 20, minDays: 21 },
+  { type: 'self_language',      minEntries: 8 },
+  { type: 'repeating_story',    minEntries: 12 },
 ];
 
-/** Returns the acrossTime types the archive is mature enough to request. */
+/**
+ * Returns the acrossTime types the archive is mature enough to request from Claude.
+ * texture_early is excluded — it is computed on-device without a Claude call.
+ */
 export function allowedAcrossTimeTypes(archiveDays: number, entryCount: number): AcrossTimeType[] {
   return THRESHOLDS
-    .filter(r => archiveDays >= r.minDays && (!r.extraGuard || r.extraGuard({ archiveDays, entryCount })))
+    .filter(r => {
+      if (r.type === 'texture_early') return false; // on-device only
+      if (entryCount < r.minEntries) return false;
+      if (r.maxEntries !== undefined && entryCount > r.maxEntries) return false;
+      if (r.minDays !== undefined && archiveDays < r.minDays) return false;
+      return true;
+    })
     .map(r => r.type);
 }
 
 /** Human-readable window label for a given type. */
 export function windowLabelFor(type: AcrossTimeType): string {
   switch (type) {
+    case 'texture_early':      return 'so far';
+    case 'first_impression':   return 'first impression';
+    case 'early_signal':       return 'early signal';
+    case 'self_language':      return 'your words';
+    case 'repeating_story':    return 'repeating story';
     case 'whats_loud':         return 'last 30 days';
-    case 'returning_question': return 'last 45 days';
-    case 'mind_moving':        return 'last 45 days';
-    case 'wondering_about':    return 'last 60 days';
+    case 'returning_question': return 'last 60 days';
+    case 'mind_moving':        return 'last 60 days';
+    case 'wondering_about':    return 'last 90 days';
     case 'gone_quiet':         return 'last 60 days';
     case 'whats_pulling_you':  return 'last 30 days';
-    case 'stated_vs_actual':   return 'last 45 days';
-    case 'recurring_cast':     return 'last 30 days';
-    case 'thinking_texture':   return 'last 45 days';
+    case 'stated_vs_actual':   return 'last 60 days';
+    case 'recurring_cast':     return 'last 60 days';
+    case 'thinking_texture':   return 'last 60 days';
   }
 }
 
@@ -119,13 +136,15 @@ function coerceEvidence(v: unknown): PatternsEvidence[] {
   return out;
 }
 
+// texture_early is excluded — it's injected on-device, never from Claude output.
 const TYPE_SET: ReadonlySet<AcrossTimeType> = new Set<AcrossTimeType>([
   'whats_loud', 'returning_question', 'mind_moving', 'wondering_about', 'gone_quiet',
   'whats_pulling_you', 'stated_vs_actual', 'recurring_cast', 'thinking_texture',
+  'early_signal', 'first_impression', 'self_language', 'repeating_story',
 ]);
 
 const DISMISSIBLE_TYPES: ReadonlySet<AcrossTimeType> = new Set<AcrossTimeType>([
-  'wondering_about', 'stated_vs_actual',
+  'wondering_about', 'stated_vs_actual', 'repeating_story',
 ]);
 
 /**
@@ -181,19 +200,29 @@ export function parsePatternsOutput(
       try {
         const arr = JSON.parse(json);
         if (Array.isArray(arr)) {
-          const statedVsActualCount = { n: 0 };
+          const typeCaps: Partial<Record<AcrossTimeType, { max: number; n: number }>> = {
+            stated_vs_actual: { max: 2, n: 0 },
+            repeating_story:  { max: 2, n: 0 },
+          };
           for (const item of arr) {
             if (!item || typeof item !== 'object') continue;
             const type = (item as any).type as AcrossTimeType;
             if (!TYPE_SET.has(type)) continue;
-            // stated_vs_actual: truth-bomb-adjacent — cap at 2 items max
-            if (type === 'stated_vs_actual') {
-              if (statedVsActualCount.n >= 2) continue;
-              statedVsActualCount.n++;
+            // Apply per-type caps
+            const cap = typeCaps[type];
+            if (cap) {
+              if (cap.n >= cap.max) continue;
+              cap.n++;
             }
             const evidence = coerceEvidence((item as any).evidence);
-            // Spec: each observation MUST have 2–3 evidence excerpts.
-            if (evidence.length < 2) continue;
+            // self_language: no evidence required (phrases are the body).
+            // early_signal, first_impression, repeating_story: allow 1 excerpt.
+            // All other types: require 2–3.
+            const minEvidence =
+              type === 'self_language' ? 0
+              : (type === 'early_signal' || type === 'first_impression' || type === 'repeating_story') ? 1
+              : 2;
+            if (evidence.length < minEvidence) continue;
             const trimmedEvidence = evidence.slice(0, 3);
             const title = coerceString((item as any).title);
             const body  = coerceString((item as any).body);

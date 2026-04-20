@@ -790,21 +790,32 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
             </View>
             <Text style={styles.headerSub}>{formatDate(effectiveSummary.date)}</Text>
           </View>
-          {savingReflection ? (
-            <View style={styles.savingRow}>
-              <ActivityIndicator size="small" color="rgba(152,212,250,0.65)" />
-              <Text style={styles.savingText}>Saving…</Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              onPress={handleClose}
-              style={styles.closeBtn}
-              disabled={savingReflection}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Feather name="x" size={18} color="rgba(152,212,250,0.70)" />
-            </TouchableOpacity>
-          )}
+          <View style={styles.headerActions}>
+            {onCallRequested && !savingReflection && (
+              <TouchableOpacity
+                onPress={() => onCallRequested(selectedMindId)}
+                style={styles.callBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="phone" size={16} color="rgba(152,212,250,0.70)" />
+              </TouchableOpacity>
+            )}
+            {savingReflection ? (
+              <View style={styles.savingRow}>
+                <ActivityIndicator size="small" color="rgba(152,212,250,0.65)" />
+                <Text style={styles.savingText}>Saving…</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={handleClose}
+                style={styles.closeBtn}
+                disabled={savingReflection}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="x" size={18} color="rgba(152,212,250,0.70)" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {activeMind && (
@@ -1056,6 +1067,13 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   closeBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: 'rgba(152,212,250,0.08)',
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  callBtn: {
     width: 34, height: 34, borderRadius: 17,
     backgroundColor: 'rgba(152,212,250,0.08)',
     borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)',
