@@ -7,13 +7,11 @@
  * conversation id — never recomputed.
  *
  * Records are called fire-and-forget from TalkScreen / ChatScreen's close
- * path. All flag-gated: under ff_new_minds_system OFF, this service is a
- * no-op and the log stays empty.
+ * path.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { claudeProxy } from './AIProxy';
-import { FeatureFlagsService } from './FeatureFlagsService';
 import type { UserContextRecentMind } from '../types';
 
 const LOG_KEY = 'conversation_history';
@@ -101,14 +99,11 @@ export interface RecordInput {
 }
 
 /**
- * Record a completed conversation. No-op when ff_new_minds_system is off
- * or when the conversation was too brief (no user turns).
+ * Record a completed conversation. No-op when the conversation was too brief
+ * (no user turns).
  */
 export async function recordCompletedConversation(input: RecordInput): Promise<void> {
   try {
-    const on = await FeatureFlagsService.getFlag('ff_new_minds_system').catch(() => false);
-    if (!on) return;
-
     const userTurns = input.messages.filter(m => m.role === 'user').length;
     if (userTurns === 0) return;
 

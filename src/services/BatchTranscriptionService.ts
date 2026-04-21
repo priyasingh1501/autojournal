@@ -3,12 +3,10 @@ import { TranscriptEntry } from '../types';
 import { transcribeAudio } from './TranscriptionService';
 import { StorageService } from './StorageService';
 import { extractAndSaveExpenses } from './ExpenseService';
-import { generateIfNeeded } from './AutoSummaryService';
 import { claudeProxy } from './AIProxy';
 import { UserContextService } from './UserContextService';
 import { ActionablesService } from './ActionablesService';
 import { detectAndSuggestIntention, getActive, recordMention } from './IntentionsService';
-import { FeatureFlagsService } from './FeatureFlagsService';
 import { effectiveDateStr } from './dayRollover';
 import { invalidateDigest } from './DigestService';
 
@@ -77,12 +75,9 @@ export type BatchProgress = {
   failed: number;
 };
 
-export type SummaryBannerStatus = 'generating' | 'ready';
-
 export async function transcribePendingClips(
   onProgress: (progress: BatchProgress) => void,
   onBatchComplete: (entry: TranscriptEntry) => void,
-  onSummaryStatus?: (status: SummaryBannerStatus) => void,
 ): Promise<void> {
   const clips = await StorageService.getPendingClips();
   if (clips.length === 0) return;
@@ -158,42 +153,27 @@ export async function transcribePendingClips(
       kind: 'voice',
       ...(emotionTags.length > 0 ? { emotionTags } : {}),
     };
-    // Under ff_day_close_model the entry's storage bucket uses a 3am rollover
-    // (01:30 belongs to "last night", not "early morning"), so pre-compute
-    // the date once and thread it through both storage and downstream hooks.
-    const dayCloseOn = await FeatureFlagsService.getFlag('ff_day_close_model').catch(() => false);
-    const d = new Date(entry.timestamp);
-    const calendarDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const date = dayCloseOn ? effectiveDateStr(entry.timestamp) : calendarDate;
+    // The entry's storage bucket uses a 3am rollover (01:30 belongs to "last
+    // night", not "early morning"), so pre-compute the date once and thread
+    // it through both storage and downstream hooks.
+    const date = effectiveDateStr(entry.timestamp);
 
     await StorageService.addTranscript(entry, { storageDate: date });
     // Invalidate shared caches so the next AI session and actionables reflect new entries
     UserContextService.invalidate();
     ActionablesService.invalidate();
     // Stale digest for this date — next read recomputes.
-    if (dayCloseOn) invalidateDigest(date).catch(() => {});
+    invalidateDigest(date).catch(() => {});
     onBatchComplete(entry);
 
     // Fire-and-forget expense extraction — never blocks transcription
     extractAndSaveExpenses(entry.text, date, entry.id).catch(() => {});
-    // Fire-and-forget intention detection — no-op when ff_intentions is off,
-    // weekly-throttled inside the service so it can't spam prompts.
+    // Fire-and-forget intention detection — weekly-throttled inside the
+    // service so it can't spam prompts.
     detectAndSuggestIntention(entry).catch(() => {});
     // Keyword-match active intentions and record any mentions found.
     detectIntentionMentions(entry).catch(() => {});
-    // First-entry trigger: generate an initial summary if none exists for today yet.
-    // Only show the banner if generation actually runs (generateIfNeeded returns true).
-    // Under ff_day_close_model, summary generation is deferred to the 23:59
-    // close-out — no per-entry generation during the day.
-    if (!dayCloseOn) {
-      generateIfNeeded(date)
-        .then(generated => {
-          if (generated) {
-            onSummaryStatus?.('generating');
-            onSummaryStatus?.('ready');
-          }
-        })
-        .catch(() => {});
-    }
+    // Summary generation is deferred to the 23:59 close-out — no per-entry
+    // generation during the day.
   }
 }

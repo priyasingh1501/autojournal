@@ -4,8 +4,6 @@
  * Priority queue (highest wins):
  *   1. Wellbeing follow-up  — pending re-entry check-in (tier 2/3)
  *   2. Emotional follow-up  — yesterday's summary had anxious/stressed/sad/overwhelmed tags
- *   3. Recurring thought    — HowYouThinkAnalysis.repeatingLoops (pick top loop)
- *   4. Values divergence    — WhatYouCareAboutAnalysis.divergence (pick first gap)
  *   5. Tracker nudge        — enabled tracker with no mention in today's entries
  *   6. Wisdom short         — matched to emotional state from last summary
  *   7. Generic fallback     — simple evening reflection
@@ -25,16 +23,11 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageService } from './StorageService';
 import {
-  getRecentDistressEvents,
   getPendingReentry,
   isWellbeingEnabled,
 } from './WellbeingService';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
-import type {
-  HowYouThinkAnalysis,
-  WhatYouCareAboutAnalysis,
-  WisdomShort,
-} from '../types';
+import type { WisdomShort } from '../types';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -188,51 +181,6 @@ async function buildCandidates(): Promise<NotificationCandidate[]> {
           body: msg.body,
           data: { type: 'emotional_followup', emotion: tag },
         });
-      }
-    }
-  } catch { /* ignore */ }
-
-  // ── 3. Recurring thought nudge ────────────────────────────────────────────
-  try {
-    const raw = await AsyncStorage.getItem('insightv2_thinking');
-    if (raw) {
-      const analysis: HowYouThinkAnalysis = JSON.parse(raw);
-      const ageDays = (Date.now() - analysis.generatedAt) / 86_400_000;
-      // Don't surface loops from stale insights — they may no longer reflect reality
-      if (ageDays <= 30) {
-        const loops = analysis.repeatingLoops;
-        if (loops && loops.length > 0) {
-          const loop = loops[0];
-          candidates.push({
-            priority: 3,
-            title: `"${loop.name}" showing up again?`,
-            body: loop.triggerPattern
-              ? `This pattern starts when: ${loop.triggerPattern.slice(0, 80)}. Worth noticing.`
-              : loop.description.slice(0, 100),
-            data: { type: 'recurring_thought', loopName: loop.name },
-          });
-        }
-      }
-    }
-  } catch { /* ignore */ }
-
-  // ── 4. Values divergence nudge ────────────────────────────────────────────
-  try {
-    const raw = await AsyncStorage.getItem('insightv2_values');
-    if (raw) {
-      const analysis: WhatYouCareAboutAnalysis = JSON.parse(raw);
-      const ageDays = (Date.now() - analysis.generatedAt) / 86_400_000;
-      if (ageDays <= 14) {
-        const gaps = analysis.divergence;
-        if (gaps && gaps.length > 0) {
-          const gap = gaps[0];
-          candidates.push({
-            priority: 4,
-            title: 'Living your values today?',
-            body: gap.observation.slice(0, 120),
-            data: { type: 'values_divergence', stated: gap.stated, actual: gap.actual },
-          });
-        }
       }
     }
   } catch { /* ignore */ }

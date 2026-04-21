@@ -115,15 +115,12 @@ export type AnalyticsEvent =
   | 'talk_session_ended'
   | 'chat_session_started'
   | 'chat_session_ended'
-  // Insights
-  | 'insight_tab_viewed'
-  | 'insight_generated'
   // Wisdom
   | 'wisdom_short_saved'
   | 'wisdom_short_unsaved'
   | 'wisdom_short_shared'
   | 'wisdom_short_reflected'
-  | 'wisdom_stance_surfaced'  // ff_new_minds_system: stance × loopState × placement
+  | 'wisdom_stance_surfaced'  // stance × loopState × placement
   | 'mood_selected'
   // Subscription
   | 'paywall_shown'

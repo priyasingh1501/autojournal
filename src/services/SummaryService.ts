@@ -5,12 +5,10 @@ import { TranscriptEntry, DailySummary, DayMacros, WeekReview, WeekReviewDay } f
 import { StorageService } from './StorageService';
 import { generateSummaryImage } from './SummaryImageService';
 import { extractJournalSignal } from './WisdomService';
-import { FeatureFlagsService } from './FeatureFlagsService';
 import { parseSummaryOutput, parseMacrosBody } from './summaryParser';
 import {
   buildGroupedIntentionContextBlock,
   getActiveIntentions,
-  intentionsEnabled,
 } from './IntentionsService';
 import { parseWeekReviewOutput as parseWeekReviewOutputPure } from './weekReviewParser';
 
@@ -75,16 +73,15 @@ export async function generateDailySummary(
     .filter(Boolean)
     .join('\n');
 
-  const useNewStructure = await FeatureFlagsService.getFlag('ff_new_day_summary').catch(() => false);
-
   // Pull active intentions so the model can reference them when they appear
-  // in the day's entries. Only when ff_intentions is on — otherwise empty block.
-  const intentionsOn = await intentionsEnabled();
-  const activeIntentions = intentionsOn ? await getActiveIntentions().catch(() => []) : [];
+  // in the day's entries.
+  const activeIntentions = await getActiveIntentions().catch(() => []);
   const intentionsBlock = buildGroupedIntentionContextBlock(activeIntentions);
 
-  // System prompt — five-section insight + macros (full breakdown is generated on demand)
-  const legacyPrompt = `You are an intelligent personal journal assistant.
+  // Adaptive prompt — the classic seven-section insight + macros, plus a
+  // prose reflection, an adaptive "what the day held" list, and an optional
+  // mood arc. Voice is observational, never diagnostic.
+  const basePrompt = `You are an intelligent personal journal assistant.
 You receive a mix of voice transcripts, written notes, and photos from a person's day.
 Your job is to produce TWO things, separated by the exact line ===MACROS===.
 
@@ -116,12 +113,7 @@ Then output exactly this line on its own:
 PART 2 — Meal macro estimates (single JSON object, no other text):
 If any food or drink was mentioned today, estimate totals and output ONLY:
 {"calories": <kcal number>, "protein": <grams number>, "carbs": <grams number>, "fat": <grams number>}
-If no meals were mentioned at all, output: null`;
-
-  // New adaptive prompt — produces the legacy output (for backward compat) AND
-  // three new sections: a prose reflection, an adaptive "what the day held"
-  // list, and an optional mood arc. Voice is observational, never diagnostic.
-  const newPrompt = `${legacyPrompt}
+If no meals were mentioned at all, output: null
 
 Then output exactly this line on its own:
 ===REFLECTION===
@@ -169,7 +161,6 @@ EXACTLY three lines — one emotion word each:
 If the day doesn't have entries across those periods, output ONLY:
 null`;
 
-  const basePrompt = useNewStructure ? newPrompt : legacyPrompt;
   const systemPrompt = intentionsBlock
     ? `${intentionsBlock}\n\n${basePrompt}`
     : basePrompt;
@@ -224,7 +215,7 @@ null`;
 
   const response = await claudeProxy.messages.create({
     model: 'claude-sonnet-4-6',  // sonnet supports vision and is 75× cheaper than opus
-    max_tokens: useNewStructure ? 2400 : 1600,
+    max_tokens: 2400,
     system: systemPrompt,
     messages: [{ role: 'user', content }],
   });
@@ -257,8 +248,6 @@ null`;
     createdAt: Date.now(),
     imageUri: imageUri ?? undefined,
     dailyMacros,
-    // Only set the new fields when the flag path produced them; missing
-    // sentinels leave these undefined so legacy consumers are unaffected.
     reflection: parsed.reflection,
     whatTheDayHeld: parsed.whatTheDayHeld,
     moodArc: parsed.moodArc,
@@ -352,7 +341,7 @@ Return ONLY the markdown — no preamble, no extra lines.`;
   return breakdownText;
 }
 
-// ── Week Review (ff_journal_merge) ──────────────────────────────────────────
+// ── Week Review ─────────────────────────────────────────────────────────────
 
 const WEEK_REVIEW_KEY_PREFIX = 'week_review_';
 export const WEEK_REVIEW_NOT_ENOUGH = 'WEEK_REVIEW_NOT_ENOUGH';

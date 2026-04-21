@@ -1,11 +1,11 @@
 /**
- * DayCloseScheduler — schedules the 23:59 "day-close" notification for
- * ff_day_close_model. When the notification fires:
+ * DayCloseScheduler — schedules the 23:59 "day-close" notification. When
+ * the notification fires:
  *   • Foreground: App.tsx's notification-received listener calls
  *     generateIfNeeded(today, regenerate=true) so the summary produces now.
  *   • Background/closed: the user sees the notification; tapping deep-links
- *     into Summary, and AutoSummaryService.checkAndAutoGenerate (already
- *     wired on app foreground) finishes the job when they open the app.
+ *     into the Journal tab, and AutoSummaryService.checkAndAutoGenerate
+ *     (already wired on app foreground) finishes the job when they open the app.
  *
  * We schedule the next night's notification each time `ensureScheduled()`
  * is called (on app ready + on every foreground). Existing scheduled

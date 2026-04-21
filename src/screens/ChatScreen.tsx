@@ -21,11 +21,10 @@ import {
   sendMessage, getOpeningMessage, generateReflection,
   detectIntent, ConversationIntent, ConversationContext,
 } from '../services/ConversationService';
-import { MINDS } from '../services/MindService';
+import { MINDS_V2 as MINDS } from '../services/mindsConfigV2';
 import { StorageService } from '../services/StorageService';
 import { recordCompletedConversation } from '../services/ConversationHistoryService';
 import { useActiveMindsRoster } from '../hooks/useActiveMindsRoster';
-import { FeatureFlagsService } from '../services/FeatureFlagsService';
 import { getUserContextV2 } from '../services/UserContextService';
 import {
   detectHandoff,
@@ -53,7 +52,7 @@ interface Props {
   /**
    * When provided, skip the mind-picker carousel and jump straight into a
    * conversation with this mindId. `null` = Companion. Used by the curated
-   * picker flow (ff_new_minds_system) so we don't show two pickers in a row.
+   * picker flow so we don't show two pickers in a row.
    */
   initialMindId?: string | null;
   /**
@@ -117,7 +116,7 @@ function MindPicker({
   // Map of itemKey → fetched opening message (undefined = loading, null = error)
   const [openingMessages, setOpeningMessages] = useState<Record<string, string | null>>({});
 
-  // Flag-aware roster — V2 when ff_new_minds_system is on, legacy otherwise.
+  // Mind roster — always the permanent V2 set.
   // The local COMPANION card (rendered with mindId=null) stays as the first
   // item for both rosters, so V2's 'companion' entry is filtered out to
   // avoid a duplicate row.
@@ -139,9 +138,7 @@ function MindPicker({
       return { ...prev }; // trigger re-render so the loading state shows
     });
     try {
-      const settings = await StorageService.getSettings();
-      const apiKey = settings?.anthropicApiKey?.trim() ?? '';
-      const msg = await getOpeningMessage(summary, apiKey || undefined, item.id);
+      const msg = await getOpeningMessage(summary, undefined, item.id);
       if (active.value) setOpeningMessages(prev => ({ ...prev, [key]: msg }));
     } catch {
       if (active.value) setOpeningMessages(prev => ({ ...prev, [key]: null }));
@@ -439,13 +436,12 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
   // can key records by mind+startedAt. Reset via handleBackToPicker.
   const conversationStartedAtRef = useRef<number>(0);
 
-  // ── Handoff state (ff_new_minds_system, Companion-only) ────────────────────
+  // ── Handoff state (Companion-only) ─────────────────────────────────────────
   // Kept in a ref so handleSend's async closure reads the latest value without
   // stale-state pitfalls; mirrored into React state only to trigger re-render
   // of the pills UI.
   const handoffStateRef = useRef<HandoffState>(INITIAL_HANDOFF_STATE);
   const [handoffUi, setHandoffUi] = useState<HandoffState['activeOffer']>(null);
-  const [newMindsOn, setNewMindsOn] = useState(false);
   const wellbeingRef = useRef<'regulated' | 'tender' | 'hard_stretch'>('regulated');
   // The source context can be updated mid-session (on handoff) — keep it in a
   // ref so the subsequent getOpeningMessage call sees the latest value.
@@ -453,7 +449,6 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
   const [handoffTransitioning, setHandoffTransitioning] = useState(false);
 
   useEffect(() => {
-    FeatureFlagsService.getFlag('ff_new_minds_system').then(setNewMindsOn).catch(() => {});
     getUserContextV2()
       .then(c => { wellbeingRef.current = c.wellbeingState; })
       .catch(() => {});
@@ -496,23 +491,20 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
     conversationStartedAtRef.current = Date.now();
     setConvState('loading');
     try {
-      const settings = await StorageService.getSettings();
-      apiKeyRef.current = settings?.anthropicApiKey?.trim() ?? '';
+      // API keys now live server-side; apiKeyRef is kept as an empty-string
+      // placeholder so downstream callsites (which still pass it) stay happy.
+      apiKeyRef.current = '';
 
       // Load context data in parallel for intent-aware responses
       const now = new Date();
       const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const [goals, monthlyInsight, whoYouAre, whatYouCare] = await Promise.allSettled([
+      const [goals, monthlyInsight] = await Promise.allSettled([
         StorageService.getGoals(),
         StorageService.getMonthlyInsight(monthKey),
-        StorageService.getWhoYouAre(),
-        StorageService.getWhatYouCare(),
       ]);
       convContextRef.current = {
         goals:       goals.status === 'fulfilled' ? goals.value ?? undefined : undefined,
         monthlyData: monthlyInsight.status === 'fulfilled' ? monthlyInsight.value?.weeklyData ?? undefined : undefined,
-        whoYouAre:   whoYouAre.status === 'fulfilled' ? whoYouAre.value ?? undefined : undefined,
-        whatYouCare: whatYouCare.status === 'fulfilled' ? whatYouCare.value ?? undefined : undefined,
       };
 
       // Use pre-fetched opening from picker if available, otherwise fetch now.
@@ -679,7 +671,7 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
       // Runs after Companion responses only, from turn 3 onward, respecting
       // the cooldown and declined-set state machine. Fire-and-forget so it
       // never blocks the user from typing their next message.
-      if (newMindsOn && selectedMindId === null) {
+      if (selectedMindId === null) {
         applyHandoffState(advanceTurn(handoffStateRef.current));
         const eligible = canOfferHandoff({
           state: handoffStateRef.current,
@@ -728,7 +720,7 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
       } catch { /* reflection is best-effort */ }
     }
     // Record the conversation for UserContextV2.recentMinds — no-op when
-    // ff_new_minds_system is off, and skipped when there were no user turns.
+    // skipped when there were no user turns.
     if (conversationStartedAtRef.current > 0) {
       recordCompletedConversation({
         mindId: selectedMindId,
@@ -739,6 +731,9 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
     }
     onClose();
   };
+
+  // Must be called before any early return — hooks cannot be conditional.
+  const fullRoster = useActiveMindsRoster();
 
   // ── Mind picker ───────────────────────────────────────────────────────
   if (convState === 'selecting') {
@@ -754,10 +749,6 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
   }
 
   const canSend   = draft.trim().length > 0 && convState === 'idle';
-  // Look up the active mind from the SAME flag-aware roster the picker
-  // used — otherwise picking Rumi/Munger under ff_new_minds_system yields
-  // null here and the active-mind UI blanks.
-  const fullRoster = useActiveMindsRoster();
   const activeMind = selectedMindId ? fullRoster.find(m => m.id === selectedMindId) : null;
 
   // ── Chat UI ───────────────────────────────────────────────────────────

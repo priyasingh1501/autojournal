@@ -1,5 +1,5 @@
 /**
- * NewDaySummaryView — redesigned day-summary card (ff_new_day_summary ON).
+ * NewDaySummaryView — day-summary card.
  *
  * Layout (top → bottom):
  *   1. Jellyfish artwork header (existing)

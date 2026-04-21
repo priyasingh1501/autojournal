@@ -14,3 +14,13 @@ if (typeof (global as any).DOMException === 'undefined') {
   }
   (global as any).DOMException = DOMExceptionPolyfill;
 }
+
+// HTMLAudioElement — @elevenlabs/client checks `"setSinkId" in HTMLAudioElement.prototype`
+// at runtime; React Native has no DOM so this class doesn't exist.
+if (typeof (global as any).HTMLAudioElement === 'undefined') {
+  (global as any).HTMLAudioElement = class HTMLAudioElement {
+    // setSinkId is not supported in React Native — the check in the lib
+    // will see it's absent and throw its own "not supported" error rather
+    // than crashing on `undefined.prototype`.
+  };
+}

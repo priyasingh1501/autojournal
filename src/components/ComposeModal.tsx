@@ -22,7 +22,6 @@ import { generateDailySummary } from '../services/SummaryService';
 import { UserContextService } from '../services/UserContextService';
 import { ActionablesService } from '../services/ActionablesService';
 import { detectAndSuggestIntention } from '../services/IntentionsService';
-import { FeatureFlagsService } from '../services/FeatureFlagsService';
 import { effectiveDateStr } from '../services/dayRollover';
 import { invalidateDigest } from '../services/DigestService';
 import { TranscriptEntry } from '../types';
@@ -243,16 +242,13 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
           kind: 'manual',
           photoUri: savedPhotoUri,
         };
-        // Under ff_day_close_model, manual entries before 3am roll back a
-        // day (same as voice path in BatchTranscriptionService).
-        const dayCloseOn = await FeatureFlagsService.getFlag('ff_day_close_model').catch(() => false);
-        const _d = new Date(entry.timestamp);
-        const calendarDate = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
-        const date = dayCloseOn ? effectiveDateStr(entry.timestamp) : calendarDate;
+        // Manual entries before 3am roll back a day (same as voice path in
+        // BatchTranscriptionService).
+        const date = effectiveDateStr(entry.timestamp);
         await StorageService.addTranscript(entry, { storageDate: date });
         UserContextService.invalidate();
         ActionablesService.invalidate();
-        if (dayCloseOn) invalidateDigest(date).catch(() => {});
+        invalidateDigest(date).catch(() => {});
         onSaved(entry);
         // 1. Instant regex extraction — no API call, updates home immediately
         const quick = quickExtractExpense(entry.text, date, entry.id);
@@ -265,7 +261,7 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
         extractAndSaveExpenses(entry.text, date, entry.id, savedPhotoUri)
           .then(() => onExpensesExtracted?.())
           .catch(() => {});
-        // Intention detection — no-op when ff_intentions is off or on cooldown.
+        // Intention detection — weekly-throttled inside the service.
         detectAndSuggestIntention(entry).catch(() => {});
       }
 

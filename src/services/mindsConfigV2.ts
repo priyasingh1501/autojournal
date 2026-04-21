@@ -1,5 +1,5 @@
 /**
- * V2 mind roster — ff_new_minds_system.
+ * V2 mind roster.
  *
  * Nine minds: Companion + 8 specialists. Each mind owns its opening lines
  * and system prompt directly (no MIND_PROMPTS lookup). Opening lines are

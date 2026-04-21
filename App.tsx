@@ -13,11 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import HomeScreen from './src/screens/HomeScreen';
-import SimpleHomeScreen from './src/screens/SimpleHomeScreen';
-import TranscriptsScreen from './src/screens/TranscriptsScreen';
-import SummaryScreen from './src/screens/SummaryScreen';
 import JournalScreen from './src/screens/JournalScreen';
-import InsightsScreen from './src/screens/InsightsScreen';
 import PatternsScreen from './src/screens/PatternsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
@@ -30,7 +26,6 @@ import {
   setupNotificationChannel,
   scheduleNightlyNotification,
   checkAndAutoGenerate,
-  generateIfNeeded,
 } from './src/services/AutoSummaryService';
 import { initAnalytics, analyticsIdentify, analyticsReset, analyticsScreen, track } from './src/services/AnalyticsService';
 import {
@@ -40,11 +35,7 @@ import {
 import { getShortsLibrary } from './src/services/SupabaseService';
 import { prewarmWisdomImages } from './src/services/WisdomImageService';
 import { buildFeed } from './src/services/WisdomService';
-import { FeatureFlagsService } from './src/services/FeatureFlagsService';
-import {
-  ensureDayCloseNotificationScheduled,
-  cancelDayCloseNotification,
-} from './src/services/DayCloseScheduler';
+import { ensureDayCloseNotificationScheduled } from './src/services/DayCloseScheduler';
 
 // Register LiveKit WebRTC globals lazily — prevents native crash killing the app.
 try {
@@ -52,6 +43,16 @@ try {
   livekit.registerGlobals();
 } catch (e) {
   console.warn('[LiveKit] registerGlobals failed:', e);
+}
+
+// livekit/react-native-webrtc doesn't polyfill getSupportedConstraints;
+// ElevenLabs calls it during session init.
+if (global.navigator?.mediaDevices && typeof global.navigator.mediaDevices.getSupportedConstraints !== 'function') {
+  (global.navigator.mediaDevices as any).getSupportedConstraints = () => ({
+    deviceId: true, echoCancellation: true, noiseSuppression: true,
+    autoGainControl: true, sampleRate: true, sampleSize: true,
+    channelCount: true, latency: true, volume: true,
+  });
 }
 
 // Initialise PostHog as early as possible
@@ -127,32 +128,17 @@ function withBoundary<P extends object>(Screen: React.ComponentType<P>): React.C
 // Pre-wrap every screen at module level so the component reference is stable
 // across AppTabs re-renders. Inline withBoundary() calls inside JSX create a
 // new function on every render, causing React Navigation to unmount+remount
-// the active screen whenever feature-flag state updates — which crashes screens
-// that hold native audio/video resources.
-const BoundedSimpleHomeScreen  = withBoundary(SimpleHomeScreen);
-const BoundedHomeScreen        = withBoundary(HomeScreen);
-const BoundedJournalScreen     = withBoundary(JournalScreen);
-const BoundedTranscriptsScreen = withBoundary(TranscriptsScreen);
-const BoundedSummaryScreen     = withBoundary(SummaryScreen);
-const BoundedPatternsScreen    = withBoundary(PatternsScreen);
-const BoundedInsightsScreen    = withBoundary(InsightsScreen);
-const BoundedWisdomScreen      = withBoundary(WisdomScreen);
-const BoundedSettingsScreen    = withBoundary(SettingsScreen);
+// the active screen whenever state updates — which crashes screens that hold
+// native audio/video resources.
+const BoundedHomeScreen     = withBoundary(HomeScreen);
+const BoundedJournalScreen  = withBoundary(JournalScreen);
+const BoundedPatternsScreen = withBoundary(PatternsScreen);
+const BoundedWisdomScreen   = withBoundary(WisdomScreen);
+const BoundedSettingsScreen = withBoundary(SettingsScreen);
 
 /** Rendered inside SafeAreaProvider so useSafeAreaInsets() works correctly. */
 function AppTabs() {
   const insets = useSafeAreaInsets();
-  // Read redesign flags once per mount. Dev toggle → next app relaunch picks
-  // it up, same cadence as any other tab-config change. Synchronous default
-  // of `false` keeps startup unchanged for users without the flag.
-  const [patternsOn,     setPatternsOn]     = useState(false);
-  const [simpleHomeOn,   setSimpleHomeOn]   = useState(false);
-  const [journalMergeOn, setJournalMergeOn] = useState(false);
-  useEffect(() => {
-    FeatureFlagsService.getFlag('ff_patterns_tab').then(setPatternsOn).catch(() => {});
-    FeatureFlagsService.getFlag('ff_simple_home').then(setSimpleHomeOn).catch(() => {});
-    FeatureFlagsService.getFlag('ff_journal_merge').then(setJournalMergeOn).catch(() => {});
-  }, []);
   return (
     <Tab.Navigator
       screenOptions={{
@@ -174,19 +160,14 @@ function AppTabs() {
         headerShadowVisible: false,
       }}
     >
-      {/* Route name "Journal" stays mapped to the capture screen so existing
-          deep-links (untangle://home, widget, compose) keep working. When
-          ff_journal_merge is on, the capture tab relabels to "Home" so the
-          merged tab can take the "Journal" label. */}
       <Tab.Screen
-        name="Journal"
-        component={simpleHomeOn ? BoundedSimpleHomeScreen : BoundedHomeScreen}
+        name="Home"
+        component={BoundedHomeScreen}
         options={({ navigation }) => ({
           title: 'Untangle',
           headerTitleStyle: { fontFamily: 'Baskerville', fontSize: 22, fontWeight: '500' },
-          tabBarLabel: journalMergeOn ? 'Home' : 'Journal',
-          tabBarIcon: ({ color }) =>
-            <Feather name={journalMergeOn ? 'home' : 'mic'} size={18} color={color} />,
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ color }) => <Feather name="home" size={18} color={color} />,
           headerRight: () => (
             <TouchableOpacity
               onPress={() => navigation.navigate('Settings')}
@@ -198,42 +179,21 @@ function AppTabs() {
           ),
         })}
       />
-      {/* "Notes" route now hosts the merged JournalScreen when the flag is
-          on. Keeping the route name means nothing else in the app needs to
-          change to reach it. */}
       <Tab.Screen
-        name="Notes"
-        component={journalMergeOn ? BoundedJournalScreen : BoundedTranscriptsScreen}
-        options={{
-          headerShown: journalMergeOn ? false : undefined,
-          tabBarLabel: journalMergeOn ? 'Journal' : 'Notes',
-          tabBarIcon: ({ color }) =>
-            <Feather name={journalMergeOn ? 'book-open' : 'file-text'} size={18} color={color} />,
-        }}
-      />
-      {/* Summary tab is hidden from the tab bar when merged — still
-          navigable programmatically so the "summary ready" banner deep-link
-          continues to work on legacy flows. */}
-      <Tab.Screen
-        name="Summary"
-        component={BoundedSummaryScreen}
+        name="Journal"
+        component={BoundedJournalScreen}
         options={{
           headerShown: false,
-          tabBarIcon: ({ color }) => <Feather name="star" size={18} color={color} />,
-          ...(journalMergeOn ? { tabBarButton: () => null } : {}),
+          tabBarLabel: 'Journal',
+          tabBarIcon: ({ color }) => <Feather name="book-open" size={18} color={color} />,
         }}
       />
-      {/* Route name stays "Insights" even under the flag so existing deep-links
-          (notifications, widget actions) keep working. Only the displayed
-          label, icon, and component swap based on ff_patterns_tab. */}
       <Tab.Screen
-        name="Insights"
-        component={patternsOn ? BoundedPatternsScreen : BoundedInsightsScreen}
+        name="Patterns"
+        component={BoundedPatternsScreen}
         options={{
           headerShown: false,
-          tabBarLabel: patternsOn ? 'Patterns' : 'Insights',
-          tabBarIcon: ({ color }) =>
-            <Feather name={patternsOn ? 'activity' : 'trending-up'} size={18} color={color} />,
+          tabBarIcon: ({ color }) => <Feather name="activity" size={18} color={color} />,
         }}
       />
       <Tab.Screen
@@ -333,10 +293,10 @@ export default function App() {
   const handleDeepLink = (url: string) => {
     if (!isReady.current) return;
     if (url.includes('untangle://home')) {
-      navigationRef.current?.navigate('Journal');
+      navigationRef.current?.navigate('Home');
     }
     if (url.includes('untangle://compose')) {
-      navigationRef.current?.navigate('Journal', { openCompose: true } as any);
+      navigationRef.current?.navigate('Home', { openCompose: true } as any);
     }
     if (url.includes('untangle://wisdom')) {
       // e.g. untangle://wisdom?shortId=abc123
@@ -382,13 +342,8 @@ export default function App() {
     // Auto-generate for yesterday / tonight if applicable
     checkAndAutoGenerate();
 
-    // ff_day_close_model — ensure a 23:59 "day ready" notification is
-    // scheduled for tonight. If the flag is off, cancel any stale one from
-    // a previous install.
-    FeatureFlagsService.getFlag('ff_day_close_model').then(on => {
-      if (on) ensureDayCloseNotificationScheduled().catch(() => {});
-      else    cancelDayCloseNotification().catch(() => {});
-    }).catch(() => {});
+    // Ensure a 23:59 "day ready" notification is scheduled for tonight.
+    ensureDayCloseNotificationScheduled().catch(() => {});
 
     // Pre-warm images for the first 5 wisdom shorts the user will see.
     // Runs fire-and-forget so startup is never delayed.
@@ -428,9 +383,7 @@ export default function App() {
           }
         }).catch(() => {});
         // Re-ensure the 23:59 day-close notification is scheduled for tonight
-        FeatureFlagsService.getFlag('ff_day_close_model').then(on => {
-          if (on) ensureDayCloseNotificationScheduled().catch(() => {});
-        }).catch(() => {});
+        ensureDayCloseNotificationScheduled().catch(() => {});
         // Re-lock when returning from background
         if (wasBackground) {
           const pinSet = await StorageService.hasPinSet();
@@ -455,7 +408,7 @@ export default function App() {
       }
     });
 
-    // When the user taps a notification → route by type
+    // When the user taps a notification → route by type.
     const notifSub = Notifications.addNotificationResponseReceivedListener(response => {
       if (!isReady.current) return;
       const data = response.notification.request.content.data ?? {};
@@ -463,20 +416,17 @@ export default function App() {
       const type   = data.type as string | undefined;
 
       if (action === 'view-summary') {
-        navigationRef.current?.navigate('Summary');
+        navigationRef.current?.navigate('Journal');
       } else if (type === 'wisdom_short' && data.shortId) {
         navigationRef.current?.navigate('Wisdom', { shortId: data.shortId });
       } else if (type === 'week_review_ready') {
-        // Route name "Journal" routes to Home or the merged Journal tab
-        // depending on ff_journal_merge. The { view: 'week' } param is read
-        // by JournalScreen; other screens ignore it.
         navigationRef.current?.navigate('Journal', { view: 'week' });
       } else if (type === 'wellbeing_reentry' || type === 'emotional_followup' || type === 'generic_reflection') {
-        navigationRef.current?.navigate('Journal');
+        navigationRef.current?.navigate('Home');
       } else if (type === 'recurring_thought' || type === 'values_divergence') {
-        navigationRef.current?.navigate('Insights');
+        navigationRef.current?.navigate('Patterns');
       } else if (type === 'tracker_nudge') {
-        navigationRef.current?.navigate('Journal');
+        navigationRef.current?.navigate('Home');
       }
     });
 

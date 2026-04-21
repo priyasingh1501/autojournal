@@ -287,7 +287,6 @@ export interface AutoFilledMeta {
 export async function autoFillShortMetadata(
   title: string,
   body: string,
-  _apiKey: string,  // ignored — key is now server-side
 ): Promise<AutoFilledMeta> {
   const systemPrompt =
     'You are a wisdom-short curator and metadata expert. ' +

@@ -1,7 +1,7 @@
 /**
  * IntentionsScreen — settings-area management for user-declared intentions.
  *
- * Surfaced from Settings (when ff_intentions is on). Shows:
+ * Surfaced from Settings. Shows:
  *   • Any pending detected suggestion at the top — accept/dismiss
  *   • Active intentions with edit + disable
  *   • Inactive (disabled) intentions collapsed at the bottom

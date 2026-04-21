@@ -10,7 +10,6 @@ import {
 
 import { AcrossTimeObservation } from '../../types';
 import {
-  accentColorFor,
   deriveCountLine,
   deriveHeadline,
   deriveTextureBar,
@@ -26,8 +25,8 @@ const T = {
   secondaryText:  'rgba(152, 212, 250, 0.72)',
   tertiaryText:   'rgba(152, 212, 250, 0.50)',
   mutedText:      'rgba(152, 212, 250, 0.38)',
-  cardBg:         'rgba(3, 18, 40, 0.72)',
-  cardBorder:     'rgba(152, 212, 250, 0.13)',
+  cardBg:         'rgba(2, 6, 14, 0.90)',
+  cardBorder:     'rgba(152, 212, 250, 0.18)',
   evidenceBg:     'rgba(9, 41, 173, 0.20)',
   evidenceBorder: 'rgba(152, 212, 250, 0.18)',
   sitWithBg:      'rgba(93, 202, 165, 0.14)',
@@ -66,14 +65,13 @@ export default function ObservationCard({ obs, hidden, onSitWith, onDismiss, onS
 
   if (!rendering) return null;
 
-  const accent = accentColorFor(obs.type);
   const isDismissible = obs.dismissible;
   const hasSeeEntries = obs.type === 'returning_question';
 
   return (
-    <Animated.View style={[c.wrap, { borderLeftColor: accent, opacity: animOpacity }]}>
+    <Animated.View style={[c.wrap, { opacity: animOpacity }]}>
       {/* Type label */}
-      <Text style={[c.typeLabel, { color: accent }]}>{typeLabelFor(obs.type).toUpperCase()}</Text>
+      <Text style={c.typeLabel}>{typeLabelFor(obs.type).toUpperCase()}</Text>
 
       {/* Type-specific body */}
       {obs.type === 'whats_pulling_you'
@@ -185,11 +183,10 @@ function TextureBody({ obs }: { obs: AcrossTimeObservation }) {
         <Text style={c.headline}>{headline}</Text>
       ) : null}
 
-      {/* Distribution bar */}
       <View style={tx.barWrap}>
-        <View style={[tx.seg, { flex: bar.leftFlex, backgroundColor: '#b5d4f4' }]} />
-        <View style={[tx.seg, { flex: bar.midFlex,  backgroundColor: '#378add' }]} />
-        <View style={[tx.seg, { flex: bar.rightFlex, backgroundColor: '#b5d4f4' }]} />
+        <View style={[tx.seg, { flex: bar.leftFlex }]} />
+        <View style={[tx.seg, tx.segMid, { flex: bar.midFlex }]} />
+        <View style={[tx.seg, { flex: bar.rightFlex }]} />
       </View>
       <View style={tx.barLabels}>
         <Text style={tx.barLabel}>{bar.leftLabel}</Text>
@@ -197,7 +194,7 @@ function TextureBody({ obs }: { obs: AcrossTimeObservation }) {
       </View>
 
       {countLine ? (
-        <Text style={[c.countLine, { marginTop: 2 }]}>{countLine}</Text>
+        <Text style={c.countLine}>{countLine}</Text>
       ) : null}
     </>
   );
@@ -258,7 +255,7 @@ const c = StyleSheet.create({
   wrap: {
     backgroundColor: T.cardBg,
     borderRadius: 16,
-    borderWidth: 0.5,
+    borderWidth: 1,
     borderColor: T.cardBorder,
     paddingVertical: 14,
     paddingHorizontal: 16,
@@ -270,6 +267,7 @@ const c = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.2,
     fontFamily: 'GillSans-Light',
+    color: T.tertiaryText,
     marginBottom: 6,
   },
   headline: {
@@ -409,9 +407,15 @@ const tx = StyleSheet.create({
     borderRadius: 3,
     overflow: 'hidden',
     marginVertical: 8,
+    gap: 2,
   },
   seg: {
     height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(152, 212, 250, 0.18)',
+  },
+  segMid: {
+    backgroundColor: 'rgba(152, 212, 250, 0.32)',
   },
   barLabels: {
     flexDirection: 'row',
@@ -419,7 +423,7 @@ const tx = StyleSheet.create({
   },
   barLabel: {
     fontSize: 10,
-    color: 'rgba(152, 212, 250, 0.48)',
+    color: 'rgba(152, 212, 250, 0.42)',
     fontFamily: 'GillSans-Light',
   },
 });

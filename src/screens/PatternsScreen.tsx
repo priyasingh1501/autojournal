@@ -1,13 +1,13 @@
 /**
- * PatternsScreen — the ff_patterns_tab UI.
+ * PatternsScreen — the Patterns tab UI.
  *
  * Replaces the Insights tab when the flag is on. Read-only surface over
  * PatternsService: shows the cached report if present, and regenerates on
  * pull-to-refresh or via the regenerate link. All classification-era tabs
  * (Who I Am, etc.) stay intact behind the flag — this is a parallel screen,
- * not a rewrite of InsightsScreen.
+ * not a rewrite of the older insights tab.
  *
- * Paywall: first generation is free (matches InsightsScreen's soft gate via
+ * Paywall: first generation is free (soft gate via
  * canGenerateInsight); subsequent regenerations require Pro.
  */
 
@@ -47,7 +47,7 @@ import { SubscriptionService } from '../services/SubscriptionService';
 import { track } from '../services/AnalyticsService';
 import { mindsFor, MindCandidate } from '../services/patternMindMap';
 import { addDismissal, DismissReason, getDismissed } from '../services/patternsDismiss';
-import { MINDS } from '../services/MindService';
+import { MINDS_V2 as MINDS } from '../services/mindsConfigV2';
 import { curate, CurationResult } from '../services/PatternsCurator';
 import { getActiveIntentions } from '../services/IntentionsService';
 import {

@@ -3,9 +3,9 @@
  * still open. Factual, not reflective: counts, a 24-hour timeline strip,
  * dominant emotion chips, active intentions touched. No prose. No art.
  *
- * Replaces the summary card in today's slot when ff_day_close_model is on
- * and no summary has been generated yet. When the user closes the day (or
- * 23:59 hits), the normal reflective summary replaces this view.
+ * Replaces the summary card in today's slot while no summary has been
+ * generated yet. When the user closes the day (or 23:59 hits), the normal
+ * reflective summary replaces this view.
  */
 
 import React, { useEffect, useState, useMemo } from 'react';

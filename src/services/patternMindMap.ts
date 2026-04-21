@@ -1,9 +1,7 @@
 /**
  * Pattern type → candidate minds for "Sit with this".
  *
- * The design brief suggested Companion / Jung / Munger / Rumi. Munger and
- * Rumi aren't in the current roster (see MINDS in MindService), so we map
- * the *spirit* of the brief onto the available minds:
+ * Maps each pattern type to 2–3 minds from the V2 roster whose voice fits:
  *   - Companion (null)          → emotional holding, non-persona
  *   - Carl Jung                 → identity, shadow, individuation
  *   - J. Krishnamurti           → choiceless awareness, direct seeing
@@ -11,6 +9,8 @@
  *   - Ramana Maharshi           → self-inquiry, "who is asking?"
  *   - Krishna                   → acting without attachment to outcome
  *   - Adi Shankaracharya        → what is real vs appearance
+ *   - Rumi                      → longing, the recurring cast, love
+ *   - Charlie Munger            → inversion, second-order thinking
  *
  * Each pattern type surfaces 2–3 options; the user picks one.
  */

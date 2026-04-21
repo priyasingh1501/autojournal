@@ -1,5 +1,6 @@
 /**
- * Pure helpers for the rewritten UserContext (ff_new_minds_system).
+ * Pure helpers for the user context block (wellbeing derivation, tenure
+ * math, prompt rendering, token-budget fitting).
  *
  * Kept in a separate module from UserContextService so the structural logic
  * (wellbeing derivation, tenure math, rendering, token-budget fitting) can

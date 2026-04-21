@@ -30,16 +30,9 @@ import {
 } from '../services/SmartNotificationService';
 import { AppSettings } from '../types';
 import { getCurrentUser, signOut } from '../services/AuthService';
-import {
-  FeatureFlagsService,
-  ALL_FLAGS,
-  FeatureFlag,
-} from '../services/FeatureFlagsService';
 import IntentionsScreen from './IntentionsScreen';
 
 const DEFAULT_SETTINGS: AppSettings = {
-  openaiApiKey: '',
-  anthropicApiKey: '',
   vadThreshold: -35,
   silenceDuration: 2000,
   summaryTime: '21:00',
@@ -68,18 +61,7 @@ export default function SettingsScreen() {
   // Account
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  // Tracker preferences
-  const ALL_TRACKERS: ('meals' | 'workout' | 'meditation' | 'spending')[] = ['meals', 'workout', 'meditation', 'spending'];
-  const [enabledTrackers, setEnabledTrackers] = useState<Set<string>>(new Set(ALL_TRACKERS));
-
-  // Developer flags — hidden section, revealed via long-press on the version footer.
-  // Always visible in dev builds; in production the user has to long-press to find it.
-  const [devFlagsVisible, setDevFlagsVisible] = useState<boolean>(__DEV__);
-  const [flagValues, setFlagValues] = useState<Record<FeatureFlag, boolean> | null>(null);
-
-  // Intentions (ff_intentions) — when on, Trackers section is replaced with a
-  // link into IntentionsScreen. When off, the legacy tracker toggles render.
-  const [intentionsOn, setIntentionsOn] = useState(false);
+  // Intentions — replaces the previous tracker toggles permanently.
   const [showIntentions, setShowIntentions] = useState(false);
 
   useFocusEffect(useCallback(() => {
@@ -90,28 +72,12 @@ export default function SettingsScreen() {
     SubscriptionService.isInTrial().then(setIsTrialing);
     SubscriptionService.getTrialDaysRemaining().then(setTrialDays);
     getCurrentUser().then(u => setUserEmail(u?.email ?? null));
-    FeatureFlagsService.getAllFlags().then(f => {
-      setFlagValues(f);
-      setIntentionsOn(!!f.ff_intentions);
-    });
   }, []));
-
-  const toggleFlag = async (name: FeatureFlag) => {
-    const current = flagValues?.[name] ?? false;
-    const next = !current;
-    await FeatureFlagsService.setFlag(name, next);
-    setFlagValues(prev => (prev ? { ...prev, [name]: next } : prev));
-  };
 
   const loadSettings = async () => {
     const s = await StorageService.getSettings();
     if (s) {
       setSettings(s);
-      if (s.enabledTrackers) {
-        setEnabledTrackers(new Set(s.enabledTrackers));
-      } else {
-        setEnabledTrackers(new Set(ALL_TRACKERS));
-      }
       setNotificationsEnabled(s.notificationsEnabled ?? false);
       setNotificationTime(s.notificationTime ?? '19:30');
     }
@@ -120,26 +86,12 @@ export default function SettingsScreen() {
   const saveSettings = async () => {
     const updated = {
       ...settings,
-      enabledTrackers: ALL_TRACKERS.filter(t => enabledTrackers.has(t)),
       notificationsEnabled,
       notificationTime,
     };
     await StorageService.saveSettings(updated);
     setSettings(updated);
     Alert.alert('Saved', 'Settings saved successfully.');
-  };
-
-  const toggleTracker = async (tracker: 'meals' | 'workout' | 'meditation' | 'spending') => {
-    const next = new Set(enabledTrackers);
-    if (next.has(tracker)) {
-      next.delete(tracker);
-    } else {
-      next.add(tracker);
-    }
-    setEnabledTrackers(next);
-    // Auto-save immediately so the change takes effect without tapping Save Settings
-    const updated = { ...settings, enabledTrackers: ALL_TRACKERS.filter(t => next.has(t)) };
-    await StorageService.saveSettings(updated);
   };
 
   return (
@@ -426,58 +378,25 @@ export default function SettingsScreen() {
           </Text>
         </View>
 
-        {/* Trackers / Intentions — swaps based on ff_intentions */}
-        {intentionsOn ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Intentions</Text>
-            <Text style={styles.sectionSubtitle}>
-              Goals you're trying to live toward. They surface in your summaries
-              when your entries touch on them — not as a scoreboard.
-            </Text>
-            <TouchableOpacity
-              style={styles.lockRow}
-              onPress={() => setShowIntentions(true)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.lockRowLeft}>
-                <Feather name="target" size={16} color="rgba(152, 212, 250, 0.75)" />
-                <Text style={styles.lockRowLabel}>Manage intentions</Text>
-              </View>
-              <Feather name="chevron-right" size={16} color="rgba(152, 212, 250, 0.55)" />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Trackers</Text>
-            <Text style={styles.sectionSubtitle}>
-              Choose what you want to track. Only your selected trackers will appear in your daily home card and summaries.
-            </Text>
-
-            {([
-              { key: 'meals',      label: 'Meals & Nutrition', icon: 'coffee' },
-              { key: 'workout',    label: 'Workout & Movement', icon: 'zap' },
-              { key: 'meditation', label: 'Meditation',         icon: 'moon' },
-              { key: 'spending',   label: 'Spending',           icon: 'credit-card' },
-            ] as const).map(({ key, label, icon }) => (
-              <View key={key} style={styles.lockRow}>
-                <View style={styles.lockRowLeft}>
-                  <Feather name={icon as any} size={16} color="rgba(152, 212, 250, 0.75)" />
-                  <Text style={styles.lockRowLabel}>{label}</Text>
-                </View>
-                <Switch
-                  value={enabledTrackers.has(key)}
-                  onValueChange={() => toggleTracker(key)}
-                  trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
-                  thumbColor={enabledTrackers.has(key) ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
-                />
-              </View>
-            ))}
-
-            <Text style={styles.hint}>
-              Changes apply immediately.
-            </Text>
-          </View>
-        )}
+        {/* Intentions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Intentions</Text>
+          <Text style={styles.sectionSubtitle}>
+            Goals you're trying to live toward. They surface in your summaries
+            when your entries touch on them — not as a scoreboard.
+          </Text>
+          <TouchableOpacity
+            style={styles.lockRow}
+            onPress={() => setShowIntentions(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.lockRowLeft}>
+              <Feather name="target" size={16} color="rgba(152, 212, 250, 0.75)" />
+              <Text style={styles.lockRowLabel}>Manage intentions</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="rgba(152, 212, 250, 0.55)" />
+          </TouchableOpacity>
+        </View>
 
         {/* Intentions modal */}
         <Modal
@@ -576,38 +495,9 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Developer flags — hidden; long-press version footer to reveal */}
-        {devFlagsVisible && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Developer flags</Text>
-            <Text style={styles.sectionSubtitle}>
-              Phased redesign toggles. Defaults OFF. Changes take effect on next screen render.
-            </Text>
-            {ALL_FLAGS.map((flag) => (
-              <View key={flag} style={styles.lockRow}>
-                <View style={styles.lockRowLeft}>
-                  <Feather name="flag" size={16} color="rgba(152, 212, 250, 0.75)" />
-                  <Text style={styles.lockRowLabel}>{flag}</Text>
-                </View>
-                <Switch
-                  value={flagValues?.[flag] ?? false}
-                  onValueChange={() => toggleFlag(flag)}
-                  trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
-                  thumbColor={flagValues?.[flag] ? 'rgba(152, 212, 250, 0.90)' : 'rgba(152, 212, 250, 0.45)'}
-                />
-              </View>
-            ))}
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={styles.footer}
-          onLongPress={() => setDevFlagsVisible(v => !v)}
-          delayLongPress={1200}
-          activeOpacity={1}
-        >
+        <View style={styles.footer}>
           <Text style={styles.footerText}>untangle v1.3.0</Text>
-        </TouchableOpacity>
+        </View>
       </ScrollView>
 
       <PaywallModal

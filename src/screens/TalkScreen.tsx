@@ -28,7 +28,7 @@ import {
 } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
 import { synthesizeSpeech } from '../services/ElevenLabsService';
-import { MINDS } from '../services/MindService';
+import { MINDS_V2 as MINDS } from '../services/mindsConfigV2';
 import { recordCompletedConversation } from '../services/ConversationHistoryService';
 import { useActiveMindsRoster } from '../hooks/useActiveMindsRoster';
 
@@ -50,7 +50,7 @@ interface Props {
   summary?: DailySummary;          // optional — calls can start without a day summary
   onClose: () => void;
   initialMindId?: string | null;   // if provided, skip the mind picker and start immediately
-  /** ff_new_minds_system — what the user tapped in from, for context-aware opener. */
+  /** What the user tapped in from, for context-aware opener selection. */
   sourceContext?: import('../services/openingLineSelector').SourceContext | null;
 }
 
@@ -149,7 +149,7 @@ function MindPicker({
   onSelect: (mindId: string | null) => void;
   onClose: () => void;
 }) {
-  // Flag-aware roster — V2 when ff_new_minds_system is on, legacy otherwise.
+  // Mind roster — the permanent V2 set.
   // The top "My Untangle Companion" card is kept as a special null-mindId
   // option for both rosters, so Companion in the V2 array is filtered out
   // of the grid to avoid rendering it twice.
@@ -635,27 +635,24 @@ export default function TalkScreen({ summary, onClose, initialMindId, sourceCont
         return;
       }
 
-      // Load settings once
+      // API keys now live server-side; we keep the local refs as empty-string
+      // placeholders so downstream callsites (which still pass them) stay happy.
       const settings = await StorageService.getSettings();
-      cachedAnthropicKey.current = settings?.anthropicApiKey?.trim() ?? '';
-      cachedElKey.current        = settings?.elevenLabsApiKey?.trim() ?? '';
+      cachedAnthropicKey.current = '';
+      cachedElKey.current        = '';
       cachedElVoiceId.current    = settings?.elevenLabsVoiceId?.trim() ?? '';
       cachedTtsVoiceId.current   = settings?.ttsVoiceId;
 
       // Load context data for intent-aware responses (fire-and-forget; errors are non-fatal)
       const now = new Date();
       const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const [goals, monthlyInsight, whoYouAre, whatYouCare] = await Promise.allSettled([
+      const [goals, monthlyInsight] = await Promise.allSettled([
         StorageService.getGoals(),
         StorageService.getMonthlyInsight(monthKey),
-        StorageService.getWhoYouAre(),
-        StorageService.getWhatYouCare(),
       ]);
       convContextRef.current = {
         goals:       goals.status === 'fulfilled' ? goals.value ?? undefined : undefined,
         monthlyData: monthlyInsight.status === 'fulfilled' ? monthlyInsight.value?.weeklyData ?? undefined : undefined,
-        whoYouAre:   whoYouAre.status === 'fulfilled' ? whoYouAre.value ?? undefined : undefined,
-        whatYouCare: whatYouCare.status === 'fulfilled' ? whatYouCare.value ?? undefined : undefined,
       };
 
       // Check for re-entry from a prior Tier 2/3 call
@@ -712,7 +709,7 @@ export default function TalkScreen({ summary, onClose, initialMindId, sourceCont
     const userMessages = messagesRef.current.filter(m => m.role === 'user');
 
     // Record the conversation for UserContextV2.recentMinds — no-op under
-    // ff_new_minds_system off, and skipped when there were no user turns.
+    // skipped when there were no user turns.
     if (userMessages.length > 0 && conversationStartedAtRef.current > 0) {
       recordCompletedConversation({
         mindId: selectedMindIdRef.current,

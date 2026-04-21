@@ -5,18 +5,18 @@
  *   <insight text>
  *   ===MACROS===
  *   { ... }                          (or `null`)
- *   ===REFLECTION===                 (ff_new_day_summary only)
+ *   ===REFLECTION===
  *   <2–4 sentence prose>
- *   ===WHATHELD===                   (ff_new_day_summary only)
+ *   ===WHATHELD===
  *   Label: one-sentence content
  *   Label: ...
- *   ===MOODARC===                    (ff_new_day_summary only)
+ *   ===MOODARC===
  *   morning: word
  *   afternoon: word
  *   evening: word                    (or the single token `null`)
  *
  * Missing sentinels are treated as missing fields, not errors — callers
- * should fall back to legacy behavior when a field comes back undefined.
+ * should tolerate undefined values.
  *
  * No imports from React Native / Expo / AsyncStorage so this module is
  * directly testable under plain Node + tsx.

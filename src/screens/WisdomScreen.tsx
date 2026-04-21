@@ -32,7 +32,6 @@ import { Feather } from '@expo/vector-icons';
 import { WisdomShort, JournalSignal, TranscriptEntry, LoopState } from '../types';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
 import { StorageService } from '../services/StorageService';
-import { FeatureFlagsService } from '../services/FeatureFlagsService';
 import {
   buildFeed, flattenFeed, MOODS, Mood, extractJournalSignal,
   computeLoopState, pickShortForPlacement,
@@ -249,8 +248,7 @@ export default function WisdomScreen() {
   const [customShorts, setCustomShorts]       = useState<WisdomShort[]>([]);
   // Supabase library — starts with bundled shorts for instant display, refreshes from remote
   const [remoteLibrary, setRemoteLibrary]     = useState<WisdomShort[]>(SHORTS_LIBRARY);
-  // Stance / loop state (ff_new_minds_system)
-  const [stanceEnabled, setStanceEnabled]     = useState(false);
+  // Stance / loop state
   const [loopState, setLoopState]             = useState<LoopState>('fresh');
   const [forYouToday, setForYouToday]         = useState<WisdomShort | null>(null);
   // Pagination
@@ -272,18 +270,16 @@ export default function WisdomScreen() {
     useCallback(() => {
       let active = true;
       (async () => {
-        const [saved, seen, sig, customs, flagOn] = await Promise.all([
+        const [saved, seen, sig, customs] = await Promise.all([
           StorageService.getSavedShorts(),
           StorageService.getSeenShortIds(),
           StorageService.getJournalSignal(),
           StorageService.getCustomShorts(),
-          FeatureFlagsService.getFlag('ff_new_minds_system'),
         ]);
         if (!active) return;
         setSavedIds(new Set(saved.map(s => s.shortId)));
         setSeenIds(new Set(seen));
         setCustomShorts(customs);
-        setStanceEnabled(flagOn);
 
         const SIGNAL_TTL = 24 * 60 * 60 * 1000; // 24 hours
         const signalStale = !sig?.extractedAt || (Date.now() - sig.extractedAt > SIGNAL_TTL);
@@ -310,15 +306,13 @@ export default function WisdomScreen() {
         });
         if (active && lib.length > 0) setRemoteLibrary(lib);
 
-        // Stance: derive loop state and pick "For you today" (ff_new_minds_system)
-        if (flagOn) {
-          const report = await getCachedReport();
-          const loop = computeLoopState(report);
-          if (active) setLoopState(loop);
-          const library = lib.length > 0 ? lib : SHORTS_LIBRARY;
-          const today = await pickShortForPlacement('wisdom_tab', sig, loop, library);
-          if (active) setForYouToday(today);
-        }
+        // Stance: derive loop state and pick "For you today"
+        const report = await getCachedReport();
+        const loop = computeLoopState(report);
+        if (active) setLoopState(loop);
+        const library = lib.length > 0 ? lib : SHORTS_LIBRARY;
+        const today = await pickShortForPlacement('wisdom_tab', sig, loop, library);
+        if (active) setForYouToday(today);
       })();
       return () => { active = false; };
     }, []),
@@ -351,9 +345,7 @@ export default function WisdomScreen() {
       return flattenFeed(feedSelection);
     }
 
-    const feedOptions = stanceEnabled
-      ? { loopState, placement: 'wisdom_tab' as const, stanceEnabled: true }
-      : undefined;
+    const feedOptions = { loopState, placement: 'wisdom_tab' as const, stanceEnabled: true };
     const feedSelection = buildFeed(
       activeSignal, savedIds, seenIds, selectedEmotion ?? undefined, fullLibrary, feedOptions,
     );
@@ -361,12 +353,12 @@ export default function WisdomScreen() {
 
     // Prepend "For you today" as the first card when the flag is on and not
     // already at position 0. Deduplicate its occurrence further in the feed.
-    if (stanceEnabled && forYouToday) {
+    if (forYouToday) {
       flat = [forYouToday, ...flat.filter(s => s.id !== forYouToday.id)];
     }
 
     return flat;
-  }, [activeSignal, savedIds, seenIds, selectedEmotion, becauseFilter, showSaved, fullLibrary, stanceEnabled, loopState, forYouToday]);
+  }, [activeSignal, savedIds, seenIds, selectedEmotion, becauseFilter, showSaved, fullLibrary, loopState, forYouToday]);
 
   // ── Deep-link: scroll to a specific short (from notification tap) ─────────
   useEffect(() => {
@@ -550,7 +542,7 @@ export default function WisdomScreen() {
           data={feed}
           keyExtractor={item => item.id}
           renderItem={({ item, index }) => {
-            const isForYouToday = stanceEnabled && forYouToday?.id === item.id && index === 0;
+            const isForYouToday = forYouToday?.id === item.id && index === 0;
             return (
               <ScrollView
                 style={{ width: SCREEN_WIDTH }}

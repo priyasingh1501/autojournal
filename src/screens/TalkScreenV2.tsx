@@ -363,11 +363,10 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
         getSignedUrl(ELEVENLABS_AGENT_ID),
       ]);
 
-      // Opening message — reuses the handcrafted pool (V2 flag) or legacy gen.
-      const settings = await StorageService.getSettings();
+      // Opening message — uses the handcrafted opener pool in mindsConfigV2.
       const opening = await getOpeningMessage(
         effectiveSummary,
-        settings?.anthropicApiKey?.trim(),
+        undefined,
         mindId,
         sourceContext ?? null,
       );
@@ -423,12 +422,10 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
     }
 
     // Post-call reflection.
-    const settings = await StorageService.getSettings().catch(() => null);
-    const apiKey = settings?.anthropicApiKey?.trim() ?? '';
-    if (userMessages.length > 0 && apiKey) {
+    if (userMessages.length > 0) {
       setConvState('post-call');
       setReflectionLoading(true);
-      generateReflection(effectiveSummary, messagesRef.current, apiKey, 'call')
+      generateReflection(effectiveSummary, messagesRef.current, '', 'call')
         .then(r => {
           setPostCallReflection(r);
           setReflectionLoading(false);

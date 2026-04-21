@@ -6,9 +6,9 @@
  * StorageService / WellbeingService / AsyncStorage).
  */
 
-import { DailySummary, PatternsReport, SuggestedIntention } from '../types';
+import { DailySummary, PatternsReport } from '../types';
 
-export type WarmLineTarget = 'reentry' | 'intention_suggest' | 'intention_nudge' | 'summary' | 'patterns' | 'none';
+export type WarmLineTarget = 'reentry' | 'intention_nudge' | 'summary' | 'patterns' | 'none';
 
 export interface WarmLine {
   text: string;
@@ -43,7 +43,6 @@ export function firstSentence(s: string | undefined | null): string | null {
  */
 export function pickWarmLine(inputs: {
   hasReentry: boolean;
-  pendingIntention?: SuggestedIntention | null;
   yesterdaySummary: DailySummary | null;
   patternsReport: PatternsReport | null;
 }): WarmLine {
@@ -51,18 +50,9 @@ export function pickWarmLine(inputs: {
     return { text: REENTRY_LINE, tapTarget: 'reentry' };
   }
 
-  // A pending detected intention comes before the summary line — this is a
-  // one-time prompt that needs a yes/no, not a quiet reflection.
-  if (inputs.pendingIntention) {
-    return {
-      text: `I noticed something that sounds like a goal: "${inputs.pendingIntention.text}". Want to track it?`,
-      tapTarget: 'intention_suggest',
-    };
-  }
-
   const y = inputs.yesterdaySummary;
-  // Prefer the adaptive reflection field (ff_new_day_summary), fall back to
-  // the legacy insightText if only the old format exists.
+  // Prefer the adaptive reflection field, fall back to the classic
+  // insightText if only the older format is cached.
   const summaryLine = firstSentence(y?.reflection) ?? firstSentence(y?.insightText);
   if (summaryLine) {
     return { text: summaryLine, tapTarget: 'summary' };

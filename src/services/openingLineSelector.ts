@@ -1,5 +1,5 @@
 /**
- * Pure opening-line selection for ff_new_minds_system.
+ * Pure opening-line selection for the V2 mind system.
  *
  * The handcrafted openers in mindsConfigV2 are the product — this module
  * chooses the RIGHT one (distress / with-context / generic) and, when a

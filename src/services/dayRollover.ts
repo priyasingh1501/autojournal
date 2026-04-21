@@ -1,13 +1,12 @@
 /**
- * Day-rollover helper for ff_day_close_model.
+ * Day-rollover helper.
  *
  * An entry logged at 01:30 local belongs to yesterday's day, not today's —
  * matches how humans think about late nights. The cutoff is 03:00 by default
  * (i.e. 00:00 → 02:59 rolls back to the previous calendar date).
  *
- * Kept pure (no AsyncStorage, no flag read) so both call sites and tests
- * share the same logic. Callers decide whether to apply rollover (flag on)
- * or use straight calendar date (flag off, or legacy).
+ * Kept pure (no AsyncStorage reads) so both call sites and tests share
+ * the same logic.
  */
 
 const DEFAULT_ROLLOVER_HOUR = 3;

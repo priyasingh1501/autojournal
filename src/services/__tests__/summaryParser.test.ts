@@ -1,5 +1,5 @@
 /**
- * Parser tests for the ff_new_day_summary Claude output format.
+ * Parser tests for the adaptive day-summary Claude output format.
  *
  * Run with: npx tsx src/services/__tests__/summaryParser.test.ts
  *

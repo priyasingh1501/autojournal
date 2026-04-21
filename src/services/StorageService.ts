@@ -4,9 +4,9 @@ import {
   TranscriptEntry, DailySummary, AppSettings, PendingClip, MonthlyInsight,
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
   UserGoals, ExpenseEntry,
-  WhoYouAreAnalysis, WhatYouCareAboutAnalysis, HowYouThinkAnalysis, YourStoryAnalysis,
-  EnneagramResponse, SavedShort, JournalSignal, WisdomShort,
+  SavedShort, JournalSignal, WisdomShort,
 } from '../types';
+import { effectiveDateStr } from './dayRollover';
 // API keys are now server-side (Supabase Edge Functions via AIProxy) — not needed in app
 
 const KEYS = {
@@ -21,13 +21,10 @@ const KEYS = {
   PERSONALITY_ANALYSIS: 'insight_personality',
   GROWTH_TIPS_ANALYSIS: 'insight_growthtips',
   USER_GOALS: 'user_goals',
-  // V2 insights
-  WHO_YOU_ARE: 'insightv2_who',
-  WHAT_YOU_CARE: 'insightv2_values',
-  HOW_YOU_THINK: 'insightv2_thinking',
-  YOUR_STORY:    'insightv2_story',
-  ENNEAGRAM_RESP:'insightv2_enneagram_response',
-  ARC_HISTORY:    'insightv2_arc_history',
+  // NOTE: `insightv2_*` keys are deprecated (InsightV2Service was removed in
+  // the post-redesign cleanup). We no longer read or write them from app
+  // code, so any data stored under them on existing installs will remain
+  // untouched until the user clears app data.
   EXPENSE_PREFIX: 'expenses_',
   APP_PIN: 'app_pin_hash',
   WISDOM_SAVED: 'wisdom_saved_shorts',
@@ -98,10 +95,11 @@ export const StorageService = {
     entry: TranscriptEntry,
     opts?: { storageDate?: string },
   ): Promise<void> {
-    // Callers under ff_day_close_model pass a rollover-aware storageDate
-    // (e.g. 01:30 entries bucket under yesterday). When omitted, keep the
-    // legacy calendar-date-from-timestamp bucketing.
-    const date = opts?.storageDate ?? localDateStr(new Date(entry.timestamp));
+    // All entries bucket under the 3am-rollover "effective" date by default,
+    // so a 01:30 entry lands in yesterday's slot — matches how the day-close
+    // summary treats late-night recordings. Callers can override with
+    // storageDate (e.g. edit flows that move an entry to a user-picked date).
+    const date = opts?.storageDate ?? effectiveDateStr(entry.timestamp);
     const key = KEYS.TRANSCRIPTS_PREFIX + date;
     const existing = await AsyncStorage.getItem(key);
     const entries: TranscriptEntry[] = existing ? JSON.parse(existing) : [];
@@ -275,55 +273,6 @@ export const StorageService = {
   },
   async saveGoals(goals: UserGoals): Promise<void> {
     await AsyncStorage.setItem(KEYS.USER_GOALS, JSON.stringify(goals));
-  },
-
-  // ── Insights V2 ────────────────────────────────────────────────────────────
-  async getWhoYouAre(): Promise<WhoYouAreAnalysis | null> {
-    const json = await AsyncStorage.getItem(KEYS.WHO_YOU_ARE);
-    return json ? JSON.parse(json) : null;
-  },
-  async saveWhoYouAre(a: WhoYouAreAnalysis): Promise<void> {
-    await AsyncStorage.setItem(KEYS.WHO_YOU_ARE, JSON.stringify(a));
-  },
-
-  async getWhatYouCare(): Promise<WhatYouCareAboutAnalysis | null> {
-    const json = await AsyncStorage.getItem(KEYS.WHAT_YOU_CARE);
-    return json ? JSON.parse(json) : null;
-  },
-  async saveWhatYouCare(a: WhatYouCareAboutAnalysis): Promise<void> {
-    await AsyncStorage.setItem(KEYS.WHAT_YOU_CARE, JSON.stringify(a));
-  },
-
-  async getHowYouThink(): Promise<HowYouThinkAnalysis | null> {
-    const json = await AsyncStorage.getItem(KEYS.HOW_YOU_THINK);
-    return json ? JSON.parse(json) : null;
-  },
-  async saveHowYouThink(a: HowYouThinkAnalysis): Promise<void> {
-    await AsyncStorage.setItem(KEYS.HOW_YOU_THINK, JSON.stringify(a));
-  },
-
-  async getYourStory(): Promise<YourStoryAnalysis | null> {
-    const json = await AsyncStorage.getItem(KEYS.YOUR_STORY);
-    return json ? JSON.parse(json) : null;
-  },
-  async saveYourStory(a: YourStoryAnalysis): Promise<void> {
-    await AsyncStorage.setItem(KEYS.YOUR_STORY, JSON.stringify(a));
-  },
-
-  async getEnneagramResponse(): Promise<EnneagramResponse | null> {
-    const json = await AsyncStorage.getItem(KEYS.ENNEAGRAM_RESP);
-    return json ? JSON.parse(json) : null;
-  },
-  async saveEnneagramResponse(r: EnneagramResponse): Promise<void> {
-    await AsyncStorage.setItem(KEYS.ENNEAGRAM_RESP, JSON.stringify(r));
-  },
-
-  async getArcHistory(): Promise<Array<{ type: string; dateRange: string }>> {
-    const json = await AsyncStorage.getItem(KEYS.ARC_HISTORY);
-    return json ? JSON.parse(json) : [];
-  },
-  async saveArcHistory(history: Array<{ type: string; dateRange: string }>): Promise<void> {
-    await AsyncStorage.setItem(KEYS.ARC_HISTORY, JSON.stringify(history));
   },
 
   // ── Tracked expenses (extracted from voice/manual notes) ────────────────────

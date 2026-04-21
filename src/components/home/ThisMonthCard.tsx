@@ -2,27 +2,6 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { PatternsReport } from '../../types';
-import { EMOTION_COLORS } from '../../constants/colors';
-
-// ── pill palette (rotates by index) ──────────────────────────────────────────
-
-const PILL_PALETTE = [
-  { bg: 'rgba(127, 119, 221, 0.15)', text: 'rgba(167, 157, 255, 0.85)' }, // purple
-  { bg: 'rgba(93, 202, 165, 0.15)',  text: 'rgba(93, 202, 165, 0.85)'  }, // teal
-  { bg: 'rgba(212, 83, 126, 0.15)',  text: 'rgba(220, 120, 165, 0.85)' }, // pink
-  { bg: 'rgba(239, 159, 39, 0.15)',  text: 'rgba(239, 159, 39, 0.85)'  }, // amber
-  { bg: 'rgba(55, 138, 221, 0.15)',  text: 'rgba(107, 168, 235, 0.85)' }, // blue
-];
-
-// ── emotion color resolution ──────────────────────────────────────────────────
-
-function emotionColor(emotion: string): string {
-  const lower = emotion.toLowerCase();
-  for (const [key, color] of Object.entries(EMOTION_COLORS)) {
-    if (lower.includes(key)) return color;
-  }
-  return 'rgba(152, 212, 250, 0.55)';
-}
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -31,7 +10,6 @@ interface Props {
 }
 
 const FALLBACK_WEEKS = [1, 2, 3, 4];
-const FALLBACK_COLOR = 'rgba(152, 212, 250, 0.18)';
 
 export default function ThisMonthCard({ tm }: Props) {
   const hasThemes     = tm.whatsLoud && tm.whatsLoud.length > 0;
@@ -39,14 +17,10 @@ export default function ThisMonthCard({ tm }: Props) {
 
   if (!hasThemes && !hasIntentions && !tm.emotionalArc) return null;
 
-  // Build the 4 week slots — use arc data when available, placeholder otherwise
-  const weekSlots = FALLBACK_WEEKS.map(n => {
-    const arcEntry = tm.emotionalArc?.find(w => w.week === n);
-    return {
-      week: n,
-      color: arcEntry ? emotionColor(arcEntry.dominantEmotion) : FALLBACK_COLOR,
-    };
-  });
+  const weekSlots = FALLBACK_WEEKS.map(n => ({
+    week: n,
+    active: !!tm.emotionalArc?.find(w => w.week === n),
+  }));
 
   return (
     <View style={s.wrap}>
@@ -63,12 +37,12 @@ export default function ThisMonthCard({ tm }: Props) {
         </View>
       )}
 
-      {/* Week bars — always shown */}
+      {/* Week bars */}
       <View style={s.barsRow}>
-        {weekSlots.map(({ week, color }) => (
+        {weekSlots.map(({ week, active }) => (
           <View key={week} style={s.barCol}>
             <View style={s.barTrack}>
-              <View style={[s.bar, { backgroundColor: color }]} />
+              <View style={[s.bar, active && s.barActive]} />
             </View>
             <Text style={s.barWeekLabel}>W{week}</Text>
           </View>
@@ -78,16 +52,13 @@ export default function ThisMonthCard({ tm }: Props) {
       {/* Intentions progress pills */}
       {hasIntentions && (
         <View style={s.intentionsRow}>
-          {tm.intentionsProgress!.slice(0, 4).map((ip, i) => {
-            const colors = PILL_PALETTE[i % PILL_PALETTE.length];
-            return (
-              <View key={i} style={[s.intentionPill, { backgroundColor: colors.bg }]}>
-                <Text style={[s.intentionPillText, { color: colors.text }]} numberOfLines={1}>
-                  {ip.intention}
-                </Text>
-              </View>
-            );
-          })}
+          {tm.intentionsProgress!.slice(0, 4).map((ip, i) => (
+            <View key={i} style={s.intentionPill}>
+              <Text style={s.intentionPillText} numberOfLines={1}>
+                {ip.intention}
+              </Text>
+            </View>
+          ))}
         </View>
       )}
     </View>
@@ -98,10 +69,10 @@ export default function ThisMonthCard({ tm }: Props) {
 
 const s = StyleSheet.create({
   wrap: {
-    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    backgroundColor: 'rgba(2, 6, 14, 0.90)',
     borderRadius: 16,
-    borderWidth: 0.5,
-    borderColor: 'rgba(152, 212, 250, 0.13)',
+    borderWidth: 1,
+    borderColor: 'rgba(152, 212, 250, 0.18)',
     paddingVertical: 14,
     paddingHorizontal: 16,
     marginBottom: 10,
@@ -126,7 +97,7 @@ const s = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 20,
     backgroundColor: 'rgba(152, 212, 250, 0.08)',
-    borderWidth: 0.5,
+    borderWidth: 1,
     borderColor: 'rgba(152, 212, 250, 0.18)',
     alignSelf: 'flex-start',
   },
@@ -152,18 +123,21 @@ const s = StyleSheet.create({
   },
   barTrack: {
     width: '100%',
-    height: 24,
+    height: 20,
     justifyContent: 'flex-end',
   },
   bar: {
     width: '100%',
     height: 20,
     borderRadius: 3,
-    opacity: 0.80,
+    backgroundColor: 'rgba(152, 212, 250, 0.12)',
+  },
+  barActive: {
+    backgroundColor: 'rgba(152, 212, 250, 0.28)',
   },
   barWeekLabel: {
     fontSize: 9,
-    color: 'rgba(152, 212, 250, 0.45)',
+    color: 'rgba(152, 212, 250, 0.40)',
     fontFamily: 'GillSans-Light',
     textAlign: 'center',
   },
@@ -180,9 +154,13 @@ const s = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 12,
     maxWidth: 140,
+    backgroundColor: 'rgba(152, 212, 250, 0.08)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(152, 212, 250, 0.18)',
   },
   intentionPillText: {
     fontSize: 11,
     fontFamily: 'GillSans-Light',
+    color: 'rgba(224, 242, 254, 0.70)',
   },
 });

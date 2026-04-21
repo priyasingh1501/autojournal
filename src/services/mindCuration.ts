@@ -1,7 +1,6 @@
 /**
  * MindCurationService — chooses which minds to surface when the user taps
- * "new perspective" from any surface. Gated behind ff_new_minds_system at
- * the call site (not here); this module is a pure reducer over a
+ * "new perspective" from any surface. This module is a pure reducer over a
  * CurationContext and therefore directly testable under tsx.
  *
  * Design notes:

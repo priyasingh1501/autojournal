@@ -59,14 +59,8 @@ export default function AddShortModal({ visible, editShort, onClose, onSaved }: 
     setPhase('thinking');
 
     try {
-      const settings = await StorageService.getSettings();
-      if (!settings?.anthropicApiKey) {
-        Alert.alert('API key missing', 'Add your Anthropic API key in Settings to create wisdom shorts.');
-        return;
-      }
-
       // ── Step 1: Claude auto-fills all metadata ──────────────────────────────
-      const meta = await autoFillShortMetadata(title.trim(), body.trim(), settings.anthropicApiKey);
+      const meta = await autoFillShortMetadata(title.trim(), body.trim());
 
       const id = editShort?.id ?? `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 

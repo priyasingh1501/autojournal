@@ -1,5 +1,5 @@
 /**
- * JournalScreen — the ff_journal_merge merged tab.
+ * JournalScreen — the Journal tab (merged Notes + Day Summary view).
  *
  * Replaces Notes + Day Summary with a single surface:
  *   • Default: today's reflected Day Summary (NewDaySummaryView)
@@ -47,7 +47,6 @@ import NewDaySummaryView from '../components/NewDaySummaryView';
 import WeekReviewView from '../components/WeekReviewView';
 import DayDigestView from '../components/DayDigestView';
 import CuratedMindPicker from '../components/CuratedMindPicker';
-import { FeatureFlagsService } from '../services/FeatureFlagsService';
 import { effectiveTodayStr } from '../services/dayRollover';
 import { curate, CurationResult } from '../services/mindCuration';
 import { buildCurationContext } from '../services/CurationContextBuilder';
@@ -307,18 +306,7 @@ export default function JournalScreen() {
   const pendingGenerateDateRef = useRef<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
 
-  // ff_day_close_model — today renders a digest, not a summary, until the
-  // day closes (23:59) or the user regenerates manually.
-  const [dayCloseOn, setDayCloseOn] = useState(false);
-  // ff_new_minds_system — "new perspective" tap routes through the curated
-  // picker instead of ChatScreen's built-in carousel.
-  const [newMindsOn, setNewMindsOn] = useState(false);
-  useEffect(() => {
-    FeatureFlagsService.getFlag('ff_day_close_model').then(setDayCloseOn).catch(() => {});
-    FeatureFlagsService.getFlag('ff_new_minds_system').then(setNewMindsOn).catch(() => {});
-  }, []);
-
-  // Curated picker state — only populated under ff_new_minds_system.
+  // Curated picker state.
   const [curation, setCuration] = useState<CurationResult | null>(null);
   const [curationWellbeing, setCurationWellbeing] =
     useState<import('../types').WellbeingState | undefined>(undefined);
@@ -432,34 +420,26 @@ export default function JournalScreen() {
     }
     await SubscriptionService.recordConversationUsed();
 
-    // ff_new_minds_system — build a CurationContext and show the curated
-    // picker. The picker's onPick routes back through openChatWithMind().
-    if (newMindsOn) {
-      try {
-        const ctx = await buildCurationContext({
-          sourceSurface: 'day_summary',
-          sourceContent: { type: 'day', data: item },
-        });
-        const result = curate(ctx);
-        track('curation_rule_fired', {
-          rule: result.matchedRuleId,
-          specialists: result.specialists.map(s => s.id),
-          source_surface: 'day_summary',
-        });
-        setCuration(result);
-        setCurationWellbeing(ctx.wellbeingState);
-        pendingPerspectiveRef.current = item; // stash so onPick can open ChatScreen with the right day
-      } catch {
-        // Fall back to the legacy flow if curation blows up for any reason.
-        setCallMindId(undefined);
-        setPerspectiveSummary(item);
-      }
-      return;
+    // Build a CurationContext and show the curated picker. The picker's onPick
+    // routes back through openChatWithCuratedMind().
+    try {
+      const ctx = await buildCurationContext({
+        sourceSurface: 'day_summary',
+        sourceContent: { type: 'day', data: item },
+      });
+      const result = curate(ctx);
+      track('curation_rule_fired', {
+        rule: result.matchedRuleId,
+        specialists: result.specialists.map(s => s.id),
+        source_surface: 'day_summary',
+      });
+      setCuration(result);
+      setCurationWellbeing(ctx.wellbeingState);
+      pendingPerspectiveRef.current = item;
+    } catch {
+      setCallMindId(undefined);
+      setPerspectiveSummary(item);
     }
-
-    // Legacy flow — unchanged.
-    setCallMindId(undefined);
-    setPerspectiveSummary(item);
   };
 
   const openChatWithCuratedMind = (mindId: string | null) => {
@@ -521,16 +501,12 @@ export default function JournalScreen() {
   };
 
   // ── Date nav bounds ─────────────────────────────────────────────────────────
-  // Under ff_day_close_model, "today" respects the 3am rollover — at 01:30
-  // the user's "today" is still yesterday, and the digest/summary slot reflects
-  // that. Off-flag, straight calendar date.
-  const todayStr = useMemo(
-    () => (dayCloseOn ? effectiveTodayStr() : localDateStr()),
-    [dayCloseOn],
-  );
+  // "Today" respects the 3am rollover — at 01:30 the user's "today" is still
+  // yesterday, and the digest/summary slot reflects that.
+  const todayStr = useMemo(() => effectiveTodayStr(), []);
   const canGoForward = viewingDate < todayStr;
   const showDigestForToday =
-    dayCloseOn && viewingDate === todayStr && !summary && !summaryLoading;
+    viewingDate === todayStr && !summary && !summaryLoading;
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -700,7 +676,7 @@ export default function JournalScreen() {
         }}
       />
 
-      {/* Perspective modal — same pattern as SummaryScreen */}
+      {/* Perspective modal */}
       <Modal
         visible={!!perspectiveSummary}
         animationType="slide"
@@ -740,7 +716,7 @@ export default function JournalScreen() {
         )}
       </Modal>
 
-      {/* Curated mind picker — ff_new_minds_system */}
+      {/* Curated mind picker */}
       <CuratedMindPicker
         visible={!!curation}
         result={curation}

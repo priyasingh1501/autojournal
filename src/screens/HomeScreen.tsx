@@ -1,50 +1,60 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Feather } from '@expo/vector-icons';
+/**
+ * HomeScreen — capture tab.
+ *
+ * Layout: MicTile (ocean video + breathing orb) at the top, followed by
+ * WarmLineCard and TodayCard, with SecondaryActions pinned at the bottom.
+ */
+
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
   ScrollView,
+  StyleSheet,
   Alert,
-  Animated,
   ActivityIndicator,
-  Platform,
-  ImageBackground,
-  AppState,
+  Text,
   Modal,
+  Platform,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { audioRecorderService, RecordingStatus } from '../services/AudioRecorderService';
-import { transcribePendingClips, BatchProgress, SummaryBannerStatus } from '../services/BatchTranscriptionService';
+
+import { audioRecorderService } from '../services/AudioRecorderService';
+import { transcribePendingClips, BatchProgress } from '../services/BatchTranscriptionService';
 import { StorageService } from '../services/StorageService';
-import { generateDailySummary } from '../services/SummaryService';
-import { FeatureFlagsService } from '../services/FeatureFlagsService';
-import {
-  analyzeEntry,
-  getPendingReentry,
-  clearPendingReentry,
-  recordFalsePositive,
-  ReentryPending,
-  WellbeingAnalysis,
-} from '../services/WellbeingService';
-import { PendingClip, TranscriptEntry } from '../types';
-import ComposeModal from '../components/ComposeModal';
-import MonthlyInsightCard from '../components/MonthlyInsightCard';
-import WellbeingResponseModal from '../components/WellbeingResponseModal';
-import TalkScreen from './TalkScreenV2';
-import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 import { track } from '../services/AnalyticsService';
 import {
-  requestNotificationPermission,
-  scheduleSmartNotifications,
-} from '../services/SmartNotificationService';
-import { ActionablesService } from '../services/ActionablesService';
-import ActionablesCard from '../components/ActionablesCard';
-// SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
-// import { syncSMSTransactionsToNotes } from '../services/SMSSpendService';
+  analyzeEntry,
+  recordFalsePositive,
+  WellbeingAnalysis,
+} from '../services/WellbeingService';
+import { getWarmLine, WarmLine } from '../services/WarmLineService';
+import {
+  acceptSuggestion,
+  dismissSuggestion,
+  getPendingSuggestion,
+  getActive,
+} from '../services/IntentionsService';
+import { curate, CurationResult } from '../services/mindCuration';
+import { intentionTouchesEntry } from '../services/digestCompute';
+import { buildCurationContext } from '../services/CurationContextBuilder';
+import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
+import ComposeModal from '../components/ComposeModal';
+import WellbeingResponseModal from '../components/WellbeingResponseModal';
+import CuratedMindPicker from '../components/CuratedMindPicker';
+import TalkScreen from './TalkScreenV2';
+import ChatScreen from './ChatScreen';
+import { TranscriptEntry } from '../types';
+
+import MicTile from '../components/home/MicTile';
+import TodayCard, { TodayCardData } from '../components/home/TodayCard';
+import IntentionsCard from '../components/home/IntentionsCard';
+import SecondaryActions from '../components/home/SecondaryActions';
+import { SuggestedIntention } from '../types';
+
+export type MicState = 'idle' | 'recording' | 'processing';
 
 function localDateStr(date: Date = new Date()): string {
   const y = date.getFullYear();
@@ -53,198 +63,182 @@ function localDateStr(date: Date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
-export default function HomeScreen() {
-  const route = useRoute<any>();
-  const navigation = useNavigation<any>();
-  const [status, setStatus] = useState<RecordingStatus>('idle');
-  const [pendingClips, setPendingClips] = useState<PendingClip[]>([]);
-  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
-  const [pulseAnim] = useState(new Animated.Value(1));
-  const [showCompose,       setShowCompose]       = useState(false);
-  const [showPerspective,   setShowPerspective]   = useState(false);
-  const [cardRefreshKey, setCardRefreshKey] = useState(0);
-  const isTranscribingRef = React.useRef(false);
-  const [summaryBanner, setSummaryBanner] = useState<SummaryBannerStatus | null>(null);
-  const summaryBannerTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Clear the banner timer if the component unmounts mid-countdown
-  useEffect(() => () => { if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current); }, []);
-  const [isNewUser, setIsNewUser] = useState(false);
-  const [notifOptInDone, setNotifOptInDone] = useState(false);
-  // Rotating mic prompts
-  const MIC_PROMPTS = ['How is your day going?', 'Something you\'re thinking about?', 'How are you feeling right now?'];
-  const [promptIdx, setPromptIdx] = useState(0);
-  const [promptOpacity] = useState(new Animated.Value(1));
-  const promptIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+async function computeTodayData(): Promise<TodayCardData | null> {
+  try {
+    const today   = localDateStr();
+    const entries = await StorageService.getTranscriptsForDate(today);
 
+    const counts: Record<string, number> = {};
+    for (const e of entries) {
+      for (const tag of e.emotionTags ?? []) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+    }
+    const dominantEmotions = Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 3)
+      .map(([tag]) => tag);
+
+    const actives = await getActive();
+    // Mirror digestCompute.ts: keyword-match each intention against today's entries.
+    const intentionsMentioned = actives
+      .filter(i => entries.some(e => e.text && intentionTouchesEntry(i, e.text)))
+      .slice(0, 6)
+      .map(i => ({
+        id:         i.id,
+        text:       i.text,
+        shortLabel: i.shortLabel || i.text.slice(0, 14),
+        category:   i.category ?? 'other',
+      }));
+
+    const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
+
+    return {
+      entryCount: entries.length,
+      dominantEmotions,
+      intentionsMentioned,
+      lastEntryAt: sorted[0]?.timestamp ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export default function HomeScreen() {
+  const navigation = useNavigation<any>();
+  const route      = useRoute<any>();
+
+  // ── Mic / recording state ────────────────────────────────────────────────────
+  const [micState, setMicState]       = useState<MicState>('idle');
+  const [audioLevel]                  = useState<number>(0); // AudioRecorderService doesn't expose metering
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
+  const isTranscribingRef     = useRef(false);
+  const batchWellbeingFiredRef = useRef(false);
+
+  // ── Video play state ─────────────────────────────────────────────────────────
+  const [shouldPlay, setShouldPlay] = useState(true);
+
+  // ── Warm line ────────────────────────────────────────────────────────────────
+  const [warmLine, setWarmLine]         = useState<WarmLine | null>(null);
+  const [warmLineLoading, setWarmLineLoading] = useState(true);
+
+  // ── Pending intention suggestion ─────────────────────────────────────────────
+  const [pendingSuggestion, setPendingSuggestion] = useState<SuggestedIntention | null>(null);
+
+  // ── Today card ───────────────────────────────────────────────────────────────
+  const [todayData, setTodayData] = useState<TodayCardData | null>(null);
+
+  // ── Modals ───────────────────────────────────────────────────────────────────
+  const [showCompose, setShowCompose]     = useState(false);
+  const [showPerspective, setShowPerspective] = useState(false);
+  const [callMindId, setCallMindId]       = useState<string | null | undefined>(undefined);
+  const [perspectiveInitialMindId, setPerspectiveInitialMindId] = useState<string | null | undefined>(undefined);
+  const [wellbeingAlert, setWellbeingAlert]   = useState<WellbeingAnalysis | null>(null);
+
+  // ── Mind curation ────────────────────────────────────────────────────────────
+  const [curation, setCuration]     = useState<CurationResult | null>(null);
+  const [curationWellbeing, setCurationWellbeing] =
+    useState<import('../types').WellbeingState | undefined>(undefined);
+
+  // ── On mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
-    promptIntervalRef.current = setInterval(() => {
-      Animated.timing(promptOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
-        setPromptIdx(i => (i + 1) % MIC_PROMPTS.length);
-        Animated.timing(promptOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-      });
-    }, 3000);
-    return () => { if (promptIntervalRef.current) clearInterval(promptIntervalRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Load warm line
+    setWarmLineLoading(true);
+    getWarmLine()
+      .then(wl => { setWarmLine(wl); setWarmLineLoading(false); })
+      .catch(() => { setWarmLine(null); setWarmLineLoading(false); });
+
+    // Load pending intention suggestion
+    getPendingSuggestion().then(s => setPendingSuggestion(s ?? null)).catch(() => {});
+
+    // Load today data
+    computeTodayData().then(setTodayData).catch(() => {});
   }, []);
 
-  // Prevents multiple wellbeing alerts firing from a single batch
-  const batchWellbeingFiredRef = React.useRef(false);
-  // Holds the pending auto-generate timer so additional notes reset the countdown
-  const autoGenerateTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // ── Wellbeing ────────────────────────────────────────────────────────────
-  const [wellbeingAlert, setWellbeingAlert] = useState<WellbeingAnalysis | null>(null);
-  const [reentryPending, setReentryPending] = useState<ReentryPending | null>(null);
-  // Ref (not state) so dismissal survives tab-switch re-focus without resetting
-  const reentryDismissedRef = React.useRef(false);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-      syncWidgetMonitoringIntent();
-      // Re-read tracker/settings changes made on the Settings screen
-      setCardRefreshKey(k => k + 1);
-      // Check for a pending re-entry check-in from a prior Tier 2/3 session.
-      // Guard with the ref so re-focusing (tab switch, back nav) doesn't
-      // re-show the card after the user has already dismissed it this session.
-      getPendingReentry().then(r => {
-        if (r && !reentryDismissedRef.current) {
-          const today = localDateStr();
-          if (r.date < today) {
-            setReentryPending(r);
-          }
-        }
-      }).catch(() => {});
-      // SMS spend tracking disabled — READ_SMS permission not grantable on non-rooted devices
-      // if (Platform.OS === 'android') {
-      //   syncSMSTransactionsToNotes().catch(() => {});
-      // }
-    }, [])
-  );
-
-  // Open compose modal when arriving via the widget "Type a note" deeplink
+  // Widget / notification deep link: { openCompose: true } opens the compose
+  // modal when the Home tab comes into focus.
   useEffect(() => {
     if (route.params?.openCompose) {
       setShowCompose(true);
+      navigation.setParams({ openCompose: undefined });
     }
-  }, [route.params?.openCompose]);
+  }, [route.params?.openCompose, navigation]);
 
-  // Cancel the auto-generate debounce timer when the component unmounts so we
-  // don't call setState on an unmounted component or do unnecessary API work.
-  useEffect(() => {
-    return () => {
-      if (autoGenerateTimerRef.current) {
-        clearTimeout(autoGenerateTimerRef.current);
-        autoGenerateTimerRef.current = null;
-      }
-    };
-  }, []);
-
-
-  // Sync widget state whenever the app comes to foreground (not just on screen focus).
-  // This catches the "tap widget to stop" case where HomeScreen is already focused
-  // so useFocusEffect doesn't re-fire.
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') syncWidgetMonitoringIntent();
-    });
-    return () => sub.remove();
-  }, []);
-
-  // When the app returns to foreground, retry any pending clips that were
-  // interrupted mid-transcription (e.g. user switched apps while Whisper was running).
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') {
-        // Reset stuck flag in case JS was suspended before the finally block ran
-        isTranscribingRef.current = false;
-        StorageService.getPendingClips().then(clips => {
-          if (clips.length > 0) handleTranscribeNow();
-        }).catch(() => {});
-      }
-    });
-    return () => sub.remove();
-  }, []);
-
+  // ── Recorder callbacks ───────────────────────────────────────────────────────
   useEffect(() => {
     audioRecorderService.setCallbacks({
-      onStatus: (s) => setStatus(s),
+      onStatus: (s) => {
+        if (s === 'recording') {
+          setMicState('recording');
+        } else if (s === 'idle') {
+          // Only revert to idle if we're not about to enter processing
+          if (!isTranscribingRef.current) {
+            setMicState('idle');
+          }
+        }
+      },
       onPendingClip: (clip) => {
-        setPendingClips(prev => [...prev, clip]);
         track('recording_completed', { duration_ms: clip.duration });
-        // Auto-transcribe as soon as the recording is saved
         handleTranscribeNow();
       },
       onError: (err) => {
         Alert.alert('Error', err);
+        isTranscribingRef.current = false;
+        setMicState('idle');
       },
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── AppState: video pause + foreground recovery ──────────────────────────────
   useEffect(() => {
-    if (status === 'recording') {
-      const anim = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      anim.start();
-      return () => {
-        anim.stop();
-        pulseAnim.setValue(1);
-      };
-    } else {
-      pulseAnim.setValue(1);
-    }
-  }, [status]);
-
-  const loadData = async () => {
-    const clips = await StorageService.getPendingClips();
-    setPendingClips(clips);
-  };
-
-  // Check once on mount whether this is a first-time user
-  useEffect(() => {
-    AsyncStorage.getItem('UNTANGLE_FIRST_NOTE_DONE').then(val => {
-      if (!val) setIsNewUser(true);
-    }).catch(() => {});
-    AsyncStorage.getItem('UNTANGLE_NOTIF_OPT_IN_DONE').then(val => {
-      if (val) setNotifOptInDone(true);
-    }).catch(() => {});
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        setShouldPlay(true);
+        isTranscribingRef.current = false;
+        StorageService.getPendingClips().then(clips => {
+          if (clips.length > 0) handleTranscribeNow();
+        }).catch(() => {});
+        getWarmLine().then(setWarmLine).catch(() => {});
+        getPendingSuggestion().then(s => setPendingSuggestion(s ?? null)).catch(() => {});
+      } else if (state === 'background' || state === 'inactive') {
+        setShouldPlay(false);
+      }
+    });
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Wellbeing check ───────────────────────────────────────────────────────
-  const checkWellbeing = async (entry: TranscriptEntry, batchGuard = false) => {
-    // During batch transcription, stop after the first alert to avoid
-    // re-triggering the modal for every remaining entry in the batch
-    if (batchGuard && batchWellbeingFiredRef.current) return;
-    const _e = new Date(entry.timestamp);
-    const date = localDateStr(_e);
-    const analysis = await analyzeEntry(entry, date);
-    if (analysis && analysis.tier >= 2) {
-      if (batchGuard) batchWellbeingFiredRef.current = true;
-      setWellbeingAlert(analysis);
-    }
-  };
-
-  // ── Widget ↔ app sync ────────────────────────────────────────────────────
-  const syncWidgetMonitoringIntent = async () => {
+  // ── Android widget sync ──────────────────────────────────────────────────────
+  const syncWidgetMonitoringIntent = useCallback(async () => {
     if (Platform.OS !== 'android') return;
     try {
-      const val = await AsyncStorage.getItem(WIDGET_MONITORING_KEY);
+      const val        = await AsyncStorage.getItem(WIDGET_MONITORING_KEY);
       const liveStatus = audioRecorderService.getStatus();
       if (val === 'true' && liveStatus === 'idle') {
         await audioRecorderService.startMonitoring();
       } else if (val === 'false' && liveStatus !== 'idle') {
         await audioRecorderService.stopMonitoring();
       }
-    } catch {
-      // Ignore; widget state is best-effort
-    }
-  };
+    } catch { /* best-effort */ }
+  }, []);
 
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') syncWidgetMonitoringIntent();
+    });
+    return () => sub.remove();
+  }, [syncWidgetMonitoringIntent]);
+
+  // ── On screen focus ──────────────────────────────────────────────────────────
+  useFocusEffect(useCallback(() => {
+    computeTodayData().then(setTodayData).catch(() => {});
+    getPendingSuggestion().then(s => setPendingSuggestion(s ?? null)).catch(() => {});
+    syncWidgetMonitoringIntent();
+  }, [syncWidgetMonitoringIntent]));
+
+  // ── Widget state helper ──────────────────────────────────────────────────────
   const updateWidgetState = async (monitoring: boolean) => {
     if (Platform.OS !== 'android') return;
     try {
@@ -252,16 +246,16 @@ export default function HomeScreen() {
       const { requestWidgetUpdate } = require('react-native-android-widget');
       const { MicWidget } = require('../widgets/MicWidget');
       await requestWidgetUpdate({
-        widgetName: 'MicWidget',
+        widgetName:   'MicWidget',
         renderWidget: () => require('react').default.createElement(MicWidget, {}),
       });
-    } catch {
-      // Widget might not be placed yet; ignore
-    }
+    } catch { /* widget may not be placed yet */ }
   };
 
-  const toggleMonitoring = async () => {
-    if (status === 'idle') {
+  // ── Mic press ────────────────────────────────────────────────────────────────
+  const handleMicPress = async () => {
+    if (micState === 'processing') return;
+    if (micState === 'idle') {
       track('recording_started');
       await audioRecorderService.startMonitoring();
       await updateWidgetState(true);
@@ -271,317 +265,142 @@ export default function HomeScreen() {
     }
   };
 
+  // ── Transcription ────────────────────────────────────────────────────────────
+  const checkWellbeing = async (entry: TranscriptEntry, batchGuard = false) => {
+    if (batchGuard && batchWellbeingFiredRef.current) return;
+    const date     = localDateStr(new Date(entry.timestamp));
+    const analysis = await analyzeEntry(entry, date);
+    if (analysis && analysis.tier >= 2) {
+      if (batchGuard) batchWellbeingFiredRef.current = true;
+      setWellbeingAlert(analysis);
+    }
+  };
+
   const handleTranscribeNow = async () => {
     if (isTranscribingRef.current) return;
-    isTranscribingRef.current = true;
-    batchWellbeingFiredRef.current = false; // reset per batch
+    isTranscribingRef.current  = true;
+    batchWellbeingFiredRef.current = false;
+    setMicState('processing');
     setBatchProgress({ total: 0, completed: 0, failed: 0 });
     try {
       await transcribePendingClips(
-        (progress) => setBatchProgress(progress),
-        (entry) => {
-          // Dismiss new-user guided state on first ever note
-          if (isNewUser) {
-            setIsNewUser(false);
-            AsyncStorage.setItem('UNTANGLE_FIRST_NOTE_DONE', '1').catch(() => {});
-            // Ask for notification permission on first saved note — the user is now
-            // invested enough for the prompt to feel relevant, not intrusive.
-            if (!notifOptInDone) {
-              setNotifOptInDone(true);
-              AsyncStorage.setItem('UNTANGLE_NOTIF_OPT_IN_DONE', '1').catch(() => {});
-              requestNotificationPermission().then(granted => {
-                if (granted) {
-                  StorageService.getSettings().then(s => {
-                    const time = s?.notificationTime;
-                    // Mark notifications as enabled in settings and schedule
-                    StorageService.saveSettings({ ...s, notificationsEnabled: true } as any).catch(() => {});
-                    scheduleSmartNotifications(time).catch(() => {});
-                  }).catch(() => {});
-                }
-              }).catch(() => {});
-            }
-          }
-          // Entry saved to storage — run wellbeing check fire-and-forget
-          // batchGuard=true so only the first alert fires per batch
-          checkWellbeing(entry, true).catch(() => {});
-        },
-        (status) => {
-          setSummaryBanner(status);
-          if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current);
-          if (status === 'ready') {
-            // Auto-dismiss "ready" after 5 s
-            summaryBannerTimerRef.current = setTimeout(() => setSummaryBanner(null), 5000);
-          } else if (status === 'generating') {
-            // Safety timeout: if generation never completes, stop showing spinner after 45 s
-            summaryBannerTimerRef.current = setTimeout(() => setSummaryBanner(null), 45_000);
-          }
-        },
+        (p) => setBatchProgress(p),
+        (entry) => checkWellbeing(entry, true).catch(() => {}),
       );
     } finally {
       isTranscribingRef.current = false;
-      setPendingClips([]);
+      setMicState('idle');
       setBatchProgress(null);
-      // Refresh the home card so new entries are reflected immediately
-      setCardRefreshKey(k => k + 1);
-      ActionablesService.invalidate();
-      // After each batch, schedule (or debounce) an auto-generate if no summary yet
-      scheduleAutoGenerateIfNeeded();
-      // Re-trigger for any clips that arrived while this batch was running
-      // (new clips fire onPendingClip but are blocked by isTranscribingRef)
+      computeTodayData().then(setTodayData).catch(() => {});
+      getWarmLine().then(setWarmLine).catch(() => {});
+      // Retry any clips that arrived during this batch
       StorageService.getPendingClips().then(remaining => {
         if (remaining.length > 0) handleTranscribeNow();
       }).catch(() => {});
     }
   };
 
-  // Silently generate today's summary 5 minutes after the last note, if no
-  // summary exists yet. Each new note resets the countdown.
-  //
-  // Under ff_day_close_model, this debounce is a no-op: summaries are only
-  // produced once at 23:59 close-out, so we explicitly clear any lingering
-  // timer and return before scheduling a new one.
-  const scheduleAutoGenerateIfNeeded = async () => {
+  // ── Intention card handlers ──────────────────────────────────────────────────
+  const handleAcceptSuggestion = async (s: SuggestedIntention) => {
+    await acceptSuggestion(s).catch(() => {});
+    setPendingSuggestion(null);
+  };
+
+  const handleDismissSuggestion = async (s: SuggestedIntention) => {
+    await dismissSuggestion(s).catch(() => {});
+    setPendingSuggestion(null);
+  };
+
+  // ── Navigation helpers ───────────────────────────────────────────────────────
+
+  const handleCompose = () => setShowCompose(true);
+
+  const handlePerspective = async () => {
     try {
-      const dayCloseOn = await FeatureFlagsService.getFlag('ff_day_close_model').catch(() => false);
-      if (dayCloseOn) {
-        if (autoGenerateTimerRef.current) {
-          clearTimeout(autoGenerateTimerRef.current);
-          autoGenerateTimerRef.current = null;
-        }
-        return;
-      }
-
-      const today = localDateStr();
-      const existingSummary = await StorageService.getSummaryForDate(today);
-      if (existingSummary) return; // already have one — nothing to do
-
-      const todayTranscripts = await StorageService.getTranscriptsForDate(today);
-      if (todayTranscripts.length === 0) return;
-
-      // Clear any previous pending timer (debounce on each new note)
-      if (autoGenerateTimerRef.current) {
-        clearTimeout(autoGenerateTimerRef.current);
-      }
-
-      autoGenerateTimerRef.current = setTimeout(async () => {
-        autoGenerateTimerRef.current = null;
-        try {
-          const summaryCheck = await StorageService.getSummaryForDate(today);
-          if (summaryCheck) return; // user may have manually generated in the meantime
-          const transcripts = await StorageService.getTranscriptsForDate(today);
-          if (transcripts.length > 0) {
-            if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current);
-            setSummaryBanner('generating');
-            // 45 s safety timeout in case generation hangs
-            summaryBannerTimerRef.current = setTimeout(() => setSummaryBanner(null), 45_000);
-            await generateDailySummary(transcripts, today);
-            setCardRefreshKey(k => k + 1);
-            if (summaryBannerTimerRef.current) clearTimeout(summaryBannerTimerRef.current);
-            setSummaryBanner('ready');
-            summaryBannerTimerRef.current = setTimeout(() => setSummaryBanner(null), 5000);
-          }
-        } catch {
-          // Silent — user can always generate manually from Summaries tab
-        }
-      }, 5 * 60 * 1000); // 5 minutes
+      const ctx    = await buildCurationContext({ sourceSurface: 'home' });
+      const result = curate(ctx);
+      track('curation_rule_fired', {
+        rule:             result.matchedRuleId,
+        specialists:      result.specialists.map(s => s.id),
+        source_surface:   'home',
+      });
+      setCuration(result);
+      setCurationWellbeing(ctx.wellbeingState);
     } catch {
-      // Ignore any storage errors
+      setPerspectiveInitialMindId(undefined);
+      setShowPerspective(true);
     }
   };
 
-  const getStatusText = (): string => {
-    switch (status) {
-      case 'idle':       return isNewUser ? 'Tap the mic to start' : 'Tap to record';
-      case 'monitoring': return 'Listening…';
-      case 'recording':  return 'Recording — tap to stop';
-      default:           return '';
-    }
-  };
-
-  const getStatusColor = (): string => {
-    switch (status) {
-      case 'idle':       return 'rgba(152, 212, 250, 0.65)';
-      case 'monitoring': return 'rgba(152, 212, 250, 0.80)';
-      case 'recording':  return 'rgba(224, 242, 254, 0.95)';
-      default:           return 'rgba(152, 212, 250, 0.65)';
-    }
-  };
-
-  const isActive = status !== 'idle';
+  // ── Render ───────────────────────────────────────────────────────────────────
   const isTranscribing = batchProgress !== null;
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Primary section — all 4 components, always visible without scroll */}
-      <View style={styles.primarySection}>
+    <SafeAreaView style={s.container} edges={['bottom']}>
+      <View style={s.content}>
 
-        {/* Warm line card (or re-entry check-in when pending) */}
-        {reentryPending ? (
-          <View style={styles.reentryCard}>
-            <View style={styles.reentryRow}>
-              <Feather name="heart" size={15} color="rgba(152, 212, 250, 0.70)" />
-              <Text style={styles.reentryText}>
-                Last time felt heavy. How are you today?
-              </Text>
+        {/* Scrollable body — MicTile + cards all scroll together */}
+        <ScrollView
+          style={s.scrollArea}
+          contentContainerStyle={s.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Mic tile — ocean video + breathing orb + warm line */}
+          <MicTile
+            micState={micState}
+            audioLevel={audioLevel}
+            onMicPress={handleMicPress}
+            shouldPlay={shouldPlay}
+            warmLine={warmLine}
+            warmLineLoading={warmLineLoading}
+          />
+
+          {/* Transcription banner */}
+          {isTranscribing && (
+            <View style={s.banner}>
+              <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
+              <Text style={s.bannerText}>Transcribing…</Text>
             </View>
-            <View style={styles.reentryActions}>
-              <TouchableOpacity
-                style={styles.reentryBtn}
-                onPress={() => {
-                  reentryDismissedRef.current = true;
-                  clearPendingReentry();
-                  setReentryPending(null);
-                  setShowCompose(true);
-                }}
-              >
-                <Text style={styles.reentryBtnText}>Write about it</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.reentrySkipBtn}
-                onPress={() => {
-                  reentryDismissedRef.current = true;
-                  clearPendingReentry();
-                  setReentryPending(null);
-                }}
-              >
-                <Text style={styles.reentrySkipText}>I'm okay today</Text>
-              </TouchableOpacity>
+          )}
+
+          {/* Intentions card — pending suggestion */}
+          {pendingSuggestion && (
+            <View style={s.cards}>
+              <IntentionsCard
+                suggestion={pendingSuggestion}
+                onAccept={handleAcceptSuggestion}
+                onDismiss={handleDismissSuggestion}
+              />
             </View>
+          )}
+
+          {/* Today card */}
+          <View style={s.cards}>
+            <TodayCard data={todayData} />
           </View>
-        ) : (
-          <View style={styles.warmLineCard}>
-            <Animated.Text style={[styles.warmLineText, { opacity: promptOpacity }]}>
-              {MIC_PROMPTS[promptIdx]}
-            </Animated.Text>
-          </View>
-        )}
+        </ScrollView>
 
-        {/* Main Button — Jellyfish card */}
-        <View style={styles.monitorCard}>
-          <ImageBackground
-            source={require('../../assets/jellyfish.jpg')}
-            style={styles.monitorCardBg}
-            imageStyle={styles.monitorCardImage}
-            resizeMode="cover"
-          >
-            <View style={styles.monitorOverlay} />
-            <View style={styles.buttonSection}>
-              <View style={[styles.glowRing, isActive && styles.glowRingActive]}>
-                <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-                  <TouchableOpacity
-                    style={[styles.mainButton, isActive && styles.mainButtonActive]}
-                    onPress={toggleMonitoring}
-                    activeOpacity={0.8}
-                  >
-                    <Feather
-                      name={status === 'recording' ? 'square' : 'mic'}
-                      size={28}
-                      color={isActive ? 'rgba(224, 242, 254, 0.95)' : '#98D4FA'}
-                    />
-                  </TouchableOpacity>
-                </Animated.View>
-              </View>
-              <Text style={[styles.statusText, { color: getStatusColor() }]}>
-                {getStatusText()}
-              </Text>
-            </View>
-          </ImageBackground>
-        </View>
+        {/* Bottom actions — always visible, outside the scroll area */}
+        <SecondaryActions
+          onCompose={handleCompose}
+          onPerspective={handlePerspective}
+        />
 
-        {/* Action tiles */}
-        <View style={styles.tilesRow}>
-          <TouchableOpacity
-            style={styles.tile}
-            onPress={() => setShowCompose(true)}
-            activeOpacity={0.85}
-          >
-            <Feather name="edit-2" size={20} color="rgba(152, 212, 250, 0.80)" />
-            <Text style={styles.tileLabel}>Add a manual entry</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.tile}
-            onPress={() => setShowPerspective(true)}
-            activeOpacity={0.85}
-          >
-            <Feather name="compass" size={20} color="rgba(152, 212, 250, 0.80)" />
-            <Text style={styles.tileLabel}>Get a new perspective</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
-      {/* Secondary scrollable content — banners + insight cards */}
-      <ScrollView
-        style={styles.scrollArea}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Transcription progress banner */}
-        {isTranscribing && (
-          <View style={styles.pendingBanner}>
-            <View style={styles.pendingRow}>
-              <ActivityIndicator color="#f4a261" size="small" />
-              <Text style={styles.pendingText}>
-                Transcribing…
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Summary generation banner */}
-        {summaryBanner && (
-          <TouchableOpacity
-            style={styles.summaryBanner}
-            activeOpacity={summaryBanner === 'ready' ? 0.75 : 1}
-            onPress={() => {
-              if (summaryBanner === 'ready') {
-                setSummaryBanner(null);
-                navigation.navigate('Summary');
-              }
-            }}
-          >
-            {summaryBanner === 'generating' ? (
-              <>
-                <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" style={{ marginRight: 8 }} />
-                <Text style={styles.summaryBannerText}>Building your summary…</Text>
-              </>
-            ) : (
-              <>
-                <Feather name="star" size={13} color="rgba(152,212,250,0.90)" style={{ marginRight: 8 }} />
-                <Text style={[styles.summaryBannerText, styles.summaryBannerReady]}>
-                  Your summary is ready
-                </Text>
-                <Feather name="arrow-right" size={13} color="rgba(152,212,250,0.60)" style={{ marginLeft: 4 }} />
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-
-        {/* Monthly insight card */}
-        <MonthlyInsightCard refreshKey={cardRefreshKey} />
-
-        {/* Actionables — goal, action, question derived from recent entries */}
-        <ActionablesCard refreshKey={cardRefreshKey} />
-      </ScrollView>
-
+      {/* ── Modals ─────────────────────────────────────────────────────────── */}
       <ComposeModal
         visible={showCompose}
         onClose={() => setShowCompose(false)}
         onSaved={(entry) => {
           setShowCompose(false);
           track('manual_note_created', { has_photo: !!entry.photoUri });
-          ActionablesService.invalidate();
-          // Refresh home card so the new entry appears immediately
-          setCardRefreshKey(k => k + 1);
-          // Schedule auto-generate (same logic as after voice batch) so the
-          // summary banner and 5-minute timer fire for manual entries too
-          scheduleAutoGenerateIfNeeded();
-          // Run wellbeing check after a brief delay so modal closes first
+          computeTodayData().then(setTodayData).catch(() => {});
           setTimeout(() => checkWellbeing(entry).catch(() => {}), 600);
         }}
-        onExpensesExtracted={() => setCardRefreshKey(k => k + 1)}
       />
 
-      {/* Wellbeing response modal — Tier 2 or Tier 3 */}
       {wellbeingAlert && (
         <WellbeingResponseModal
           visible
@@ -595,344 +414,79 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* Get a perspective — opens mind picker in call mode, no day context */}
+      {/* Perspective: ChatScreen → optional TalkScreen */}
       <Modal
         visible={showPerspective}
         animationType="slide"
         presentationStyle="fullScreen"
-        onRequestClose={() => setShowPerspective(false)}
+        onRequestClose={() => { setShowPerspective(false); setCallMindId(undefined); }}
       >
-        {showPerspective && (
-          <TalkScreen onClose={() => setShowPerspective(false)} />
+        {showPerspective && callMindId === undefined && (
+          <ChatScreen
+            initialMindId={perspectiveInitialMindId}
+            onClose={() => { setShowPerspective(false); setCallMindId(undefined); setPerspectiveInitialMindId(undefined); }}
+            onCallRequested={(mindId) => setCallMindId(mindId ?? null)}
+          />
+        )}
+        {showPerspective && callMindId !== undefined && (
+          <TalkScreen
+            initialMindId={callMindId}
+            onClose={() => { setShowPerspective(false); setCallMindId(undefined); setPerspectiveInitialMindId(undefined); }}
+          />
         )}
       </Modal>
+
+      <CuratedMindPicker
+        visible={!!curation}
+        result={curation}
+        wellbeingState={curationWellbeing}
+        onPick={(mindId) => {
+          setCuration(null);
+          setCurationWellbeing(undefined);
+          setPerspectiveInitialMindId(mindId ?? null);
+          setShowPerspective(true);
+        }}
+        onClose={() => {
+          setCuration(null);
+          setCurationWellbeing(undefined);
+        }}
+      />
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#02060E' },
-
-  // ── Primary (non-scroll) section ──────────────────────────────────────────
-  primarySection: {
+const s = StyleSheet.create({
+  container: {
     flex: 1,
-    marginHorizontal: 20,
-    marginTop: 14,
-    marginBottom: 10,
-    gap: 10,
+    backgroundColor: '#02060E',
   },
-
-  // ── Warm line card ────────────────────────────────────────────────────────
-  warmLineCard: {
-    backgroundColor: 'rgba(3, 18, 40, 0.80)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.16)',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  warmLineText: {
-    fontSize: 16,
-    fontFamily: 'Baskerville',
-    color: 'rgba(224, 242, 254, 0.78)',
-    textAlign: 'center',
-    letterSpacing: 0.2,
-    lineHeight: 22,
-  },
-
-  // ── Action tiles ──────────────────────────────────────────────────────────
-  tilesRow: {
-    flexDirection: 'row',
-    gap: 10,
-    height: 88,
-  },
-  tile: {
+  content: {
     flex: 1,
-    backgroundColor: 'rgba(3, 18, 40, 0.82)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    flexDirection: 'column',
   },
-  tileLabel: {
-    fontSize: 12,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(224, 242, 254, 0.75)',
-    textAlign: 'center',
-    paddingHorizontal: 8,
-  },
-
-  // ── Re-entry check-in card ────────────────────────────────────────────────
-  reentryCard: {
-    backgroundColor: 'rgba(3, 18, 40, 0.85)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.18)',
-    padding: 16,
-  },
-  reentryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 14,
-  },
-  reentryText: {
-    fontSize: 15,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(224, 242, 254, 0.88)',
+  scrollArea: {
     flex: 1,
-    lineHeight: 22,
   },
-  reentryActions: {
-    flexDirection: 'row',
-    gap: 10,
+  scrollContent: {
+    paddingBottom: 8,
   },
-  reentryBtn: {
-    flex: 1,
-    backgroundColor: 'rgba(9, 41, 173, 0.22)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.28)',
-    paddingVertical: 9,
-    alignItems: 'center',
-  },
-  reentryBtnText: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(224, 242, 254, 0.88)',
-    fontWeight: '500',
-  },
-  reentrySkipBtn: {
-    flex: 1,
-    paddingVertical: 9,
-    alignItems: 'center',
-  },
-  reentrySkipText: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152, 212, 250, 0.50)',
-  },
-
-  // ── Jellyfish monitor card ────────────────────────────────────────────────
-  monitorCard: {
-    flex: 1,
-    borderRadius: 28,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.22)',
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.28,
-    shadowRadius: 28,
-    elevation: 10,
-  },
-  monitorCardBg: { flex: 1, width: '100%' },
-  monitorCardImage: { opacity: 0.80 },
-  monitorOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(2, 6, 14, 0.48)',
-  },
-
-  // ── Mic button section ────────────────────────────────────────────────────
-  buttonSection: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 20, paddingHorizontal: 20 },
-
-  glowRing: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(152, 212, 250, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.28)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  glowRingActive: {
-    backgroundColor: 'rgba(152, 212, 250, 0.12)',
-    borderColor: 'rgba(152, 212, 250, 0.55)',
-  },
-
-  mainButton: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(2, 6, 14, 0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.30)',
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.20,
-    shadowRadius: 24,
-    elevation: 8,
-  },
-  mainButtonActive: {
-    backgroundColor: 'rgba(9, 41, 173, 0.30)',
-    borderColor: 'rgba(152, 212, 250, 0.60)',
-    shadowOpacity: 0.40,
-  },
-
-  statusText: {
-    marginTop: 18,
-    fontSize: 17,
-    fontWeight: '500',
-    fontFamily: 'Baskerville',
-  },
-  pendingCount: {
-    marginTop: 6,
-    fontSize: 13,
-    color: '#f4a261',
-    fontFamily: 'GillSans-Light',
-  },
-
-  // ── Pending banner ────────────────────────────────────────────────────────
-  guidedCard: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    backgroundColor: 'rgba(4,13,30,0.70)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(152,212,250,0.12)',
-    padding: 22,
-  },
-  guidedPrompt: {
-    fontSize: 19,
-    fontFamily: 'Baskerville',
-    color: 'rgba(224,242,254,0.92)',
-    textAlign: 'center',
-    marginBottom: 10,
-    lineHeight: 26,
-  },
-  guidedSub: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.50)',
-    textAlign: 'center',
-    lineHeight: 19,
-    marginBottom: 18,
-  },
-  guidedHints: {
-    gap: 8,
-  },
-  guidedHint: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.60)',
-    lineHeight: 19,
-  },
-
-  notifOptIn: {
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(152,212,250,0.10)',
-  },
-  notifOptInLabel: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.65)',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  notifOptInRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  notifOptInYes: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(9,41,173,0.25)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(152,212,250,0.30)',
-    paddingVertical: 10,
-  },
-  notifOptInYesText: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(224,242,254,0.90)',
-    fontWeight: '500',
-  },
-  notifOptInNo: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifOptInNoText: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.40)',
-  },
-
-  summaryBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 0,
-    backgroundColor: 'rgba(9,41,173,0.18)',
-    borderRadius: 14,
-    paddingVertical: 11,
+  cards: {
     paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(152,212,250,0.18)',
-  },
-  summaryBannerText: {
-    fontSize: 13,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.70)',
-    flex: 1,
-  },
-  summaryBannerReady: {
-    color: 'rgba(224,242,254,0.90)',
+    paddingTop: 10,
+    paddingBottom: 8,
   },
 
-  pendingBanner: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 0,
-    backgroundColor: 'rgba(244, 162, 97, 0.12)',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(244, 162, 97, 0.3)',
+  // Transcription banner
+  banner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 20, marginTop: 8,
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: 'rgba(9,41,173,0.18)',
+    borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.20)',
   },
-  pendingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 8,
+  bannerText: {
+    fontSize: 12, fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.80)',
   },
-  pendingText: { color: '#f4a261', fontSize: 14, fontWeight: '500', fontFamily: 'GillSans-Light' },
-  pendingActions: { flexDirection: 'row', gap: 8 },
-  transcribeButton: {
-    backgroundColor: 'rgba(244, 162, 97, 0.18)',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(244, 162, 97, 0.4)',
-  },
-  transcribeButtonText: { color: '#f4a261', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
-  discardButton: {
-    backgroundColor: 'rgba(9, 41, 173, 0.12)',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.18)',
-  },
-  discardButtonText: { color: 'rgba(152, 212, 250, 0.70)', fontSize: 13, fontWeight: '500', fontFamily: 'GillSans-Light' },
-
-  // ── Scroll area (secondary content below primary section) ────────────────
-  scrollArea: { flexShrink: 0 },
-  scrollContent: { paddingBottom: 24 },
 });

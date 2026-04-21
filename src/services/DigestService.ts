@@ -11,7 +11,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageService } from './StorageService';
-import { getActiveIntentions, intentionsEnabled } from './IntentionsService';
+import { getActiveIntentions } from './IntentionsService';
 import { computeDigest } from './digestCompute';
 import { DayDigest } from '../types';
 
@@ -53,9 +53,8 @@ export async function getDigest(date: string): Promise<DayDigest> {
     return digest;
   }
 
-  const intentionsOn = await intentionsEnabled();
-  const intentions   = intentionsOn ? await getActiveIntentions().catch(() => []) : [];
-  const digest       = computeDigest(date, entries, intentions);
+  const intentions = await getActiveIntentions().catch(() => []);
+  const digest     = computeDigest(date, entries, intentions);
   await writeCached({ ...digest, entryCountAtCompute: entries.length });
   return digest;
 }

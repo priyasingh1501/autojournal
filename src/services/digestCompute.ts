@@ -1,5 +1,6 @@
 /**
- * Pure digest compute for ff_day_close_model.
+ * Pure digest compute — the "today so far" factual snapshot used while the
+ * day is still open, before the 23:59 summary is generated.
  *
  * No AsyncStorage, no Claude, no React Native — kept pure so tests and the
  * cache layer share the exact same logic. `DigestService` wraps this with

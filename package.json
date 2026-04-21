@@ -9,7 +9,6 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.27.0",
     "@elevenlabs/react-native": "^1.1.1",
     "@livekit/react-native": "2.9.8",
     "@livekit/react-native-webrtc": "137.0.3",
@@ -31,7 +30,6 @@
     "expo-status-bar": "~3.0.9",
     "expo-task-manager": "~14.0.9",
     "livekit-client": "^2.15.8",
-    "openai": "^4.67.0",
     "posthog-react-native": "^4.41.1",
     "react": "19.1.0",
     "react-native": "0.81.5",
@@ -44,6 +42,7 @@
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
     "@babel/core": "^7.24.0",
     "@expo/metro-config": "~54.0.14",
     "@types/react": "~19.1.10",

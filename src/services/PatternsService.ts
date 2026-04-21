@@ -1,6 +1,6 @@
 /**
- * PatternsService — observational, archive-grounded replacement for the
- * Insights tab. Behind ff_patterns_tab (not wired into UI yet).
+ * PatternsService — observational, archive-grounded insight generation for
+ * the Patterns tab.
  *
  * Contract:
  *   • thisMonth is populated for any archive >= 1 day.
@@ -9,9 +9,6 @@
  *   • Output is parsed with the pure parsePatternsOutput(), which enforces
  *     the "2–3 evidence excerpts per observation" spec and drops malformed
  *     items rather than surfacing them.
- *
- * Does NOT share code with InsightV2Service — this is a parallel stack so
- * the old tab keeps working while we build the new one.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -27,7 +24,6 @@ import { getDismissed, isDismissed, DismissedObservation } from './patternsDismi
 import {
   buildIntentionContextBlock,
   getActiveIntentions,
-  intentionsEnabled,
 } from './IntentionsService';
 
 const CACHE_KEY   = 'patterns_report';
@@ -453,8 +449,7 @@ export async function generate(): Promise<GenerateResult> {
   const voiceMode  = deriveVoiceMode(stats.entryCount);
   const allowed    = allowedAcrossTimeTypes(stats.archiveDays, stats.entryCount);
   const dismissed  = await getDismissed();
-  const intentionsOn = await intentionsEnabled();
-  const activeIntentions = intentionsOn ? await getActiveIntentions().catch(() => []) : [];
+  const activeIntentions = await getActiveIntentions().catch(() => []);
   const intentionsBlock = buildIntentionContextBlock(activeIntentions);
   const system     = buildSystemPrompt(allowed, dismissed, intentionsBlock, voiceMode);
   const { thisMonthText, archiveText } = await buildContext(stats);

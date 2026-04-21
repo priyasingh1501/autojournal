@@ -52,39 +52,6 @@ test('reentry wins over everything else', () => {
   assert.ok(/heavy/i.test(out.text), 'reentry line mentions heaviness');
 });
 
-// ── Priority 1.5: pending intention ──────────────────────────────────────────
-
-test('pending intention wins over summary and patterns but not reentry', () => {
-  const out = pickWarmLine({
-    hasReentry: false,
-    pendingIntention: {
-      id: 'sug_1',
-      text: 'stop doom-scrolling before bed',
-      detectedAt: 0,
-      sourceEntryId: 'e_1',
-    },
-    yesterdaySummary: makeSummary({ reflection: 'You had a quiet day.' }),
-    patternsReport: null,
-  });
-  assert.equal(out.tapTarget, 'intention_suggest');
-  assert.ok(out.text.includes('stop doom-scrolling'), 'warm line quotes the suggestion text');
-});
-
-test('reentry still beats a pending intention', () => {
-  const out = pickWarmLine({
-    hasReentry: true,
-    pendingIntention: {
-      id: 'sug_1',
-      text: 'stop doom-scrolling before bed',
-      detectedAt: 0,
-      sourceEntryId: 'e_1',
-    },
-    yesterdaySummary: null,
-    patternsReport: null,
-  });
-  assert.equal(out.tapTarget, 'reentry');
-});
-
 // ── Priority 2: yesterday's summary ──────────────────────────────────────────
 
 test('yesterday reflection first sentence wins when no reentry', () => {

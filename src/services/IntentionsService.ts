@@ -15,7 +15,6 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { claudeProxy } from './AIProxy';
-import { FeatureFlagsService } from './FeatureFlagsService';
 import { StorageService } from './StorageService';
 import {
   Intention,
@@ -43,11 +42,6 @@ const STARTER_DONE_KEY       = 'intentions_starter_migration_done';
 const SUGGEST_COOLDOWN_MS = 7 * 86_400_000;
 const DISMISS_TTL_MS      = 30 * 86_400_000;
 const DAY_MS              = 86_400_000;
-
-// ── Flag helper ──────────────────────────────────────────────────────────────
-export async function intentionsEnabled(): Promise<boolean> {
-  return FeatureFlagsService.getFlag('ff_intentions').catch(() => false);
-}
 
 // ── Dismissed blocklist ──────────────────────────────────────────────────────
 interface Dismissed { norm: string; at: number; }
@@ -565,7 +559,6 @@ Prefer null when uncertain. False positives are worse than misses here.`;
  */
 export async function detectAndSuggestIntention(entry: TranscriptEntry): Promise<void> {
   try {
-    if (!(await intentionsEnabled())) return;
     if (!entry.text || entry.text.trim().length < 40) return;
     if (await getPendingSuggestion()) return;
 

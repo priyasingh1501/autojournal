@@ -1,5 +1,5 @@
 /**
- * WarmLineService — the single sentence shown at the top of SimpleHomeScreen.
+ * WarmLineService — the single sentence shown at the top of HomeScreen.
  *
  * Priority (highest → lowest):
  *   1. Pending wellbeing re-entry (live, never cached)
@@ -20,7 +20,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageService } from './StorageService';
 import { getPendingReentry } from './WellbeingService';
 import { getCachedReport } from './PatternsService';
-import { getPendingSuggestion } from './IntentionsService';
 import { claudeProxy } from './AIProxy';
 import type { Intention } from '../types';
 import {
@@ -71,18 +70,6 @@ export async function getWarmLine(): Promise<WarmLine> {
   const reentry = await getPendingReentry().catch(() => null);
   if (reentry) return { text: REENTRY_LINE, tapTarget: 'reentry' };
 
-  // 1.5. Pending detected intention — also live (not cached), so accept/dismiss
-  // clears it immediately from the home screen without a cache-bust.
-  const pendingIntention = await getPendingSuggestion().catch(() => null);
-  if (pendingIntention) {
-    return pickWarmLine({
-      hasReentry: false,
-      pendingIntention,
-      yesterdaySummary: null,
-      patternsReport: null,
-    });
-  }
-
   // 2. Same-day cache hit
   const today = localDateStr();
   const cached = await readCache();
@@ -99,7 +86,6 @@ export async function getWarmLine(): Promise<WarmLine> {
 
   const line = pickWarmLine({
     hasReentry: false,
-    pendingIntention: null,
     yesterdaySummary,
     patternsReport,
   });

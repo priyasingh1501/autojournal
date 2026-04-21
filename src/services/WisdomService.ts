@@ -191,7 +191,7 @@ function stanceMultiplier(stance: Stance, loopState: LoopState, placement: Place
 export interface FeedOptions {
   loopState?: LoopState;
   placement?: Placement;
-  /** Pass the resolved value of ff_new_minds_system — keeps buildFeed synchronous. */
+  /** When true, the feed ranks by stance × loopState × placement. */
   stanceEnabled?: boolean;
 }
 
