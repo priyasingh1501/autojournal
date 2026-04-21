@@ -11,4 +11,12 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
+# LiveKit WebRTC — uses reflection for codec negotiation and native peer connection
+-keep class com.livekit.** { *; }
+-keep class livekit.** { *; }
+-keep class org.webrtc.** { *; }
+
+# ElevenLabs React Native — reflection-heavy audio pipeline
+-keep class com.elevenlabs.** { *; }
+
 # Add any project specific keep options here:
