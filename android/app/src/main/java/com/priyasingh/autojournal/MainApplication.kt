@@ -13,8 +13,6 @@ import com.facebook.react.ReactHost
 import com.facebook.react.common.ReleaseLevel
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import com.facebook.react.defaults.DefaultReactNativeHost
-import com.facebook.react.internal.featureflags.ReactNativeFeatureFlags
-import com.facebook.react.internal.featureflags.ReactNativeNewArchitectureFeatureFlagsDefaults
 import com.facebook.soloader.SoLoader
 
 import expo.modules.ApplicationLifecycleDispatcher
@@ -73,19 +71,6 @@ class MainApplication : Application(), ReactApplication {
     }
     Log.e("RN_INIT", "releaseLevel: ${DefaultNewArchitectureEntryPoint.releaseLevel}")
 
-    // ── Debug point 2: ReactNativeFeatureFlags.override ──────────────────────
-    // Risk: this call was an uncommitted local change of unknown origin — not
-    // present in any commit. It may be unnecessary (loadReactNative handles
-    // new-arch flag defaults internally). If it causes issues, remove this block
-    // and the two imports at the top of this file.
-    Log.e("RN_INIT", "FeatureFlags.override: start (IS_NEW_ARCH=${BuildConfig.IS_NEW_ARCHITECTURE_ENABLED})")
-    try {
-      ReactNativeFeatureFlags.override(ReactNativeNewArchitectureFeatureFlagsDefaults())
-      Log.e("RN_INIT", "FeatureFlags.override: OK")
-    } catch (t: Throwable) {
-      Log.e("RN_INIT", "FeatureFlags.override: FAILED — remove this call if not needed", t)
-      // Do not rethrow — loadReactNative may still work without it
-    }
     Log.e("RN_INIT", "about to loadReactNative")
     try {
       loadReactNative(this)
