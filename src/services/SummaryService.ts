@@ -56,7 +56,6 @@ export async function generateDailySummary(
 
   // Build the text log — label voice vs manual, add tone tags from emotion detection
   const photoEntries = sorted.filter(t => t.photoUri);
-  const hasPhotos = photoEntries.length > 0;
 
   const textLog = sorted
     .map(t => {

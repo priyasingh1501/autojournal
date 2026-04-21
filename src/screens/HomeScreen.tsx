@@ -287,6 +287,8 @@ export default function HomeScreen() {
         (p) => setBatchProgress(p),
         (entry) => checkWellbeing(entry, true).catch(() => {}),
       );
+    } catch (err) {
+      console.warn('[HomeScreen] transcribePendingClips error:', err);
     } finally {
       isTranscribingRef.current = false;
       setMicState('idle');
