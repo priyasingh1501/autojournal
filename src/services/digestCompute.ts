@@ -85,7 +85,6 @@ export function computeDigest(
   }
   const dominantEmotions = Array.from(emotionCounts.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
     .map(([tag]) => tag);
 
   // Intentions touched — set of intention IDs whose keywords appeared in ANY entry.

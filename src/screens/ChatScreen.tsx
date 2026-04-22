@@ -9,14 +9,17 @@ import {
   FlatList,
   Image,
   ActivityIndicator,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Dimensions,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Audio } from 'expo-av';
 import { DailySummary, ConversationMessage } from '../types';
+import { transcribeAudio } from '../services/TranscriptionService';
 import {
   sendMessage, getOpeningMessage, generateReflection,
   detectIntent, ConversationIntent, ConversationContext,
@@ -44,6 +47,18 @@ import {
 import { track } from '../services/AnalyticsService';
 import { MIND_DISPLAY_NAMES } from '../services/mindCuration';
 import type { SourceContext } from '../services/openingLineSelector';
+import {
+  saveChat,
+  summarizeChatShape,
+  SavedChatMessage,
+} from '../services/SavedChatService';
+
+export interface ResumeChatInput {
+  id: string;
+  mindId: string | null;
+  startedAt: number;
+  messages: SavedChatMessage[];
+}
 
 interface Props {
   summary?: DailySummary;
@@ -61,9 +76,21 @@ interface Props {
    * can acknowledge the context implicitly.
    */
   sourceContext?: import('../services/openingLineSelector').SourceContext | null;
+  /**
+   * When provided, hydrate the screen from a previously saved chat instead
+   * of starting fresh. Used by the day-summary "Reflection history" →
+   * Continue flow.
+   */
+  resumeChat?: ResumeChatInput;
 }
 
 type ConvState = 'selecting' | 'loading' | 'thinking' | 'idle' | 'error';
+
+function formatRecordingTime(secs: number): string {
+  const m = Math.floor(secs / 60).toString().padStart(2, '0');
+  const s = (secs % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
 
 function formatDate(date: string): string {
   const todayStr     = new Date().toISOString().split('T')[0];
@@ -413,7 +440,7 @@ const handoffStyles = StyleSheet.create({
 
 // ── Main chat screen ──────────────────────────────────────────────────────────
 
-export default function ChatScreen({ summary, onClose, onCallRequested, initialMindId, sourceContext }: Props) {
+export default function ChatScreen({ summary, onClose, onCallRequested, initialMindId, sourceContext, resumeChat }: Props) {
   // Standalone chats (no summary) get a minimal stub so ConversationService always has context
   const effectiveSummary: DailySummary = summary ?? {
     date: new Date().toISOString().split('T')[0],
@@ -421,20 +448,47 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
     transcriptCount: 0,
     createdAt: Date.now(),
   };
-  const [messages,         setMessages]  = useState<ConversationMessage[]>([]);
-  // Skip the in-screen picker when the curated picker flow already chose a mind.
+  const [messages,         setMessages]  = useState<ConversationMessage[]>(
+    resumeChat ? resumeChat.messages.map(m => ({ ...m })) : [],
+  );
+  // Resumed chats skip the picker and the opening-message fetch — we already
+  // have the full conversation. Curated picker flow jumps straight to loading.
   const [convState,        setConvState] = useState<ConvState>(
+    resumeChat ? 'idle' :
     initialMindId === undefined ? 'selecting' : 'loading',
   );
   const [draft,            setDraft]     = useState('');
   const [error,            setError]     = useState<string | null>(null);
-  const [savingReflection, setSaving]    = useState(false);
-  const [selectedMindId,   setSelectedMindId] = useState<string | null>(null);
+  const [selectedMindId,   setSelectedMindId] = useState<string | null>(
+    resumeChat ? resumeChat.mindId : null,
+  );
+  const [showSaveSheet,    setShowSaveSheet]    = useState(false);
+  const [savingForLater,   setSavingForLater]   = useState(false);
   const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Voice-note recording (tap mic → record → tap stop → transcribe → auto-send)
+  const [isRecording,     setIsRecording]     = useState(false);
+  const [isTranscribing,  setIsTranscribing]  = useState(false);
+  const [recordingSecs,   setRecordingSecs]   = useState(0);
+  const voiceRecordingRef = useRef<Audio.Recording | null>(null);
+  const voiceTimerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // Track when the current conversation started so ConversationHistoryService
-  // can key records by mind+startedAt. Reset via handleBackToPicker.
-  const conversationStartedAtRef = useRef<number>(0);
+  // can key records by mind+startedAt. Reset via handleBackToPicker. When
+  // resuming a saved chat we inherit the original startedAt so the saved
+  // record is updated in place (same id) rather than duplicated.
+  const conversationStartedAtRef = useRef<number>(resumeChat?.startedAt ?? 0);
+  // Stable id for re-saving the same chat (only set when resuming).
+  const resumeChatIdRef = useRef<string | null>(resumeChat?.id ?? null);
 
   // ── Handoff state (Companion-only) ─────────────────────────────────────────
   // Kept in a ref so handleSend's async closure reads the latest value without
@@ -471,7 +525,9 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
   };
 
   const activeRef       = useRef(true);
-  const messagesRef     = useRef<ConversationMessage[]>([]);
+  const messagesRef     = useRef<ConversationMessage[]>(
+    resumeChat ? resumeChat.messages.map(m => ({ ...m })) : [],
+  );
   const scrollRef       = useRef<ScrollView>(null);
   const inputRef        = useRef<TextInput>(null);
   const apiKeyRef       = useRef('');
@@ -533,7 +589,9 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
   };
 
   // Auto-start when the caller handed us an initialMindId (curated picker flow).
+  // Skipped when resuming a saved chat — we already have the full conversation.
   useEffect(() => {
+    if (resumeChat) return;
     if (initialMindId !== undefined) {
       startConversation(initialMindId);
     }
@@ -619,12 +677,95 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
     }
   };
 
+  // ── Voice-note recording ────────────────────────────────────────────────
+  // Uses expo-av directly (independent of HomeScreen's journaling recorder
+  // singleton). Tap mic → record; tap stop → transcribe & auto-send.
+  useEffect(() => {
+    return () => {
+      voiceRecordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    };
+  }, []);
+
+  const startVoiceRecording = async () => {
+    if (convState !== 'idle' || isRecording || isTranscribing) return;
+    try {
+      const { status: existing } = await Audio.getPermissionsAsync();
+      let granted = existing === 'granted';
+      if (!granted) {
+        const { status } = await Audio.requestPermissionsAsync();
+        granted = status === 'granted';
+      }
+      if (!granted) {
+        setError('Microphone permission denied.');
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      );
+      voiceRecordingRef.current = recording;
+      const startedAt = Date.now();
+      setRecordingSecs(0);
+      setIsRecording(true);
+      Keyboard.dismiss();
+      voiceTimerRef.current = setInterval(() => {
+        setRecordingSecs(Math.floor((Date.now() - startedAt) / 1000));
+      }, 250);
+    } catch {
+      setError('Could not start recording.');
+    }
+  };
+
+  const teardownRecording = async (): Promise<string | null> => {
+    if (voiceTimerRef.current) { clearInterval(voiceTimerRef.current); voiceTimerRef.current = null; }
+    const rec = voiceRecordingRef.current;
+    voiceRecordingRef.current = null;
+    setIsRecording(false);
+    if (!rec) return null;
+    try {
+      await rec.stopAndUnloadAsync();
+    } catch { /* best-effort */ }
+    Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true }).catch(() => {});
+    return rec.getURI() ?? null;
+  };
+
+  const cancelVoiceRecording = async () => {
+    await teardownRecording();
+    setRecordingSecs(0);
+  };
+
+  const stopVoiceRecordingAndSend = async () => {
+    if (!isRecording) return;
+    const finalSecs = recordingSecs;
+    const uri = await teardownRecording();
+    setRecordingSecs(0);
+    // Skip very short taps
+    if (!uri || finalSecs < 1) return;
+    setIsTranscribing(true);
+    try {
+      const text = await transcribeAudio(uri);
+      const trimmed = text.trim();
+      setIsTranscribing(false);
+      if (!trimmed) return;
+      await handleSend(trimmed);
+    } catch {
+      setIsTranscribing(false);
+      setError('Could not transcribe voice note.');
+    }
+  };
+
   // ── Send message ──────────────────────────────────────────────────────
-  const handleSend = async () => {
-    const text = draft.trim();
+  // overrideText: when provided (e.g. from a voice note), uses that instead of
+  // the draft TextInput value and skips clearing the input.
+  const handleSend = async (overrideText?: string) => {
+    const text = (overrideText ?? draft).trim();
     if (!text || convState !== 'idle') return;
 
-    setDraft('');
+    if (overrideText === undefined) setDraft('');
     setError(null);
     setConvState('thinking');
 
@@ -707,20 +848,8 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
 
   const handleClose = async () => {
     const userMessages = messagesRef.current.filter(m => m.role === 'user');
-    if (userMessages.length > 0 && apiKeyRef.current) {
-      setSaving(true);
-      try {
-        const reflection = await generateReflection(
-          effectiveSummary, messagesRef.current, apiKeyRef.current, 'chat',
-        );
-        // Only persist reflection if a real summary exists (not a stub)
-        if (summary) {
-          await StorageService.saveSummary({ ...effectiveSummary, reflectionText: reflection });
-        }
-      } catch { /* reflection is best-effort */ }
-    }
-    // Record the conversation for UserContextV2.recentMinds — no-op when
-    // skipped when there were no user turns.
+
+    // Record the conversation for recent-minds context regardless of outcome.
     if (conversationStartedAtRef.current > 0) {
       recordCompletedConversation({
         mindId: selectedMindId,
@@ -729,6 +858,38 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
         endedAt: Date.now(),
       }).catch(() => {});
     }
+
+    // Standalone chats (no journal day) have nowhere to attach a saved chat,
+    // so skip the prompt. Same if nothing was said yet.
+    if (userMessages.length === 0 || !summary) { onClose(); return; }
+
+    setShowSaveSheet(true);
+  };
+
+  const handleSaveForLater = async () => {
+    if (conversationStartedAtRef.current === 0) { onClose(); return; }
+    setSavingForLater(true);
+    try {
+      const saveMessages: SavedChatMessage[] = messagesRef.current.map(m => ({
+        id: m.id,
+        role: m.role as 'user' | 'assistant',
+        text: m.text,
+        timestamp: m.timestamp,
+      }));
+      const mindKey = selectedMindId ?? 'companion';
+      const id = resumeChatIdRef.current
+        ?? `conv_${mindKey}_${conversationStartedAtRef.current}`;
+      const shape = await summarizeChatShape(saveMessages);
+      await saveChat({
+        id,
+        mindId: selectedMindId,
+        date: effectiveSummary.date,
+        startedAt: conversationStartedAtRef.current,
+        messages: saveMessages,
+        shape,
+      });
+    } catch { /* best-effort */ }
+    setSavingForLater(false);
     onClose();
   };
 
@@ -756,33 +917,20 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={insets.top + 8}
+      keyboardVerticalOffset={0}
     >
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
-          {/* Back to mind picker */}
-          <TouchableOpacity
-            onPress={handleBackToPicker}
-            style={styles.backBtn}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Feather name="chevron-left" size={20} color="rgba(152,212,250,0.70)" />
-          </TouchableOpacity>
-
-          <View style={{ flex: 1, marginLeft: 4 }}>
+          <View style={{ flex: 1 }}>
             <View style={styles.headerNameRow}>
-              {activeMind && (
-                <Text style={styles.headerSymbol}>{activeMind.symbol}</Text>
-              )}
               <Text style={styles.headerTitle}>
                 {activeMind ? activeMind.name : 'Reflection'}
               </Text>
             </View>
-            <Text style={styles.headerSub}>{formatDate(effectiveSummary.date)}</Text>
           </View>
           <View style={styles.headerActions}>
-            {onCallRequested && !savingReflection && (
+            {onCallRequested && (
               <TouchableOpacity
                 onPress={() => onCallRequested(selectedMindId)}
                 style={styles.callBtn}
@@ -791,21 +939,13 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
                 <Feather name="phone" size={16} color="rgba(152,212,250,0.70)" />
               </TouchableOpacity>
             )}
-            {savingReflection ? (
-              <View style={styles.savingRow}>
-                <ActivityIndicator size="small" color="rgba(152,212,250,0.65)" />
-                <Text style={styles.savingText}>Saving…</Text>
-              </View>
-            ) : (
-              <TouchableOpacity
-                onPress={handleClose}
-                style={styles.closeBtn}
-                disabled={savingReflection}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Feather name="x" size={18} color="rgba(152,212,250,0.70)" />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name="x" size={18} color="rgba(152,212,250,0.70)" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -825,7 +965,7 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
         <ScrollView
           ref={scrollRef}
           style={styles.thread}
-          contentContainerStyle={styles.threadContent}
+          contentContainerStyle={[styles.threadContent, { flexGrow: 1, justifyContent: 'flex-end' }]}
           showsVerticalScrollIndicator={false}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
@@ -896,30 +1036,113 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
         </ScrollView>
 
         {/* Input bar */}
-        <View style={[styles.inputBar, { paddingBottom: Math.max(12, insets.bottom) }]}>
-          <TextInput
-            ref={inputRef}
-            style={styles.textInput}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={convState === 'loading' ? 'Loading…' : 'Type a message…'}
-            placeholderTextColor="rgba(152,212,250,0.35)"
-            multiline
-            maxLength={1000}
-            editable={convState === 'idle'}
-            returnKeyType="default"
-            blurOnSubmit={false}
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!canSend}
-            activeOpacity={0.75}
-          >
-            <Feather name="arrow-up" size={18} color={canSend ? '#fff' : 'rgba(224,242,254,0.30)'} />
-          </TouchableOpacity>
+        <View style={[styles.inputBar, { paddingBottom: keyboardHeight > 0 ? 10 : Math.max(12, insets.bottom) }]}>
+          {isRecording ? (
+            <View style={styles.recordingBar}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingTimer}>{formatRecordingTime(recordingSecs)}</Text>
+              <Text style={styles.recordingHint}>Recording… tap stop to send</Text>
+            </View>
+          ) : isTranscribing ? (
+            <View style={styles.recordingBar}>
+              <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
+              <Text style={styles.recordingHint}>Transcribing…</Text>
+            </View>
+          ) : (
+            <TextInput
+              ref={inputRef}
+              style={styles.textInput}
+              value={draft}
+              onChangeText={setDraft}
+              placeholder={convState === 'loading' ? 'Loading…' : 'Type a message…'}
+              placeholderTextColor="rgba(152,212,250,0.35)"
+              multiline
+              maxLength={1000}
+              editable={convState === 'idle'}
+              returnKeyType="default"
+              blurOnSubmit={false}
+            />
+          )}
+
+          {isRecording ? (
+            <>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={cancelVoiceRecording}
+                activeOpacity={0.75}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="x" size={18} color="rgba(224,242,254,0.75)" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sendBtn}
+                onPress={stopVoiceRecordingAndSend}
+                activeOpacity={0.75}
+              >
+                <Feather name="arrow-up" size={18} color="#fff" />
+              </TouchableOpacity>
+            </>
+          ) : canSend ? (
+            <TouchableOpacity
+              style={styles.sendBtn}
+              onPress={() => handleSend()}
+              disabled={isTranscribing}
+              activeOpacity={0.75}
+            >
+              <Feather name="arrow-up" size={18} color="#fff" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.micBtn, (convState !== 'idle' || isTranscribing) && styles.micBtnDisabled]}
+              onPress={startVoiceRecording}
+              disabled={convState !== 'idle' || isTranscribing}
+              activeOpacity={0.75}
+            >
+              <Feather
+                name="mic"
+                size={18}
+                color={convState === 'idle' && !isTranscribing
+                  ? 'rgba(224,242,254,0.90)'
+                  : 'rgba(224,242,254,0.35)'}
+              />
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
+
+      {/* Continue-later sheet */}
+      {showSaveSheet && (
+        <View style={postChat.backdrop}>
+          <View style={postChat.sheet}>
+            <Text style={postChat.title}>Continue later?</Text>
+            <Text style={postChat.prompt}>
+              Save this chat so you can pick up from where you left off. It'll
+              show up in today's reflection history.
+            </Text>
+            <View style={postChat.btnRow}>
+              <TouchableOpacity
+                style={[postChat.btn, postChat.btnPrimary]}
+                onPress={handleSaveForLater}
+                disabled={savingForLater}
+                activeOpacity={0.85}
+              >
+                {savingForLater
+                  ? <ActivityIndicator size="small" color="rgba(224,242,254,0.90)" />
+                  : <Text style={postChat.btnTextPrimary}>Save for later</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={postChat.btn}
+                onPress={onClose}
+                disabled={savingForLater}
+                activeOpacity={0.75}
+              >
+                <Text style={postChat.btnText}>Discard</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -1042,14 +1265,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12,
   },
   headerNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerSymbol: { fontSize: 18 },
   headerTitle: {
     fontSize: 20, fontWeight: '500',
     color: 'rgba(224,242,254,0.95)', fontFamily: 'Baskerville',
-  },
-  headerSub: {
-    fontSize: 12, color: 'rgba(152,212,250,0.60)',
-    fontFamily: 'GillSans-Light', marginTop: 2,
   },
   backBtn: {
     width: 34, height: 34, borderRadius: 17,
@@ -1130,5 +1348,106 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: 'rgba(9,41,173,0.20)', borderColor: 'rgba(152,212,250,0.10)',
+  },
+  micBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(152,212,250,0.10)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.20)',
+  },
+  micBtnDisabled: {
+    backgroundColor: 'rgba(152,212,250,0.04)',
+    borderColor: 'rgba(152,212,250,0.08)',
+  },
+  cancelBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(152,212,250,0.06)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.15)',
+  },
+  recordingBar: {
+    flex: 1, minHeight: 44,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 10,
+    backgroundColor: 'rgba(233,69,96,0.08)',
+    borderWidth: 1, borderColor: 'rgba(233,69,96,0.28)',
+    borderRadius: 22,
+  },
+  recordingDot: {
+    width: 9, height: 9, borderRadius: 5,
+    backgroundColor: '#e63946',
+  },
+  recordingTimer: {
+    fontSize: 14, fontFamily: 'GillSans-Light',
+    color: 'rgba(224,242,254,0.90)',
+    minWidth: 44,
+  },
+  recordingHint: {
+    fontSize: 12, fontFamily: 'GillSans-Light',
+    color: 'rgba(224,242,254,0.55)',
+    flexShrink: 1,
+  },
+});
+
+const postChat = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(2,6,14,0.82)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: '#02060E',
+    borderTopLeftRadius: 22, borderTopRightRadius: 22,
+    borderTopWidth: 1, borderTopColor: 'rgba(152,212,250,0.18)',
+    padding: 24, paddingBottom: 36,
+    maxHeight: '70%',
+  },
+  title: {
+    fontSize: 17, fontFamily: 'Baskerville',
+    color: 'rgba(224,242,254,0.95)',
+    marginBottom: 14,
+  },
+  scroll: { maxHeight: 220, marginBottom: 16 },
+  body: {
+    fontSize: 14, lineHeight: 22,
+    color: 'rgba(224,242,254,0.80)',
+    fontFamily: 'GillSans-Light',
+  },
+  prompt: {
+    fontSize: 13,
+    color: 'rgba(152,212,250,0.65)',
+    fontFamily: 'GillSans-Light',
+    marginBottom: 14,
+  },
+  btnRow: { flexDirection: 'row', gap: 10 },
+  btn: {
+    flex: 1, paddingVertical: 12,
+    borderRadius: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(152,212,250,0.20)',
+    backgroundColor: 'rgba(9,41,173,0.12)',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  btnPrimary: {
+    backgroundColor: 'rgba(9,41,173,0.55)',
+    borderColor: 'rgba(152,212,250,0.35)',
+  },
+  btnText: {
+    fontSize: 13, color: 'rgba(152,212,250,0.80)',
+    fontFamily: 'GillSans-Light',
+  },
+  btnTextPrimary: {
+    fontSize: 13, color: 'rgba(224,242,254,0.95)',
+    fontFamily: 'GillSans-Light',
+  },
+  savingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(2,6,14,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+    gap: 10,
+  },
+  savingText: {
+    fontSize: 13, color: 'rgba(152,212,250,0.70)',
+    fontFamily: 'GillSans-Light',
   },
 });

@@ -70,14 +70,35 @@ export async function getWarmLine(): Promise<WarmLine> {
   const reentry = await getPendingReentry().catch(() => null);
   if (reentry) return { text: REENTRY_LINE, tapTarget: 'reentry' };
 
-  // 2. Same-day cache hit
+  // 2. First note today — live, bypasses cache so the line updates the
+  //    moment the user's first transcript of the day lands. Rotates between
+  //    a static line and a quote of the last note so the tier doesn't read
+  //    stale as notes accumulate. Skipped once today's summary exists so
+  //    richer lines take over.
+  const todaySummary = await StorageService.getTodaySummary().catch(() => null);
+  if (!todaySummary) {
+    const todayEntries = await StorageService.getTodayTranscripts().catch(() => []);
+    if (todayEntries.length > 0) {
+      const lastEntry = todayEntries[todayEntries.length - 1];
+      return pickWarmLine({
+        hasReentry: false,
+        hasTodayFirstNote: true,
+        todayNoteCount: todayEntries.length,
+        lastNoteText: lastEntry?.text ?? null,
+        yesterdaySummary: null,
+        patternsReport: null,
+      });
+    }
+  }
+
+  // 3. Same-day cache hit
   const today = localDateStr();
   const cached = await readCache();
   if (cached?.date === today) {
     return { text: cached.text, tapTarget: cached.tapTarget };
   }
 
-  // 3. Compute
+  // 4. Compute
   const yesterdayStr = localDateStr(new Date(Date.now() - 86_400_000));
   const [yesterdaySummary, patternsReport] = await Promise.all([
     StorageService.getSummaryForDate(yesterdayStr).catch(() => null),
@@ -86,6 +107,7 @@ export async function getWarmLine(): Promise<WarmLine> {
 
   const line = pickWarmLine({
     hasReentry: false,
+    hasTodayFirstNote: false,
     yesterdaySummary,
     patternsReport,
   });

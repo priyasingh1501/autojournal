@@ -14,8 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { openaiImageProxy, claudeProxy } from './AIProxy';
 import { StorageService } from './StorageService';
 import { fetchShortImageUrl } from './SupabaseService';
+import { supabase } from './AuthService';
 import { WisdomShort } from '../types';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config/keys';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -151,9 +151,6 @@ export async function getCachedImageUri(shortId: string): Promise<string | null>
  * Fire-and-forget — caller should .catch() any errors.
  */
 async function _uploadToSupabase(shortId: string, localPath: string): Promise<void> {
-  const { createClient } = await import('@supabase/supabase-js');
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
   // Read file as base64 and convert to Uint8Array for upload
   const base64 = await FileSystem.readAsStringAsync(localPath, {
     encoding: FileSystem.EncodingType.Base64,
@@ -170,13 +167,72 @@ async function _uploadToSupabase(shortId: string, localPath: string): Promise<vo
   const { data } = supabase.storage.from('wisdom-images').getPublicUrl(filePath);
   const publicUrl = data.publicUrl;
 
-  // Write the public URL back to the wisdom_shorts row
-  await supabase
+  // Write the public URL back to the wisdom_shorts row.
+  // .select() + row-count check is required because RLS blocks silently
+  // (0 rows affected, no error) — we need to surface that as a real failure.
+  const { data: updated, error: updateError } = await supabase
     .from('wisdom_shorts')
     .update({ image_url: publicUrl })
-    .eq('id', shortId);
+    .eq('id', shortId)
+    .select('id');
+
+  if (updateError) throw new Error(`wisdom_shorts update failed: ${updateError.message}`);
+  if (!updated || updated.length === 0) {
+    throw new Error(`wisdom_shorts update matched 0 rows for ${shortId} (likely RLS)`);
+  }
 
   console.log('[WisdomImage] Uploaded to Supabase:', shortId, '→', publicUrl);
+}
+
+/**
+ * Walks the device's local wisdom-image cache and uploads every image to
+ * Supabase Storage (+ sets image_url on the corresponding wisdom_shorts row)
+ * that isn't already persisted server-side.
+ *
+ * Used as a one-shot backfill after RLS write policies were added — prior to
+ * that fix, on-device generations only lived in the local cache.
+ *
+ * Reports running progress via the optional `onProgress` callback.
+ */
+export async function backfillCachedImagesToSupabase(
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ uploaded: number; skipped: number; failed: number; total: number; firstError?: string }> {
+  const allKeys = await AsyncStorage.getAllKeys();
+  const imgKeys = allKeys.filter(k => k.startsWith(IMAGE_CACHE_KEY));
+
+  let uploaded = 0;
+  let skipped  = 0;
+  let failed   = 0;
+  let firstError: string | undefined;
+
+  for (let i = 0; i < imgKeys.length; i++) {
+    const key     = imgKeys[i];
+    const shortId = key.slice(IMAGE_CACHE_KEY.length);
+    onProgress?.(i, imgKeys.length);
+
+    try {
+      const localPath = await AsyncStorage.getItem(key);
+      if (!localPath) { skipped++; continue; }
+
+      const info = await FileSystem.getInfoAsync(localPath);
+      if (!info.exists) { skipped++; continue; }
+
+      // Skip if Supabase already has this image (don't re-upload)
+      const existing = await fetchShortImageUrl(shortId);
+      if (existing) { skipped++; continue; }
+
+      await _uploadToSupabase(shortId, localPath);
+      uploaded++;
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      console.warn('[WisdomImage] Backfill failed for', shortId, msg);
+      if (!firstError) firstError = `${shortId}: ${msg}`;
+      failed++;
+    }
+  }
+
+  onProgress?.(imgKeys.length, imgKeys.length);
+  return { uploaded, skipped, failed, total: imgKeys.length, firstError };
 }
 
 /**

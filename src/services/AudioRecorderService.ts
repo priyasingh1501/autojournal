@@ -9,10 +9,13 @@ type StatusCallback    = (status: RecordingStatus) => void;
 type PendingClipCallback = (clip: PendingClip) => void;
 type ErrorCallback     = (error: string) => void;
 
+const MAX_RECORDING_MS = 25 * 60 * 1000; // 25 minutes
+
 class AudioRecorderService {
   private recording: Audio.Recording | null = null;
   private recordingStartTime = 0;
   private currentStatus: RecordingStatus = 'idle';
+  private autoStopTimer: ReturnType<typeof setTimeout> | null = null;
 
   private onStatus:      StatusCallback      = () => {};
   private onPendingClip: PendingClipCallback = () => {};
@@ -109,6 +112,7 @@ class AudioRecorderService {
       this.recording = recording;
       this.recordingStartTime = Date.now();
       this.setStatus('recording');
+      this.autoStopTimer = setTimeout(() => this.stopMonitoring(), MAX_RECORDING_MS);
     } catch (err) {
       this.onError(`Failed to start recording: ${err}`);
     }
@@ -116,6 +120,7 @@ class AudioRecorderService {
 
   // Tap again → stop, save one clip
   async stopMonitoring(): Promise<void> {
+    if (this.autoStopTimer) { clearTimeout(this.autoStopTimer); this.autoStopTimer = null; }
     const recordingRef = this.recording;
     const startTime    = this.recordingStartTime;
     this.recording     = null;

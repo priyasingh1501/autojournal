@@ -28,9 +28,13 @@ interface Props {
   onOpenHome?: () => void;
   /** Force a reload (e.g. after adding an entry elsewhere). */
   refreshKey?: number;
+  /** Called when the user taps "Generate summary". */
+  onGenerate?: () => void;
+  /** True while a summary is being generated. */
+  generating?: boolean;
 }
 
-export default function DayDigestView({ date, onOpenHome, refreshKey }: Props) {
+export default function DayDigestView({ date, onOpenHome, refreshKey, onGenerate, generating }: Props) {
   const [digest, setDigest]         = useState<DayDigest | null>(null);
   const [intentions, setIntentions] = useState<Intention[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -121,9 +125,20 @@ export default function DayDigestView({ date, onOpenHome, refreshKey }: Props) {
         </View>
       )}
 
-      <Text style={styles.footer}>
-        Your reflection will be ready tonight at midnight.
-      </Text>
+      {generating ? (
+        <View style={styles.footerRow}>
+          <ActivityIndicator size="small" color="rgba(152,212,250,0.55)" style={{ marginRight: 8 }} />
+          <Text style={styles.footer}>Generating…</Text>
+        </View>
+      ) : (
+        <Text style={styles.footer}>
+          Your reflection will be ready tonight at midnight.
+          {onGenerate ? (
+            <Text onPress={onGenerate} style={styles.footerLink}> Generate now</Text>
+          ) : null}
+          {onGenerate ? ' if you want to read it right away.' : null}
+        </Text>
+      )}
     </View>
   );
 }
@@ -216,6 +231,14 @@ const styles = StyleSheet.create({
     fontFamily: 'GillSans-Light',
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  footerRow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginTop: 24, justifyContent: 'center',
+  },
+  footerLink: {
+    color: 'rgba(152,212,250,0.85)',
+    textDecorationLine: 'underline',
   },
 
   // Empty state

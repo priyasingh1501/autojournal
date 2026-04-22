@@ -11,7 +11,9 @@ import { Feather } from '@expo/vector-icons';
 export interface TodayCardData {
   entryCount: number;
   dominantEmotions: string[];
+  yesterdayEmotions: string[];
   intentionsMentioned: Array<{ id: string; text: string; shortLabel: string; category: string }>;
+  activeIntentions: Array<{ id: string; text: string; shortLabel: string; category: string }>;
   lastEntryAt: number | null;
 }
 
@@ -22,7 +24,6 @@ interface Props {
 const { height: SCREEN_H } = Dimensions.get('window');
 
 function entryLabel(n: number): string {
-  if (n === 0) return 'nothing yet today';
   if (n === 1) return '1 entry today';
   return `${n} entries today`;
 }
@@ -53,49 +54,67 @@ export default function TodayCard({ data }: Props) {
   if (SCREEN_H < 700) return null;
   if (!data) return null;
 
-  const hour = new Date().getHours();
-  if (data.entryCount === 0 && hour < 10) return null;
-
   const timeStr = data.lastEntryAt ? relativeTime(data.lastEntryAt) : '';
+
+  if (data.entryCount === 0) {
+    return (
+      <View style={s.card}>
+        <View style={s.inner}>
+
+          {data.activeIntentions.length > 0 && (
+            <View style={s.block}>
+              <Text style={s.nudgeText}>Did you touch on any of your intentions?</Text>
+              {data.activeIntentions.map(i => (
+                <View key={i.id} style={s.intentionRow}>
+                  <Feather name="target" size={11} color="rgba(152,212,250,0.35)" />
+                  <Text style={[s.intentionText, s.intentionTextDim]} numberOfLines={1}>{i.text}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={s.card}>
+      <View style={s.inner}>
 
-      {/* Entry count + last entry time */}
-      <View style={s.topRow}>
-        <Animated.Text style={[s.countText, { transform: [{ scale: countScale }] }]}>
-          {entryLabel(data.entryCount)}
-        </Animated.Text>
-        {!!timeStr && <Text style={s.timeText}>{timeStr}</Text>}
-      </View>
+        <View style={s.topRow}>
+          <Animated.Text style={[s.countText, { transform: [{ scale: countScale }] }]}>
+            {entryLabel(data.entryCount)}
+          </Animated.Text>
+          {!!timeStr && <Text style={s.timeText}>{timeStr}</Text>}
+        </View>
 
-      {/* Emotions — matches DayDigestView "FEELING" block */}
-      {data.dominantEmotions.length > 0 && (
-        <View style={s.block}>
-          <Text style={s.blockLabel}>FEELING</Text>
-          <View style={s.chipsRow}>
-            {data.dominantEmotions.map(e => (
-              <View key={e} style={s.chip}>
-                <Text style={s.chipText}>{e}</Text>
+        {data.dominantEmotions.length > 0 && (
+          <View style={s.block}>
+            <Text style={s.blockLabel}>FEELING</Text>
+            <View style={s.chipsRow}>
+              {data.dominantEmotions.map(e => (
+                <View key={e} style={s.chip}>
+                  <Text style={s.chipText}>{e}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {data.intentionsMentioned.length > 0 && (
+          <View style={s.block}>
+            <Text style={s.blockLabel}>INTENTIONS TOUCHED</Text>
+            {data.intentionsMentioned.map(i => (
+              <View key={i.id} style={s.intentionRow}>
+                <Feather name="target" size={11} color="rgba(152,212,250,0.65)" />
+                <Text style={s.intentionText} numberOfLines={1}>{i.text}</Text>
               </View>
             ))}
           </View>
-        </View>
-      )}
+        )}
 
-      {/* Intentions — matches DayDigestView "INTENTIONS TOUCHED" block */}
-      {data.intentionsMentioned.length > 0 && (
-        <View style={s.block}>
-          <Text style={s.blockLabel}>INTENTIONS TOUCHED</Text>
-          {data.intentionsMentioned.map(i => (
-            <View key={i.id} style={s.intentionRow}>
-              <Feather name="target" size={12} color="rgba(152,212,250,0.70)" />
-              <Text style={s.intentionText} numberOfLines={1}>{i.text}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
+      </View>
     </View>
   );
 }
@@ -103,13 +122,51 @@ export default function TodayCard({ data }: Props) {
 const s = StyleSheet.create({
   card: {
     backgroundColor: 'rgba(2,6,14,0.90)',
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(152,212,250,0.12)',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 10,
+    borderColor: 'rgba(152,212,250,0.16)',
   },
+
+  inner: {
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    gap: 12,
+  },
+
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(152,212,250,0.10)',
+  },
+
+  // ── Empty state ──────────────────────────────────────────────────────────────
+
+  emptyHeading: {
+    fontSize: 17,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(224,242,254,0.88)',
+    letterSpacing: -0.2,
+  },
+
+  yesterdayLabel: {
+    fontSize: 13,
+    lineHeight: 20,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.55)',
+  },
+
+  yesterdayEmotions: {
+    color: 'rgba(224,242,254,0.65)',
+  },
+
+  nudgeText: {
+    fontSize: 12,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.60)',
+    letterSpacing: 0.1,
+    marginBottom: 2,
+  },
+
+  // ── Active state ─────────────────────────────────────────────────────────────
 
   topRow: {
     flexDirection: 'row',
@@ -119,9 +176,9 @@ const s = StyleSheet.create({
 
   countText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'GillSans-Light',
-    color: 'rgba(224,242,254,0.55)',
+    color: 'rgba(224,242,254,0.70)',
   },
 
   timeText: {
@@ -130,13 +187,13 @@ const s = StyleSheet.create({
     color: 'rgba(152,212,250,0.40)',
   },
 
-  block: { gap: 6 },
+  block: { gap: 8 },
 
   blockLabel: {
     fontSize: 10,
-    letterSpacing: 0.8,
+    letterSpacing: 1.0,
     fontWeight: '500',
-    color: 'rgba(152,212,250,0.55)',
+    color: 'rgba(152,212,250,0.50)',
     fontFamily: 'GillSans-Light',
   },
 
@@ -165,8 +222,8 @@ const s = StyleSheet.create({
   intentionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 2,
+    gap: 10,
+    paddingVertical: 3,
   },
 
   intentionText: {
@@ -175,5 +232,9 @@ const s = StyleSheet.create({
     lineHeight: 19,
     color: 'rgba(224,242,254,0.85)',
     fontFamily: 'GillSans-Light',
+  },
+
+  intentionTextDim: {
+    color: 'rgba(224,242,254,0.50)',
   },
 });

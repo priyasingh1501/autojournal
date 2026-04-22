@@ -348,6 +348,28 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
     setError(null);
 
     try {
+      // If the app-startup registerGlobals() lost the race against the Android
+      // native bridge, RTCPeerConnection will be undefined and the LiveKit
+      // internals would throw "Cannot read property 'prototype' of undefined".
+      // Lazily retry just the WebRTC global registration here — by now the
+      // native module is definitely loaded. We deliberately call the underlying
+      // @livekit/react-native-webrtc registerGlobals (NOT the LiveKit wrapper)
+      // because:
+      //   • it's purely idempotent — just reassigns global.RTCPeerConnection etc.
+      //   • it skips setupNativeEvents (no duplicate native listeners)
+      //   • it skips iosCategoryEnforce (no double-wrap of getUserMedia)
+      if (typeof (global as any).RTCPeerConnection === 'undefined') {
+        try {
+          const webrtc = require('@livekit/react-native-webrtc');
+          webrtc.registerGlobals();
+        } catch (e) {
+          console.warn('[TalkScreenV2] webrtc registerGlobals retry failed:', e);
+        }
+        if (typeof (global as any).RTCPeerConnection === 'undefined') {
+          throw new Error('Voice calls are not available — please restart the app and try again.');
+        }
+      }
+
       if (!ELEVENLABS_AGENT_ID) {
         throw new Error(
           'ELEVENLABS_AGENT_ID is not set.\n' +

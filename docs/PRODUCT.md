@@ -1218,13 +1218,10 @@
 #### AppSettings
 ```
 {
-  vadThreshold: number           // -55, -45, -35, or -25
-  silenceDuration: number        // 1.0, 1.5, 2.0, or 3.0
+  summaryTime: string            // HH:MM local, default "21:00"
   batchSize: number              // Number of clips per batch
-  openaiApiKey?: string          // Legacy — no longer used
-  anthropicApiKey?: string       // Legacy — no longer used
-  elevenLabsApiKey?: string      // Legacy — no longer used
-  elevenLabsVoiceId?: string     // Legacy — no longer used
+  notificationsEnabled?: boolean // Daily smart notification opt-in
+  notificationTime?: string      // HH:MM local, default "19:30"
 }
 ```
 

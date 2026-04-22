@@ -52,7 +52,60 @@ test('reentry wins over everything else', () => {
   assert.ok(/heavy/i.test(out.text), 'reentry line mentions heaviness');
 });
 
-// ── Priority 2: yesterday's summary ──────────────────────────────────────────
+// ── Priority 2: first note today ─────────────────────────────────────────────
+
+test('first-note-today wins over yesterday reflection when no reentry', () => {
+  const out = pickWarmLine({
+    hasReentry: false,
+    hasTodayFirstNote: true,
+    todayNoteCount: 1,
+    yesterdaySummary: makeSummary({
+      reflection: 'You started slow and softened by evening.',
+    }),
+    patternsReport: null,
+  });
+  assert.equal(out.tapTarget, 'none');
+  assert.ok(/thought down/i.test(out.text), 'first-note line acknowledges the capture');
+});
+
+test('first-note tier quotes the last note on even counts', () => {
+  const out = pickWarmLine({
+    hasReentry: false,
+    hasTodayFirstNote: true,
+    todayNoteCount: 2,
+    lastNoteText: 'Thinking about the call with Priya and what she said about boundaries.',
+    yesterdaySummary: null,
+    patternsReport: null,
+  });
+  assert.equal(out.tapTarget, 'none');
+  assert.ok(out.text.startsWith('"Thinking about the call with Priya'), 'uses a quote of the last note');
+  assert.ok(/say more/i.test(out.text));
+});
+
+test('first-note tier falls back to static line when quote is too short', () => {
+  const out = pickWarmLine({
+    hasReentry: false,
+    hasTodayFirstNote: true,
+    todayNoteCount: 2,
+    lastNoteText: 'ok',
+    yesterdaySummary: null,
+    patternsReport: null,
+  });
+  assert.equal(out.tapTarget, 'none');
+  assert.ok(/thought down/i.test(out.text));
+});
+
+test('reentry still beats first-note-today', () => {
+  const out = pickWarmLine({
+    hasReentry: true,
+    hasTodayFirstNote: true,
+    yesterdaySummary: null,
+    patternsReport: null,
+  });
+  assert.equal(out.tapTarget, 'reentry');
+});
+
+// ── Priority 3: yesterday's summary ──────────────────────────────────────────
 
 test('yesterday reflection first sentence wins when no reentry', () => {
   const out = pickWarmLine({

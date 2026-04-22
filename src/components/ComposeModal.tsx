@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   Image,
   ScrollView,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Alert,
@@ -35,6 +35,8 @@ interface Props {
   onExpensesExtracted?: () => void;
   /** If provided the modal opens in edit mode pre-filled with this entry */
   editEntry?: TranscriptEntry & { date: string };
+  /** Called after the entry is deleted in edit mode */
+  onDelete?: () => void;
   /**
    * If provided (YYYY-MM-DD), the new entry is saved to that date instead of today.
    * Has no effect when editEntry is set.
@@ -94,7 +96,7 @@ function getPastDates(count: number): string[] {
   });
 }
 
-export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtracted, editEntry, targetDate }: Props) {
+export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtracted, editEntry, onDelete, targetDate }: Props) {
   const insets = useSafeAreaInsets();
   const isEditing = !!editEntry;
   const [text, setText] = useState('');
@@ -103,14 +105,29 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // Pre-fill when opening in edit mode
   React.useEffect(() => {
-    if (visible && editEntry) {
-      setText(editEntry.text);
-      setPhotoUri(editEntry.photoUri ?? null);
-      setSelectedDate(editEntry.date);
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  // Reset or pre-fill whenever the modal opens
+  const prevVisibleRef = React.useRef(false);
+  React.useEffect(() => {
+    if (visible && !prevVisibleRef.current) {
+      if (editEntry) {
+        setText(editEntry.text);
+        setPhotoUri(editEntry.photoUri ?? null);
+        setSelectedDate(editEntry.date);
+      } else {
+        reset();
+      }
     }
+    prevVisibleRef.current = visible;
   }, [visible, editEntry]);
 
   const reset = () => {
@@ -124,6 +141,26 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
   const handleClose = () => {
     reset();
     onClose();
+  };
+
+  const handleDelete = () => {
+    if (!editEntry || !onDelete) return;
+    Alert.alert(
+      'Delete entry',
+      'Remove this entry? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await StorageService.deleteTranscript(editEntry.id, editEntry.date);
+            reset();
+            onDelete();
+          },
+        },
+      ],
+    );
   };
 
   const pickImage = () => {
@@ -285,13 +322,10 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
       onRequestClose={handleClose}
       onShow={() => setTimeout(() => inputRef.current?.focus(), 100)}
     >
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleClose} />
 
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { marginBottom: keyboardHeight }]}>
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={handleClose} style={styles.headerBtn}>
@@ -374,9 +408,17 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
                 {photoUri ? 'Change photo' : 'Add photo'}
               </Text>
             </TouchableOpacity>
+
+            {/* Delete — edit mode only */}
+            {isEditing && onDelete && (
+              <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+                <Feather name="trash-2" size={14} color="rgba(239,68,68,0.75)" />
+                <Text style={styles.deleteButtonText}>Delete entry</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* Date picker sheet — edit mode only */}
       <Modal
@@ -551,4 +593,22 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   photoButtonText: { color: 'rgba(152, 212, 250, 0.65)', fontSize: 14, fontWeight: '500', fontFamily: 'GillSans-Light' },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.25)',
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    alignSelf: 'flex-start',
+  },
+  deleteButtonText: {
+    color: 'rgba(239,68,68,0.80)',
+    fontSize: 14,
+    fontFamily: 'GillSans-Light',
+  },
 });

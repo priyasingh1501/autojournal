@@ -35,8 +35,6 @@ export interface DailySummary {
 }
 
 export interface AppSettings {
-  vadThreshold: number; // -60 to 0 dB, default -35
-  silenceDuration: number; // ms to wait before stopping, default 2000
   summaryTime: string; // HH:MM, default "21:00"
   batchSize: number; // auto-transcribe when pending clips reach this count, 0 = manual only
   ttsVoiceId?: string;          // expo-speech voice identifier for Chat mode

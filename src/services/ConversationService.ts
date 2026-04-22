@@ -5,6 +5,7 @@ import {
 } from '../types';
 import { getContextPromptForConversation, getUserContextV2 } from './UserContextService';
 import { getMindV2 } from './mindsConfigV2';
+import type { MindV2 } from '../types';
 import {
   selectOpening,
   SourceContext,
@@ -230,21 +231,27 @@ export async function sendMessage(
 async function adaptOpeningLine(
   originalLine: string,
   source: SourceContext | null | undefined,
+  dayContent?: string,
 ): Promise<string> {
-  if (!source) return originalLine;
+  if (!source && !dayContent) return originalLine;
   const system = `You are adapting a handcrafted opening line for a mind-conversation app. You will be given:
   1. The prewritten opening line (in the mind's voice)
   2. A short description of the context the user just tapped in from
+  3. (Optional) The actual content of the user's day summary — use specific details from this to make the opening feel personal
 
-Your job: adapt the opening line *slightly* so it acknowledges the context — without changing its voice, its cadence, or its essential content. The handcrafted wording is the product. You are tilting it, not rewriting it.
+Your job: adapt the opening line *slightly* so it acknowledges something real from the user's day — without changing its voice, its cadence, or its essential content. The handcrafted wording is the product. You are tilting it, not rewriting it.
 
 Rules:
 - Preserve the voice of the original line. If the line is spare, stay spare. If lyrical, stay lyrical.
-- Acknowledge the context implicitly. Do NOT restate the context back at the user.
+- Draw on a specific detail, emotion, or theme from the day content — do NOT be generic.
+- Do NOT restate or summarise the day back at the user. One implicit nod is enough.
 - Length: stay within 10% of the original line's length. No longer.
 - Return ONLY the adapted line. No preamble, no quotes, no explanation.`;
 
-  const userMsg = `Prewritten opening line: ${originalLine}\n\nSource context: ${source.description}`;
+  const parts = [`Prewritten opening line: ${originalLine}`];
+  if (source) parts.push(`Source context: ${source.description}`);
+  if (dayContent) parts.push(`Day content:\n${dayContent}`);
+  const userMsg = parts.join('\n\n');
 
   const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
@@ -262,12 +269,67 @@ Rules:
 }
 
 /**
+ * Generate a day-specific opening in the mind's voice. Used when the user
+ * taps "Get a new perspective" from a day summary — the model has read the
+ * actual day content and opens with something specific from it.
+ *
+ * Falls back to the handcrafted line on failure so the conversation always
+ * starts.
+ */
+async function generateDayAwareOpening(
+  mind: MindV2,
+  dayContent: string,
+  fallbackLine: string,
+): Promise<string> {
+  const system = `You are ${mind.name}. A user has just tapped "Get a new perspective" from their day summary and opened a conversation with you.
+
+Your voice and style:
+${mind.systemPrompt.split('\n').slice(0, 8).join('\n')}
+
+TASK
+Read the day summary carefully. Look for:
+- Conflict (with others or internal)
+- Frustration, irritation, or anger
+- Anxiety, worry, or stress
+- Recurring thoughts or patterns the person keeps returning to
+- Decisions being weighed or avoided
+- Ideas or plans that surfaced but weren't fully followed
+- Unresolved feelings — things named but not landed on
+- Anything left unresolved or weighing on them
+
+Then write an opening message that:
+1. Acknowledges the most charged thing you noticed — name it directly but without clinical language. Stay in your voice.
+2. Offers 2–3 specific threads from the day the person might want to explore — phrased as brief invitations, not a list. Weave them into the message naturally.
+3. Ends with a single open question that lets them choose where to start.
+
+Rules:
+- Do NOT summarise the whole day. Pick what has the most charge.
+- Stay in your characteristic voice and rhythm throughout.
+- Length: 3–5 sentences total.
+- Return ONLY the opening message. No preamble, no quotes.`;
+
+  const response = await claudeProxy.messages.create({
+    model: 'claude-haiku-4-5',
+    max_tokens: 400,
+    system,
+    messages: [{ role: 'user', content: `Day summary:\n${dayContent}` }],
+  });
+  const text = response.content
+    .filter((b: any) => b.type === 'text')
+    .map((b: any) => b.text)
+    .join('')
+    .trim()
+    .replace(/^["']|["']$/g, '');
+  return text || fallbackLine;
+}
+
+/**
  * Generate a warm, context-aware opening line when the conversation starts.
  *
- * Routes through the handcrafted opener pool in mindsConfigV2 (openingLines /
- * openingLinesWithContext / openingLinesDistress) — with at most one Haiku
- * adaptation pass when a source context is present. The model never writes
- * the opener from scratch; the handcrafted wording is the product.
+ * When coming from a day summary (journal tab), generates directly from the
+ * day content so the opening is specific to what the user experienced.
+ * All other surfaces use the handcrafted opener pool with an optional light
+ * adaptation pass.
  */
 export async function getOpeningMessage(
   summary: DailySummary,
@@ -275,7 +337,7 @@ export async function getOpeningMessage(
   mindId?: string | null,
   sourceContext?: SourceContext | null,
 ): Promise<string> {
-  void summary; void apiKey;
+  void apiKey;
   const v2 = getMindV2(mindId);
   if (!v2) throw new Error(`[ConversationService] unknown mindId: ${mindId}`);
   const ctx = await getUserContextV2().catch(() => null);
@@ -287,6 +349,37 @@ export async function getOpeningMessage(
     wellbeingState: wellbeing,
     tenureDays: tenure,
   });
+
+  // Day summary path: generate directly from day content instead of tilting
+  // a handcrafted line. Fallback to the picked line if generation fails.
+  if (sourceContext?.kind === 'day') {
+    const parts: string[] = [];
+
+    const prose = summary.insightText ?? summary.summary ?? summary.reflection ?? '';
+    if (prose) parts.push(prose.slice(0, 500));
+
+    if (summary.moodArc) {
+      const { morning, afternoon, evening } = summary.moodArc;
+      const arc = [morning && `morning: ${morning}`, afternoon && `afternoon: ${afternoon}`, evening && `evening: ${evening}`]
+        .filter(Boolean).join(' → ');
+      if (arc) parts.push(`Mood arc — ${arc}`);
+    }
+
+    if (summary.whatTheDayHeld?.length) {
+      const held = summary.whatTheDayHeld.map(r => `${r.label}: ${r.content}`).join('\n');
+      parts.push(`What the day held:\n${held}`);
+    }
+
+    const dayContent = parts.join('\n\n');
+    if (dayContent) {
+      try {
+        return await generateDayAwareOpening(v2, dayContent, pick.line);
+      } catch {
+        return pick.line;
+      }
+    }
+  }
+
   if (!pick.needsAdaptation) return pick.line;
   try {
     const adapted = await adaptOpeningLine(pick.line, sourceContext);
@@ -318,7 +411,7 @@ export async function generateReflection(
 
   const response = await claudeProxy.messages.create({
     model: 'claude-haiku-4-5',
-    max_tokens: 220,
+    max_tokens: 400,
     system: `You are a thoughtful journaling assistant writing a post-session reflection.
 The person just had a ${mode === 'call' ? 'voice call' : 'text chat'} conversation about their day.
 Write 3–5 sentences in second person ("You…") capturing:

@@ -36,6 +36,8 @@ import { renderInsightSections } from './InsightSections';
 import { StorageService } from '../services/StorageService';
 import { getShortsLibrary } from '../services/SupabaseService';
 import { buildFeed, flattenFeed, extractJournalSignal } from '../services/WisdomService';
+import type { SavedChat } from '../services/SavedChatService';
+import { MIND_DISPLAY_NAMES } from '../services/mindCuration';
 
 interface Props {
   item: DailySummary;
@@ -44,12 +46,16 @@ interface Props {
   goals: UserGoals | null;
   staleCount: number;
   generatingDate: string | null;
-  expanded: boolean;
-  breakdownGenerating: boolean;
   onGenerate: (date: string) => void;
   onDownload: (item: DailySummary) => void;
   onPerspective: (item: DailySummary) => void;
-  onToggleBreakdown: (date: string) => void;
+  savedChats?: SavedChat[];
+  onContinueChat?: (chatId: string) => void;
+}
+
+function mindDisplayName(mindId: string | null): string {
+  if (mindId === null) return MIND_DISPLAY_NAMES['companion'] ?? 'Companion';
+  return MIND_DISPLAY_NAMES[mindId] ?? mindId;
 }
 
 const markdownStyles = {
@@ -219,12 +225,11 @@ export default function NewDaySummaryView({
   goals,
   staleCount,
   generatingDate,
-  expanded,
-  breakdownGenerating,
   onGenerate,
   onDownload,
   onPerspective,
-  onToggleBreakdown,
+  savedChats,
+  onContinueChat,
 }: Props) {
 
   const moodHint = useMemo(() => {
@@ -372,6 +377,36 @@ export default function NewDaySummaryView({
           </View>
         )}
 
+        {/* Reflection history — saved chats the user can resume */}
+        {savedChats && savedChats.length > 0 ? (
+          <View style={styles.reflectionHistoryBlock}>
+            <Text style={styles.reflectionHistoryTitle}>Reflection history</Text>
+            {savedChats.map(chat => (
+              <View key={chat.id} style={styles.reflectionHistoryRow}>
+                <View style={styles.reflectionHistoryText}>
+                  <Text style={styles.reflectionHistoryMind}>
+                    Chat with {mindDisplayName(chat.mindId)}
+                  </Text>
+                  {chat.shape ? (
+                    <Text style={styles.reflectionHistoryShape} numberOfLines={2}>
+                      {chat.shape}
+                    </Text>
+                  ) : null}
+                </View>
+                {onContinueChat && (
+                  <TouchableOpacity
+                    style={styles.reflectionHistoryContinueBtn}
+                    onPress={() => onContinueChat(chat.id)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.reflectionHistoryContinueBtnText}>Continue</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {/* Primary CTA — inline so it reads as the natural next action */}
         <TouchableOpacity
           style={styles.perspectiveBtn}
@@ -382,42 +417,6 @@ export default function NewDaySummaryView({
           <Text style={styles.perspectiveBtnText}>Get a new perspective</Text>
         </TouchableOpacity>
 
-        {/* More about this day — disclosure wrapping the legacy breakdown */}
-        <TouchableOpacity
-          style={styles.disclosureRow}
-          onPress={() => onToggleBreakdown(item.date)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.disclosureLabel}>MORE ABOUT THIS DAY</Text>
-          {breakdownGenerating
-            ? <ActivityIndicator size="small" color="rgba(152,212,250,0.50)" />
-            : <Feather
-                name={expanded ? 'chevron-up' : 'chevron-down'}
-                size={13}
-                color="rgba(152,212,250,0.50)"
-              />}
-        </TouchableOpacity>
-
-        {expanded && (
-          <View style={styles.disclosureContent}>
-            {item.insightText ? (
-              <View style={styles.insightSection}>
-                {renderInsightSections(
-                  item.insightText,
-                  enabledTrackers,
-                  item.dailyMacros ?? mealMacrosByDate[item.date],
-                  goals,
-                  !!item.dailyMacros,
-                )}
-              </View>
-            ) : null}
-            {item.summary
-              ? <Markdown style={markdownStyles}>{item.summary}</Markdown>
-              : breakdownGenerating
-                ? <ActivityIndicator size="small" color="rgba(152,212,250,0.30)" style={{ marginVertical: 12 }} />
-                : null}
-          </View>
-        )}
 
         {/* Wisdom short — fire-and-forget; renders nothing if library unavailable */}
         <WisdomShortBlock summaryText={item.insightText ?? item.summary ?? ''} dayDate={item.date} />
@@ -501,9 +500,9 @@ const styles = StyleSheet.create({
 
   // Reflection
   reflectionProse: {
-    fontSize: 16, lineHeight: 25,
-    color: 'rgba(224, 242, 254, 0.92)',
-    fontFamily: 'Baskerville',
+    fontSize: 14, lineHeight: 21,
+    color: 'rgba(224, 242, 254, 0.88)',
+    fontFamily: 'GillSans-Light',
     marginBottom: 18,
   },
   reflectionFallback: {
@@ -572,6 +571,48 @@ const styles = StyleSheet.create({
     fontFamily: 'GillSans-Light',
   },
 
+  // Reflection history block
+  reflectionHistoryBlock: {
+    marginBottom: 20,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(152,212,250,0.10)',
+  },
+  reflectionHistoryTitle: {
+    fontSize: 14, fontFamily: 'Baskerville',
+    color: 'rgba(224,242,254,0.92)',
+    marginBottom: 10,
+  },
+  reflectionHistoryRow: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(152,212,250,0.10)',
+  },
+  reflectionHistoryText: { flex: 1 },
+  reflectionHistoryMind: {
+    fontSize: 13, fontFamily: 'GillSans-Light',
+    color: 'rgba(224,242,254,0.90)',
+    marginBottom: 2,
+  },
+  reflectionHistoryShape: {
+    fontSize: 12, lineHeight: 17,
+    color: 'rgba(152,212,250,0.70)',
+    fontFamily: 'GillSans-Light',
+    fontStyle: 'italic',
+  },
+  reflectionHistoryContinueBtn: {
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(9, 41, 173, 0.35)',
+    borderWidth: 1, borderColor: 'rgba(152, 212, 250, 0.30)',
+  },
+  reflectionHistoryContinueBtnText: {
+    fontSize: 12, fontFamily: 'GillSans-Light',
+    color: 'rgba(224,242,254,0.92)',
+  },
+
   // Perspective CTA
   perspectiveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -586,21 +627,6 @@ const styles = StyleSheet.create({
     fontFamily: 'GillSans-Light', letterSpacing: 0.2,
   },
 
-  // Disclosure
-  disclosureRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: 'rgba(152,212,250,0.10)',
-  },
-  disclosureLabel: {
-    fontSize: 10, fontWeight: '500',
-    color: 'rgba(152, 212, 250, 0.60)', letterSpacing: 0.8,
-    fontFamily: 'GillSans-Light',
-  },
-  disclosureContent: {
-    paddingTop: 4, paddingBottom: 10,
-  },
-  insightSection: { marginBottom: 8 },
 
   // Wisdom short block
   wisdomBlock: { marginTop: 20 },

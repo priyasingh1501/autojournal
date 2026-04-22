@@ -37,12 +37,10 @@ import * as Sharing from 'expo-sharing';
 
 import { DailySummary, DayMacros, TranscriptEntry, UserGoals } from '../types';
 import { StorageService } from '../services/StorageService';
-import {
-  generateDailySummary,
-  generateFullBreakdown,
-} from '../services/SummaryService';
+import { generateDailySummary } from '../services/SummaryService';
 import { SubscriptionService } from '../services/SubscriptionService';
 import PaywallModal from '../components/PaywallModal';
+import ComposeModal from '../components/ComposeModal';
 import NewDaySummaryView from '../components/NewDaySummaryView';
 import WeekReviewView from '../components/WeekReviewView';
 import DayDigestView from '../components/DayDigestView';
@@ -53,7 +51,12 @@ import { buildCurationContext } from '../services/CurationContextBuilder';
 import { daySourceContext, SourceContext } from '../services/openingLineSelector';
 import { track } from '../services/AnalyticsService';
 import TalkScreen from './TalkScreenV2';
-import ChatScreen from './ChatScreen';
+import ChatScreen, { ResumeChatInput } from './ChatScreen';
+import {
+  getSavedChatsForDate,
+  getSavedChat,
+  SavedChat,
+} from '../services/SavedChatService';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,7 +98,17 @@ function toPlainText(md: string) {
 
 // ── Inline day raw-entries list ──────────────────────────────────────────────
 
-function DayRawEntries({ entries, query }: { entries: TranscriptEntry[]; query: string }) {
+function DayRawEntries({
+  entries,
+  query,
+  date,
+  onEdit,
+}: {
+  entries: TranscriptEntry[];
+  query: string;
+  date: string;
+  onEdit: (entry: TranscriptEntry & { date: string }) => void;
+}) {
   const q = query.trim().toLowerCase();
   const filtered = q
     ? entries.filter(e => e.text.toLowerCase().includes(q))
@@ -112,7 +125,12 @@ function DayRawEntries({ entries, query }: { entries: TranscriptEntry[]; query: 
   return (
     <View>
       {filtered.map((e) => (
-        <View key={e.id} style={dr.card}>
+        <TouchableOpacity
+          key={e.id}
+          style={dr.card}
+          onPress={() => onEdit({ ...e, date })}
+          activeOpacity={0.75}
+        >
           <View style={dr.cardHeader}>
             <Feather
               name={e.kind === 'manual' ? 'edit-3' : 'mic'}
@@ -123,6 +141,7 @@ function DayRawEntries({ entries, query }: { entries: TranscriptEntry[]; query: 
             {e.kind !== 'manual' && e.duration ? (
               <Text style={dr.duration}> · {e.duration.toFixed(1)}s</Text>
             ) : null}
+            <Text style={dr.tapHint}>Tap to edit</Text>
           </View>
           {e.text.length > 0 && (
             <HighlightText text={e.text} query={q} style={dr.text} />
@@ -137,7 +156,7 @@ function DayRawEntries({ entries, query }: { entries: TranscriptEntry[]; query: 
           {e.photoUri ? (
             <Image source={{ uri: e.photoUri }} style={dr.photo} resizeMode="cover" />
           ) : null}
-        </View>
+        </TouchableOpacity>
       ))}
     </View>
   );
@@ -294,8 +313,17 @@ export default function JournalScreen() {
   const [enabledTrackers, setEnabledTrackers] = useState<Set<string> | null>(null);
   const [mealMacrosByDate, setMealMacrosByDate] = useState<Record<string, DayMacros>>({});
   const [goals, setGoals] = useState<UserGoals | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [breakdownGenerating, setBreakdownGenerating] = useState(false);
+  const [savedChatsForViewing, setSavedChatsForViewing] = useState<SavedChat[]>([]);
+  const [resumeChatInput, setResumeChatInput] = useState<ResumeChatInput | null>(null);
+
+  // Edit / delete raw entries
+  const [editingEntry, setEditingEntry] = useState<(TranscriptEntry & { date: string }) | null>(null);
+  const [composeOpen, setComposeOpen] = useState(false);
+
+  const handleEditEntry = (entry: TranscriptEntry & { date: string }) => {
+    setEditingEntry(entry);
+    setComposeOpen(true);
+  };
 
   // Perspective + paywall + search
   const [perspectiveSummary, setPerspectiveSummary] = useState<DailySummary | null>(null);
@@ -358,7 +386,6 @@ export default function JournalScreen() {
   useEffect(() => {
     let cancelled = false;
     setSummaryLoading(true);
-    setExpanded(false);
     setRawOpen(false);
     setRawSearch('');
     (async () => {
@@ -373,6 +400,15 @@ export default function JournalScreen() {
       setStaleCount(Math.max(0, newer));
       setSummaryLoading(false);
     })().catch(() => { if (!cancelled) setSummaryLoading(false); });
+    return () => { cancelled = true; };
+  }, [viewingDate, focusTick]);
+
+  // Saved chats for the viewing date — powers the Reflection history section.
+  useEffect(() => {
+    let cancelled = false;
+    getSavedChatsForDate(viewingDate).then(chats => {
+      if (!cancelled) setSavedChatsForViewing(chats);
+    });
     return () => { cancelled = true; };
   }, [viewingDate, focusTick]);
 
@@ -461,18 +497,30 @@ export default function JournalScreen() {
     setPerspectiveSummary(item);
   };
 
-  const handleToggleBreakdown = async (date: string) => {
-    if (expanded) { setExpanded(false); return; }
-    setExpanded(true);
-    if (summary && !summary.summary && !breakdownGenerating) {
-      setBreakdownGenerating(true);
-      try {
-        const text = await generateFullBreakdown(date);
-        setSummary(prev => (prev ? { ...prev, summary: text } : prev));
-      } catch { /* user can tap again */ }
-      finally { setBreakdownGenerating(false); }
+  // Resume a saved chat from the Reflection history list. Hydrates the
+  // ChatScreen from the stored messages so the user picks up where they
+  // left off, no new opening message.
+  const handleContinueChat = async (chatId: string) => {
+    const allowed = await SubscriptionService.canUseConversation();
+    if (!allowed) {
+      setPaywallHint('Unlimited AI conversations are a Pro feature.');
+      setShowPaywall(true);
+      return;
     }
+    const chat = await getSavedChat(chatId);
+    if (!chat || !summary) return;
+    setResumeChatInput({
+      id: chat.id,
+      mindId: chat.mindId,
+      startedAt: chat.startedAt,
+      messages: chat.messages,
+    });
+    setChatInitialMindId(undefined);
+    setChatSourceContext(null);
+    setCallMindId(undefined);
+    setPerspectiveSummary(summary);
   };
+
 
   const handleDownload = async (item: DailySummary) => {
     try {
@@ -584,12 +632,11 @@ export default function JournalScreen() {
                   goals={goals}
                   staleCount={staleCount}
                   generatingDate={generatingDate}
-                  expanded={expanded}
-                  breakdownGenerating={breakdownGenerating}
                   onGenerate={gatedHandleGenerate}
                   onDownload={handleDownload}
                   onPerspective={handlePerspective}
-                  onToggleBreakdown={handleToggleBreakdown}
+                  savedChats={savedChatsForViewing}
+                  onContinueChat={handleContinueChat}
                 />
               </View>
             ) : showDigestForToday ? (
@@ -597,6 +644,8 @@ export default function JournalScreen() {
                 <DayDigestView
                   date={viewingDate}
                   refreshKey={entries.length}
+                  onGenerate={entries.length > 0 ? () => gatedHandleGenerate(viewingDate) : undefined}
+                  generating={generatingDate === viewingDate}
                 />
               </View>
             ) : (
@@ -657,7 +706,12 @@ export default function JournalScreen() {
                     )}
                   </View>
                 )}
-                <DayRawEntries entries={entries} query={rawSearch} />
+                <DayRawEntries
+                  entries={entries}
+                  query={rawSearch}
+                  date={viewingDate}
+                  onEdit={handleEditEntry}
+                />
               </View>
             )}
           </ScrollView>
@@ -686,6 +740,7 @@ export default function JournalScreen() {
           setCallMindId(undefined);
           setChatInitialMindId(undefined);
           setChatSourceContext(null);
+          setResumeChatInput(null);
         }}
       >
         {perspectiveSummary && callMindId === undefined && (
@@ -693,10 +748,15 @@ export default function JournalScreen() {
             summary={perspectiveSummary}
             initialMindId={chatInitialMindId}
             sourceContext={chatSourceContext}
+            resumeChat={resumeChatInput ?? undefined}
             onClose={() => {
               setPerspectiveSummary(null);
               setChatInitialMindId(undefined);
               setChatSourceContext(null);
+              setResumeChatInput(null);
+              // Refresh the saved-chats list so a just-saved chat appears /
+              // a newly-updated chat's shape re-renders.
+              getSavedChatsForDate(viewingDate).then(setSavedChatsForViewing);
             }}
             onCallRequested={(mindId) => setCallMindId(mindId ?? null)}
           />
@@ -726,6 +786,24 @@ export default function JournalScreen() {
           setCuration(null);
           setCurationWellbeing(undefined);
           pendingPerspectiveRef.current = null;
+        }}
+      />
+
+      <ComposeModal
+        visible={composeOpen}
+        editEntry={editingEntry ?? undefined}
+        onClose={() => { setComposeOpen(false); setEditingEntry(null); }}
+        onSaved={async () => {
+          setComposeOpen(false);
+          setEditingEntry(null);
+          const updated = await StorageService.getTranscriptsForDate(viewingDate);
+          setEntries(updated);
+        }}
+        onDelete={async () => {
+          setComposeOpen(false);
+          setEditingEntry(null);
+          const updated = await StorageService.getTranscriptsForDate(viewingDate);
+          setEntries(updated);
         }}
       />
 
@@ -883,6 +961,13 @@ const dr = StyleSheet.create({
     backgroundColor: 'rgba(3,18,40,0.55)',
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  tapHint: {
+    marginLeft: 'auto',
+    fontSize: 10,
+    color: 'rgba(152,212,250,0.35)',
+    fontFamily: 'GillSans-Light',
+    letterSpacing: 0.2,
+  },
   time: {
     fontSize: 11, letterSpacing: 0.3,
     color: 'rgba(152,212,250,0.70)',

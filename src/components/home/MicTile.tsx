@@ -14,17 +14,19 @@ interface Props {
   micState: MicState;
   audioLevel?: number;
   onMicPress: () => void;
+  onCompose: () => void;
   shouldPlay: boolean;
   warmLine?: WarmLine | null;
   warmLineLoading?: boolean;
+  recordingElapsed?: number;
 }
 
 const { height: SCREEN_H } = Dimensions.get('window');
-const MIN_H = Math.max(Math.floor(SCREEN_H * 0.33), 180);
+const MIN_H = Math.max(Math.floor(SCREEN_H * 0.45), 220);
 
 export default function MicTile({
-  micState, audioLevel, onMicPress, shouldPlay,
-  warmLine, warmLineLoading,
+  micState, audioLevel, onMicPress, onCompose, shouldPlay,
+  warmLine, warmLineLoading, recordingElapsed,
 }: Props) {
   const videoRef = useRef<Video>(null);
   const [videoError, setVideoError] = useState(false);
@@ -65,14 +67,15 @@ export default function MicTile({
         pointerEvents="none"
       />
 
-      {/* Content column: orb + warm line */}
+      {/* Content column: orb + secondary action stacked */}
       <View style={s.content}>
-        {/* Orb — warm line replaces "tap to speak" when loaded */}
         <View style={s.orbSection}>
           <MicOrb
             state={micState}
             audioLevel={audioLevel}
             onPress={onMicPress}
+            onCompose={onCompose}
+            recordingElapsed={recordingElapsed}
             idleLabel={warmLine?.text
               ? warmLine.text.replace(/[.!?]\s*$/, '').trimEnd() + '. Tap to speak about it.'
               : undefined}
@@ -87,7 +90,6 @@ const s = StyleSheet.create({
   tile: {
     minHeight: MIN_H,
     marginHorizontal: 16,
-    marginTop: 8,
     borderRadius: 24,
     overflow: 'hidden',
     backgroundColor: '#0d1f3c',
@@ -106,14 +108,16 @@ const s = StyleSheet.create({
   },
 
   content: {
+    minHeight: MIN_H,
     flexDirection: 'column',
   },
 
   orbSection: {
-    minHeight: MIN_H,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 28,
   },
+
 
 });

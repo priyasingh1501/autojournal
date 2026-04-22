@@ -17,7 +17,17 @@ interface Props {
   state: MicState;
   audioLevel?: number;
   onPress: () => void;
+  onCompose?: () => void;
   idleLabel?: string;
+  recordingElapsed?: number;
+}
+
+const MAX_RECORDING_S = 25 * 60;
+
+function formatElapsed(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
 const ORB = 64;
@@ -28,7 +38,7 @@ const HIT = { top: 20, bottom: 20, left: 20, right: 20 };
 // Max waveform heights per bar position (symmetric, tallest near orb)
 const MAX_H = [7, 13, 20, 16, 24, 24, 16, 20, 13, 7];
 
-export default function MicOrb({ state, audioLevel, onPress, idleLabel }: Props) {
+export default function MicOrb({ state, audioLevel, onPress, onCompose, idleLabel, recordingElapsed }: Props) {
   const outerScale   = useRef(new Animated.Value(1)).current;
   const outerOpacity = useRef(new Animated.Value(0.25)).current;
   const innerScale   = useRef(new Animated.Value(1)).current;
@@ -182,9 +192,9 @@ export default function MicOrb({ state, audioLevel, onPress, idleLabel }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
+  const nearLimit = state === 'recording' && (recordingElapsed ?? 0) >= MAX_RECORDING_S - 60;
   const label =
-    state === 'recording'  ? 'listening...'
-    : state === 'processing' ? 'thinking...'
+    state === 'processing' ? 'thinking...'
     : (idleLabel ?? 'tap to speak');
 
   const OrbCore = (
@@ -204,6 +214,8 @@ export default function MicOrb({ state, audioLevel, onPress, idleLabel }: Props)
     </>
   );
 
+  const showCompose = state === 'idle' && !!onCompose;
+
   return (
     <View style={s.container}>
       <View style={s.row}>
@@ -214,8 +226,10 @@ export default function MicOrb({ state, audioLevel, onPress, idleLabel }: Props)
           ))}
         </Animated.View>
 
-        {/* Orb section */}
-        <View style={s.orbSection}>
+        {/* Orb section — narrower layout box when compose is shown so the
+            mic orb and edit button sit symmetrically around the card center.
+            Rings render at full size via absoluteFill regardless of box width. */}
+        <View style={[s.orbSection, showCompose && s.orbSectionCompact]}>
           {/* Rings — absoluteFill centered */}
           <View style={[StyleSheet.absoluteFill, s.center]} pointerEvents="none">
             <Animated.View style={[s.outerRing, { transform: [{ scale: outerScale }], opacity: outerOpacity }]} />
@@ -246,6 +260,22 @@ export default function MicOrb({ state, audioLevel, onPress, idleLabel }: Props)
           </View>
         </View>
 
+        {/* Compose button — mirrors orb appearance */}
+        {showCompose && (
+          <TouchableOpacity onPress={onCompose} activeOpacity={0.82} hitSlop={HIT}>
+            {Platform.OS === 'ios' ? (
+              <BlurView intensity={25} tint="dark" style={s.composeLink}>
+                <View style={[StyleSheet.absoluteFill, s.orbBorderOverlay]} />
+                <Feather name="edit-2" size={22} color="rgba(255,255,255,0.92)" />
+              </BlurView>
+            ) : (
+              <View style={[s.composeLink, s.composeLinkAndroid]}>
+                <Feather name="edit-2" size={22} color="rgba(255,255,255,0.92)" />
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+
         {/* Right waveform bars — innermost (index 5) closest to orb */}
         <Animated.View style={[s.barSide, { opacity: barsOpacity }]}>
           {barHeights.slice(5).map((h, i) => (
@@ -255,7 +285,15 @@ export default function MicOrb({ state, audioLevel, onPress, idleLabel }: Props)
       </View>
 
       <View style={s.labelBg}>
-        <Text style={s.label}>{label}</Text>
+        {state === 'recording' ? (
+          <Text style={[s.label, nearLimit && s.labelWarn]}>
+            {nearLimit ? 'stopping soon · ' : 'listening... · '}
+            {formatElapsed(recordingElapsed ?? 0)}
+            {' / 25:00'}
+          </Text>
+        ) : (
+          <Text style={s.label}>{label}</Text>
+        )}
       </View>
     </View>
   );
@@ -271,6 +309,9 @@ const s = StyleSheet.create({
     height: OUTER + 10,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  orbSectionCompact: {
+    width: ORB,
   },
 
   outerRing: {
@@ -308,17 +349,34 @@ const s = StyleSheet.create({
   dotsRow: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   dot:     { width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(255,255,255,0.90)' },
 
+  composeLink: {
+    width: ORB,
+    height: ORB,
+    borderRadius: ORB / 2,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  composeLinkAndroid: {
+    backgroundColor: 'rgba(15,25,50,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+
   labelBg: {
-    marginTop: 14,
-    paddingHorizontal: 14,
+    marginTop: 10,
+    paddingHorizontal: 20,
     paddingVertical: 8,
+    width: '100%',
   },
   label: {
-    fontSize: 12,
+    fontSize: 13,
     color: 'rgba(255,255,255,0.82)',
     fontFamily: 'GillSans-Light',
     textAlign: 'center',
-    maxWidth: 264,
-    lineHeight: 18,
+    lineHeight: 20,
+  },
+  labelWarn: {
+    color: 'rgba(251,191,36,0.90)',
   },
 });

@@ -1,50 +1,48 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
 interface Props {
-  onCompose:     () => void;
   onPerspective: () => void;
 }
 
-export default function SecondaryActions({ onCompose, onPerspective }: Props) {
+export default function SecondaryActions({ onPerspective }: Props) {
   return (
-    <View style={s.row}>
-      <TouchableOpacity onPress={onCompose} style={s.btn} activeOpacity={0.7}>
-        <Text style={s.btnText}>type a note</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={onPerspective} style={s.btn} activeOpacity={0.7}>
-        <Text style={s.btnText}>get a perspective</Text>
-      </TouchableOpacity>
-    </View>
+    <TouchableOpacity onPress={onPerspective} style={s.card} activeOpacity={0.75}>
+      <View style={s.body}>
+        <Text style={s.heading}>Get a new perspective</Text>
+        <Text style={s.sub}>Call or chat with a mind for a fresh take on what's on your mind.</Text>
+      </View>
+      <Feather name="chevron-right" size={16} color="rgba(152,212,250,0.35)" />
+    </TouchableOpacity>
   );
 }
 
 const s = StyleSheet.create({
-  row: {
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    paddingTop: 8,
-    gap: 10,
-  },
-  btn: {
-    flex: 1,
-    paddingVertical: 11,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    gap: 12,
+    backgroundColor: 'rgba(2,6,14,0.90)',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(152,212,250,0.20)',
-    backgroundColor: 'rgba(152,212,250,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
+    borderColor: 'rgba(152,212,250,0.16)',
+    paddingVertical: 16,
+    paddingHorizontal: 18,
   },
-  btnText: {
-    fontSize: 13,
+  body: {
+    flex: 1,
+    gap: 4,
+  },
+  heading: {
+    fontSize: 15,
     fontFamily: 'GillSans-Light',
-    color: 'rgba(224,242,254,0.65)',
+    color: 'rgba(224,242,254,0.88)',
+  },
+  sub: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: 'GillSans-Light',
+    color: 'rgba(152,212,250,0.55)',
   },
 });

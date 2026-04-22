@@ -11,7 +11,6 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
-  ActivityIndicator,
   Text,
   Modal,
   Platform,
@@ -63,40 +62,51 @@ function localDateStr(date: Date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+function dominantEmotionsFrom(entries: Awaited<ReturnType<typeof StorageService.getTranscriptsForDate>>): string[] {
+  const counts: Record<string, number> = {};
+  for (const e of entries) {
+    for (const tag of e.emotionTags ?? []) {
+      counts[tag] = (counts[tag] ?? 0) + 1;
+    }
+  }
+  return Object.entries(counts).sort(([, a], [, b]) => b - a).map(([tag]) => tag);
+}
+
 async function computeTodayData(): Promise<TodayCardData | null> {
   try {
     const today   = localDateStr();
-    const entries = await StorageService.getTranscriptsForDate(today);
+    const yesterday = localDateStr(new Date(Date.now() - 86400000));
+    const [entries, yesterdayEntries] = await Promise.all([
+      StorageService.getTranscriptsForDate(today),
+      StorageService.getTranscriptsForDate(yesterday),
+    ]);
 
-    const counts: Record<string, number> = {};
-    for (const e of entries) {
-      for (const tag of e.emotionTags ?? []) {
-        counts[tag] = (counts[tag] ?? 0) + 1;
-      }
-    }
-    const dominantEmotions = Object.entries(counts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 3)
-      .map(([tag]) => tag);
+    const dominantEmotions  = dominantEmotionsFrom(entries);
+    const yesterdayEmotions = dominantEmotionsFrom(yesterdayEntries);
 
     const actives = await getActive();
+    const mapIntention = (i: typeof actives[0]) => ({
+      id:         i.id,
+      text:       i.text,
+      shortLabel: i.shortLabel || i.text.slice(0, 14),
+      category:   i.category ?? 'other',
+    });
     // Mirror digestCompute.ts: keyword-match each intention against today's entries.
     const intentionsMentioned = actives
       .filter(i => entries.some(e => e.text && intentionTouchesEntry(i, e.text)))
       .slice(0, 6)
-      .map(i => ({
-        id:         i.id,
-        text:       i.text,
-        shortLabel: i.shortLabel || i.text.slice(0, 14),
-        category:   i.category ?? 'other',
-      }));
+      .map(mapIntention);
+
+    const activeIntentions = actives.slice(0, 6).map(mapIntention);
 
     const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
 
     return {
       entryCount: entries.length,
       dominantEmotions,
+      yesterdayEmotions,
       intentionsMentioned,
+      activeIntentions,
       lastEntryAt: sorted[0]?.timestamp ?? null,
     };
   } catch {
@@ -112,6 +122,8 @@ export default function HomeScreen() {
   const [micState, setMicState]       = useState<MicState>('idle');
   const [audioLevel]                  = useState<number>(0); // AudioRecorderService doesn't expose metering
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const elapsedTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
   const isTranscribingRef     = useRef(false);
   const batchWellbeingFiredRef = useRef(false);
 
@@ -170,7 +182,12 @@ export default function HomeScreen() {
       onStatus: (s) => {
         if (s === 'recording') {
           setMicState('recording');
+          setRecordingElapsed(0);
+          if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+          elapsedTimerRef.current = setInterval(() => setRecordingElapsed(e => e + 1), 1000);
         } else if (s === 'idle') {
+          if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
+          setRecordingElapsed(0);
           // Only revert to idle if we're not about to enter processing
           if (!isTranscribingRef.current) {
             setMicState('idle');
@@ -335,8 +352,6 @@ export default function HomeScreen() {
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
-  const isTranscribing = batchProgress !== null;
-
   return (
     <SafeAreaView style={s.container} edges={['bottom']}>
       <View style={s.content}>
@@ -353,18 +368,17 @@ export default function HomeScreen() {
             micState={micState}
             audioLevel={audioLevel}
             onMicPress={handleMicPress}
+            onCompose={handleCompose}
             shouldPlay={shouldPlay}
             warmLine={warmLine}
             warmLineLoading={warmLineLoading}
+            recordingElapsed={recordingElapsed}
           />
 
-          {/* Transcription banner */}
-          {isTranscribing && (
-            <View style={s.banner}>
-              <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
-              <Text style={s.bannerText}>Transcribing…</Text>
-            </View>
-          )}
+          {/* Perspective card */}
+          <View style={s.cards}>
+            <SecondaryActions onPerspective={handlePerspective} />
+          </View>
 
           {/* Intentions card — pending suggestion */}
           {pendingSuggestion && (
@@ -382,12 +396,6 @@ export default function HomeScreen() {
             <TodayCard data={todayData} />
           </View>
         </ScrollView>
-
-        {/* Bottom actions — always visible, outside the scroll area */}
-        <SecondaryActions
-          onCompose={handleCompose}
-          onPerspective={handlePerspective}
-        />
 
       </View>
 
@@ -470,25 +478,12 @@ const s = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 8,
+    paddingTop: 8,
+    paddingBottom: 24,
+    gap: 12,
   },
   cards: {
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 8,
   },
 
-  // Transcription banner
-  banner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: 20, marginTop: 8,
-    paddingHorizontal: 14, paddingVertical: 10,
-    backgroundColor: 'rgba(9,41,173,0.18)',
-    borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(152,212,250,0.20)',
-  },
-  bannerText: {
-    fontSize: 12, fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.80)',
-  },
 });
