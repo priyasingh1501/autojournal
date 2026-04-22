@@ -27,6 +27,26 @@ Deno.serve(async (req) => {
     // ElevenLabs sends a `system` role message when the agent has a system prompt.
     // Anthropic uses a top-level `system` field instead of a message role.
     const systemMsg = messages.find((m) => m.role === 'system');
+
+    // Diagnostic: log system prompt length + first/last chars so we can verify
+    // the full mind persona is reaching Claude. Inspect in the Supabase
+    // dashboard under Edge Functions → elevenlabs-llm → Logs.
+    const sysContent = typeof systemMsg?.content === 'string' ? systemMsg.content : '';
+    console.log('[elevenlabs-llm] system_len=%d first120=%s last120=%s user_turns=%d',
+      sysContent.length,
+      sysContent.slice(0, 120).replace(/\n/g, ' '),
+      sysContent.slice(-120).replace(/\n/g, ' '),
+      messages.filter(m => m.role === 'user').length,
+    );
+
+    // Warn loud if the mind persona didn't reach us. Empty = the agent template
+    // was wiped in the dashboard; "Task description: You are an AI agent" is
+    // ElevenLabs' generic fallback when {{full_system_prompt}} didn't resolve.
+    // We still answer (refusing would fail the whole agent boot and surface to
+    // the client as a 502 at LiveKit), but this log flags the misconfiguration.
+    if (!sysContent || sysContent.startsWith('Task description: You are an AI agent')) {
+      console.error('[elevenlabs-llm] Missing mind persona — responding as generic. len=%d', sysContent.length);
+    }
     const convMsgs = messages
       .filter((m) => m.role !== 'system')
       .map((m) => ({

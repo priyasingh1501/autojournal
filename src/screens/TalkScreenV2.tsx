@@ -23,11 +23,12 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  ImageBackground, Dimensions, ActivityIndicator, ScrollView,
+  Dimensions, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Video, ResizeMode } from 'expo-av';
 import { useConversation, ConversationProvider } from '@elevenlabs/react-native';
 
 import { DailySummary, ConversationMessage } from '../types';
@@ -404,7 +405,9 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
         conversationToken,
         // Dynamic variables are substituted into the agent's system prompt
         // template ({{full_system_prompt}}) and first_message ({{first_message}})
-        // before the session starts.
+        // before the session starts. Overrides would be stronger but seem to
+        // destabilise agent boot when the prompt is long — the dynamic-variable
+        // route is what reliably connects.
         dynamicVariables: {
           full_system_prompt: systemPrompt,
           first_message: opening,
@@ -443,7 +446,8 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
       }).catch(() => {});
     }
 
-    // Post-call reflection.
+    // Post-call reflection. We don't save to the day's summary automatically —
+    // the user confirms on the post-call screen.
     if (userMessages.length > 0) {
       setConvState('post-call');
       setReflectionLoading(true);
@@ -451,13 +455,23 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
         .then(r => {
           setPostCallReflection(r);
           setReflectionLoading(false);
-          StorageService.saveSummary({ ...effectiveSummary, reflectionText: r }).catch(() => {});
         })
         .catch(() => { setReflectionLoading(false); onClose(); });
     } else {
       onClose();
     }
   }, [conversation, effectiveSummary, onClose]);
+
+  // ── Post-call actions ───────────────────────────────────────────────────────
+  const handleSaveReflectionToSummary = useCallback(() => {
+    if (postCallReflection) {
+      StorageService.saveSummary({
+        ...effectiveSummary,
+        reflectionText: postCallReflection,
+      }).catch(() => {});
+    }
+    onClose();
+  }, [postCallReflection, effectiveSummary, onClose]);
 
   // ── handleAvatarTap — interrupt AI speech ───────────────────────────────────
   const handleAvatarTap = useCallback(() => {
@@ -492,7 +506,16 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   // ── Render: post-call reflection ─────────────────────────────────────────────
   if (convState === 'post-call') {
     return (
-      <ImageBackground source={require('../../assets/jellyfish.jpg')} style={styles.bg} resizeMode="cover">
+      <View style={styles.bg}>
+        <Video
+          source={require('../../assets/video/call_screen.mp4')}
+          style={StyleSheet.absoluteFill}
+          resizeMode={ResizeMode.COVER}
+          isLooping
+          isMuted
+          shouldPlay
+          useNativeControls={false}
+        />
         <LinearGradient colors={['rgba(2,6,14,0.65)', 'rgba(2,6,14,0.92)', '#02060E']} style={StyleSheet.absoluteFill} />
         <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
           <View style={styles.postCallContainer}>
@@ -510,23 +533,53 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
                 </ScrollView>
               )}
             </View>
-            <TouchableOpacity
-              style={[styles.postCallDoneBtn, reflectionLoading && { opacity: 0.5 }]}
-              onPress={onClose}
-              disabled={reflectionLoading}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.postCallDoneText}>Done</Text>
-            </TouchableOpacity>
+            {reflectionLoading ? (
+              <TouchableOpacity
+                style={[styles.postCallDoneBtn, { opacity: 0.5 }]}
+                disabled
+                activeOpacity={0.8}
+              >
+                <Text style={styles.postCallDoneText}>Done</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.postCallActions}>
+                <Text style={styles.postCallPrompt}>Add to today's summary?</Text>
+                <View style={styles.postCallButtonRow}>
+                  <TouchableOpacity
+                    style={styles.postCallSkipBtn}
+                    onPress={onClose}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.postCallSkipText}>Skip</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.postCallAddBtn}
+                    onPress={handleSaveReflectionToSummary}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.postCallAddText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         </SafeAreaView>
-      </ImageBackground>
+      </View>
     );
   }
 
   // ── Render: in-call ──────────────────────────────────────────────────────────
   return (
-    <ImageBackground source={require('../../assets/jellyfish.jpg')} style={styles.bg} resizeMode="cover">
+    <View style={styles.bg}>
+      <Video
+        source={require('../../assets/video/call_screen.mp4')}
+        style={StyleSheet.absoluteFill}
+        resizeMode={ResizeMode.COVER}
+        isLooping
+        isMuted
+        shouldPlay
+        useNativeControls={false}
+      />
       <LinearGradient colors={['rgba(2,6,14,0.55)', 'rgba(2,6,14,0.82)', '#02060E']} style={StyleSheet.absoluteFill} />
 
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -616,7 +669,7 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
           onDismiss={() =>  { wellbeingModalActiveRef.current = false; setWellbeingAlert(null); }}
         />
       )}
-    </ImageBackground>
+    </View>
   );
 }
 
@@ -685,4 +738,11 @@ const styles = StyleSheet.create({
   postCallReflection: { fontSize: 16, color: 'rgba(224,242,254,0.75)', fontFamily: 'Baskerville', lineHeight: 26, fontStyle: 'italic' },
   postCallDoneBtn: { alignSelf: 'center', paddingHorizontal: 40, paddingVertical: 14, backgroundColor: 'rgba(152,212,250,0.10)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.22)', borderRadius: 30 },
   postCallDoneText: { fontSize: 15, color: 'rgba(224,242,254,0.80)', fontFamily: 'GillSans-Light', letterSpacing: 0.5 },
+  postCallActions: { alignItems: 'center', gap: 14 },
+  postCallPrompt: { fontSize: 14, color: 'rgba(152,212,250,0.70)', fontFamily: 'GillSans-Light', letterSpacing: 0.3 },
+  postCallButtonRow: { flexDirection: 'row', gap: 12 },
+  postCallSkipBtn: { paddingHorizontal: 28, paddingVertical: 12, backgroundColor: 'transparent', borderWidth: 1, borderColor: 'rgba(152,212,250,0.22)', borderRadius: 30 },
+  postCallSkipText: { fontSize: 15, color: 'rgba(224,242,254,0.65)', fontFamily: 'GillSans-Light', letterSpacing: 0.5 },
+  postCallAddBtn: { paddingHorizontal: 28, paddingVertical: 12, backgroundColor: 'rgba(152,212,250,0.18)', borderWidth: 1, borderColor: 'rgba(152,212,250,0.35)', borderRadius: 30 },
+  postCallAddText: { fontSize: 15, color: '#E0F2FE', fontFamily: 'GillSans-Light', letterSpacing: 0.5 },
 });
