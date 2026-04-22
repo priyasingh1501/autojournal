@@ -11,7 +11,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { openaiImageProxy, claudeProxy } from './AIProxy';
+import { openaiImageProxy, claudeProxy, uploadWisdomImage } from './AIProxy';
 import { StorageService } from './StorageService';
 import { fetchShortImageUrl } from './SupabaseService';
 import { supabase } from './AuthService';
@@ -151,37 +151,15 @@ export async function getCachedImageUri(shortId: string): Promise<string | null>
  * Fire-and-forget — caller should .catch() any errors.
  */
 async function _uploadToSupabase(shortId: string, localPath: string): Promise<void> {
-  // Read file as base64 and convert to Uint8Array for upload
+  // Routes through the `wisdom-image-upload` edge function (service role) because
+  // the `wisdom-images` bucket rejects anon INSERT with "new row violates RLS"
+  // even with correct role-scoped policies — some hidden bucket state blocks it.
+  // The edge function uploads + updates wisdom_shorts.image_url in one call.
   const base64 = await FileSystem.readAsStringAsync(localPath, {
     encoding: FileSystem.EncodingType.Base64,
   });
-  const binary = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-  const filePath = `shorts/${shortId}.jpg`;
-
-  const { error: uploadError } = await supabase.storage
-    .from('wisdom-images')
-    .upload(filePath, binary, { contentType: 'image/jpeg', upsert: true });
-
-  if (uploadError) throw new Error(uploadError.message);
-
-  const { data } = supabase.storage.from('wisdom-images').getPublicUrl(filePath);
-  const publicUrl = data.publicUrl;
-
-  // Write the public URL back to the wisdom_shorts row.
-  // .select() + row-count check is required because RLS blocks silently
-  // (0 rows affected, no error) — we need to surface that as a real failure.
-  const { data: updated, error: updateError } = await supabase
-    .from('wisdom_shorts')
-    .update({ image_url: publicUrl })
-    .eq('id', shortId)
-    .select('id');
-
-  if (updateError) throw new Error(`wisdom_shorts update failed: ${updateError.message}`);
-  if (!updated || updated.length === 0) {
-    throw new Error(`wisdom_shorts update matched 0 rows for ${shortId} (likely RLS)`);
-  }
-
-  console.log('[WisdomImage] Uploaded to Supabase:', shortId, '→', publicUrl);
+  const { public_url } = await uploadWisdomImage(shortId, base64);
+  console.log('[WisdomImage] Uploaded to Supabase:', shortId, '→', public_url);
 }
 
 /**

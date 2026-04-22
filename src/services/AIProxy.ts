@@ -101,6 +101,25 @@ export async function transcribeAudio(uri: string): Promise<string> {
   }
 }
 
+// ── Wisdom image upload ───────────────────────────────────────────────────────
+
+/**
+ * Uploads a locally-generated wisdom image to Storage via the
+ * `wisdom-image-upload` edge function. The function uses service role to
+ * bypass the bucket's RLS-layer quirks and also writes the public URL back
+ * to `wisdom_shorts.image_url` in one round trip.
+ */
+export async function uploadWisdomImage(
+  shortId: string,
+  imageBase64: string,
+): Promise<{ public_url: string }> {
+  return callEdge<{ public_url: string }>(
+    'wisdom-image-upload',
+    { short_id: shortId, image_base64: imageBase64 },
+    60_000,
+  );
+}
+
 // ── ElevenLabs TTS ────────────────────────────────────────────────────────────
 
 export interface VoiceSettings {
