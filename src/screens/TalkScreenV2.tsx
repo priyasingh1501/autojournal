@@ -43,7 +43,7 @@ import {
   analyzeCallTurn, queueReentry, DistressTier,
 } from '../services/WellbeingService';
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
-import { ELEVENLABS_AGENT_ID, getSignedUrl } from '../services/ElevenLabsConvAIService';
+import { ELEVENLABS_AGENT_ID, getConversationToken } from '../services/ElevenLabsConvAIService';
 import { SourceContext } from '../services/openingLineSelector';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -378,11 +378,11 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
         );
       }
 
-      // Build system prompt + opening line in parallel (both are cached after
-      // the first call, so subsequent sessions are near-instant).
-      const [systemPrompt, signedUrl] = await Promise.all([
+      // Build system prompt + conversation token in parallel (both are cached
+      // after the first call, so subsequent sessions are near-instant).
+      const [systemPrompt, conversationToken] = await Promise.all([
         getSystemPromptWithContext(mindId, undefined),
-        getSignedUrl(ELEVENLABS_AGENT_ID),
+        getConversationToken(ELEVENLABS_AGENT_ID),
       ]);
 
       // Opening message — uses the handcrafted opener pool in mindsConfigV2.
@@ -401,7 +401,7 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
       if (!activeRef.current) return;
 
       await conversation.startSession({
-        signedUrl,
+        conversationToken,
         // Dynamic variables are substituted into the agent's system prompt
         // template ({{full_system_prompt}}) and first_message ({{first_message}})
         // before the session starts.

@@ -1,12 +1,16 @@
 /**
- * elevenlabs-signed-url — generates a short-lived signed WebSocket URL for a
- * private ElevenLabs Conversational AI agent session.
+ * elevenlabs-signed-url — mints a short-lived conversation token for a private
+ * ElevenLabs Conversational AI agent, used by the WebRTC (LiveKit) client.
  *
  * The ElevenLabs API key stays server-side; the client only receives a
- * 15-minute signed URL that it can use to open the WebSocket directly.
+ * conversation token it uses to join the LiveKit room.
+ *
+ * WebSocket mode (get-signed-url) is intentionally not used — the RN SDK's
+ * WebSocket path depends on browser AudioContext/AudioWorklet, which are
+ * unavailable in React Native.
  *
  * Request body: { agent_id: string }
- * Response:     { signed_url: string }
+ * Response:     { token: string }
  */
 
 const EL_API_KEY = Deno.env.get('ELEVENLABS_API_KEY')!;
@@ -31,7 +35,7 @@ Deno.serve(async (req) => {
     }
 
     const res = await fetch(
-      `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agent_id)}`,
+      `https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${encodeURIComponent(agent_id)}`,
       { headers: { 'xi-api-key': EL_API_KEY } },
     );
 
