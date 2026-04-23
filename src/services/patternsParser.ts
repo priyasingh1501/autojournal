@@ -10,6 +10,9 @@ import {
   AcrossTimeType,
   PatternsEvidence,
   PatternsReport,
+  PullItem,
+  RecurringCastPerson,
+  RecurringCastRole,
 } from '../types';
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
@@ -25,18 +28,13 @@ export interface ThresholdRule {
 export const THRESHOLDS: ThresholdRule[] = [
   { type: 'texture_early',      minEntries: 1 },
   { type: 'first_impression',   minEntries: 3,  maxEntries: 8 },
-  { type: 'early_signal',       minEntries: 3 },
-  { type: 'whats_loud',         minEntries: 5 },
   { type: 'whats_pulling_you',  minEntries: 7 },
-  { type: 'returning_question', minEntries: 8 },
   { type: 'recurring_cast',     minEntries: 10 },
   { type: 'thinking_texture',   minEntries: 10 },
   { type: 'mind_moving',        minEntries: 10 },
   { type: 'wondering_about',    minEntries: 12 },
   { type: 'stated_vs_actual',   minEntries: 15 },
   { type: 'gone_quiet',         minEntries: 20, minDays: 21 },
-  { type: 'self_language',      minEntries: 8 },
-  { type: 'repeating_story',    minEntries: 12 },
 ];
 
 /**
@@ -136,15 +134,51 @@ function coerceEvidence(v: unknown): PatternsEvidence[] {
   return out;
 }
 
+const CAST_ROLES: ReadonlySet<RecurringCastRole> = new Set<RecurringCastRole>([
+  'support', 'friction', 'aspiration', 'obligation',
+]);
+
+function coerceRecurringCastPeople(v: unknown): RecurringCastPerson[] {
+  if (!Array.isArray(v)) return [];
+  const out: RecurringCastPerson[] = [];
+  for (const p of v) {
+    if (!p || typeof p !== 'object') continue;
+    const name       = coerceString((p as any).name).trim();
+    const appearance = coerceString((p as any).appearance).trim();
+    const rawRole    = coerceString((p as any).role).toLowerCase().trim() as RecurringCastRole;
+    const mentionsRaw = (p as any).mentions;
+    const mentions = typeof mentionsRaw === 'number' && Number.isFinite(mentionsRaw)
+      ? Math.max(0, Math.floor(mentionsRaw))
+      : 0;
+    const evidence = coerceEvidence((p as any).evidence);
+    if (!name || !appearance) continue;
+    // Hard recurrence bar: ≥3 mentions AND ≥2 quotes naming them.
+    if (mentions < 3) continue;
+    if (evidence.length < 2) continue;
+    const role: RecurringCastRole = CAST_ROLES.has(rawRole) ? rawRole : 'support';
+    out.push({ name, role, appearance, mentions, evidence });
+  }
+  return out;
+}
+
 // texture_early is excluded — it's injected on-device, never from Claude output.
 const TYPE_SET: ReadonlySet<AcrossTimeType> = new Set<AcrossTimeType>([
-  'whats_loud', 'returning_question', 'mind_moving', 'wondering_about', 'gone_quiet',
+  'mind_moving', 'wondering_about', 'gone_quiet',
   'whats_pulling_you', 'stated_vs_actual', 'recurring_cast', 'thinking_texture',
-  'early_signal', 'first_impression', 'self_language', 'repeating_story',
+  'first_impression',
+]);
+
+/**
+ * Types handled by their own dedicated per-card prompts. They MUST NOT appear
+ * in the general Across Time array — their parser returns null-safe objects
+ * that are merged in separately by PatternsService.
+ */
+const DEDICATED_PROMPT_TYPES: ReadonlySet<AcrossTimeType> = new Set<AcrossTimeType>([
+  'recurring_cast', 'whats_pulling_you', 'stated_vs_actual', 'mind_moving', 'thinking_texture',
 ]);
 
 const DISMISSIBLE_TYPES: ReadonlySet<AcrossTimeType> = new Set<AcrossTimeType>([
-  'wondering_about', 'stated_vs_actual', 'repeating_story',
+  'wondering_about', 'stated_vs_actual',
 ]);
 
 /**
@@ -248,4 +282,259 @@ export function parsePatternsOutput(
     thisMonth: { reflection, whatsLoud, intentionsProgress, emotionalArc: null },
     acrossTime,
   };
+}
+
+// ── New per-call parsers ──────────────────────────────────────────────────────
+// These accept the raw body of a single focused LLM call (no sentinels), so
+// This Month and Across Time can be generated from separate, narrower prompts.
+
+export interface ParsedThisMonth {
+  reflection: string;
+  whatsLoud: string[];
+  /** Per-intention notes without the on-device mention count — the service joins. */
+  intentionNotes: Array<{ intention: string; note: string }> | null;
+}
+
+export function parseThisMonthJson(raw: string): ParsedThisMonth {
+  const empty: ParsedThisMonth = { reflection: '', whatsLoud: [], intentionNotes: null };
+  const json = extractJson(raw);
+  if (!json) return empty;
+  try {
+    const obj = JSON.parse(json);
+    if (!obj || typeof obj !== 'object') return empty;
+    const reflection = coerceString((obj as any).reflection);
+    const whatsLoud  = coerceStringArray((obj as any).whatsLoud);
+    let intentionNotes: ParsedThisMonth['intentionNotes'] = null;
+    if (Array.isArray((obj as any).intentionsProgress)) {
+      const ip = (obj as any).intentionsProgress
+        .filter((x: any) => x && typeof x === 'object')
+        .map((x: any) => ({
+          intention: coerceString(x.intention),
+          note:      coerceString(x.note),
+        }))
+        .filter((x: any) => x.intention && x.note);
+      intentionNotes = ip.length > 0 ? ip : null;
+    }
+    return { reflection, whatsLoud, intentionNotes };
+  } catch {
+    return empty;
+  }
+}
+
+function coercePullItems(v: unknown): PullItem[] {
+  if (!Array.isArray(v)) return [];
+  const out: PullItem[] = [];
+  for (const p of v) {
+    if (!p || typeof p !== 'object') continue;
+    const theme  = coerceString((p as any).theme).trim();
+    const detail = coerceString((p as any).detail).trim();
+    const mentionsRaw = (p as any).mentions;
+    const mentions = typeof mentionsRaw === 'number' && Number.isFinite(mentionsRaw)
+      ? Math.max(0, Math.floor(mentionsRaw))
+      : 0;
+    const evidence = coerceEvidence((p as any).evidence);
+    if (!theme || !detail) continue;
+    if (mentions < 3) continue;
+    if (evidence.length < 2) continue;
+    out.push({ theme, detail, mentions, evidence });
+  }
+  return out;
+}
+
+/**
+ * Parse the dedicated "What pulls you" prompt — one JSON object with
+ * `toward` and `away` arrays. Returns a single AcrossTimeObservation
+ * with those attached, or null if neither side has any item clearing
+ * the recurrence bar.
+ */
+export function parseWhatPullsYouJson(raw: string): AcrossTimeObservation | null {
+  const json = extractJson(raw);
+  if (!json) return null;
+  try {
+    const obj = JSON.parse(json);
+    if (!obj || typeof obj !== 'object') return null;
+    const toward = coercePullItems((obj as any).toward);
+    const away   = coercePullItems((obj as any).away);
+    if (toward.length === 0 && away.length === 0) return null;
+    const title = coerceString((obj as any).title, 'What moves you toward and away');
+    const body  = coerceString((obj as any).body, '');
+    return {
+      type: 'whats_pulling_you',
+      title,
+      body,
+      evidence: [],
+      window: coerceString((obj as any).window, windowLabelFor('whats_pulling_you')),
+      dismissible: false,
+      toward,
+      away,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Shared parser for the three long-tail single-observation prompts
+ * (first_impression, wondering_about, gone_quiet). Each prompt returns
+ * an object with title, window, body, evidence[].
+ *
+ * Each type has its own minimum evidence bar:
+ *   - first_impression: ≥1 quote
+ *   - wondering_about:   ≥2 quotes
+ *   - gone_quiet:        ≥2 quotes
+ */
+export function parseSingleObservationJson(
+  raw: string,
+  type: Extract<AcrossTimeType, 'first_impression' | 'wondering_about' | 'gone_quiet'>,
+): AcrossTimeObservation | null {
+  const json = extractJson(raw);
+  if (!json) return null;
+  try {
+    const obj = JSON.parse(json);
+    if (!obj || typeof obj !== 'object') return null;
+    const body = coerceString((obj as any).body).trim();
+    const evidence = coerceEvidence((obj as any).evidence);
+    const minEvidence = type === 'first_impression' ? 1 : 2;
+    if (!body || evidence.length < minEvidence) return null;
+    return {
+      type,
+      title: coerceString((obj as any).title, defaultTitleFor(type)),
+      body,
+      evidence: evidence.slice(0, 3),
+      window: coerceString((obj as any).window, windowLabelFor(type)),
+      dismissible: DISMISSIBLE_TYPES.has(type),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function defaultTitleFor(type: AcrossTimeType): string {
+  switch (type) {
+    case 'first_impression': return 'A first read on you';
+    case 'wondering_about':  return 'Something you might be wondering about';
+    case 'gone_quiet':       return "Something that's gone quiet";
+    default:                 return '';
+  }
+}
+
+/**
+ * Parse the dedicated "How your mind moves" prompt — one JSON object
+ * that merges thinking texture + one concrete shift into a single
+ * observation. Returns null if the required evidence isn't present.
+ */
+export function parseMindMovesJson(raw: string): AcrossTimeObservation | null {
+  const json = extractJson(raw);
+  if (!json) return null;
+  try {
+    const obj = JSON.parse(json);
+    if (!obj || typeof obj !== 'object') return null;
+    const body = coerceString((obj as any).body).trim();
+    const evidence = coerceEvidence((obj as any).evidence);
+    if (!body || evidence.length < 2) return null;
+    return {
+      type: 'mind_moving',
+      title: coerceString((obj as any).title, 'How your mind moves'),
+      body,
+      evidence: evidence.slice(0, 3),
+      window: coerceString((obj as any).window, windowLabelFor('mind_moving')),
+      dismissible: false,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse the dedicated "A gap worth noticing" prompt — one JSON object
+ * with stated/actual evidence arrays. Returns null if either side is
+ * missing its required quotes.
+ */
+export function parseStatedVsActualJson(raw: string): AcrossTimeObservation | null {
+  const json = extractJson(raw);
+  if (!json) return null;
+  try {
+    const obj = JSON.parse(json);
+    if (!obj || typeof obj !== 'object') return null;
+    const body   = coerceString((obj as any).body).trim();
+    const stated = coerceEvidence((obj as any).stated);
+    const actual = coerceEvidence((obj as any).actual);
+    // Hard bar: ≥1 stated quote AND ≥2 actual quotes AND non-empty body.
+    if (!body || stated.length < 1 || actual.length < 2) return null;
+    // Combine for the AcrossTimeObservation evidence field (stated first, then actual).
+    const evidence = [...stated, ...actual].slice(0, 4);
+    return {
+      type: 'stated_vs_actual',
+      title: coerceString((obj as any).title, 'Something worth noticing'),
+      body,
+      evidence,
+      window: coerceString((obj as any).window, windowLabelFor('stated_vs_actual')),
+      dismissible: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse the dedicated "Who shows up" prompt — one JSON object with a
+ * `people` array. Returns a single AcrossTimeObservation with people
+ * attached, or null if no person cleared the recurrence bar.
+ */
+export function parseWhoShowsUpJson(raw: string): AcrossTimeObservation | null {
+  const json = extractJson(raw);
+  if (!json) return null;
+  try {
+    const obj = JSON.parse(json);
+    if (!obj || typeof obj !== 'object') return null;
+    const people = coerceRecurringCastPeople((obj as any).people);
+    if (people.length === 0) return null;
+    const title = coerceString((obj as any).title, 'People who keep showing up');
+    const body  = coerceString((obj as any).body, '');
+    return {
+      type: 'recurring_cast',
+      title,
+      body,
+      evidence: [],
+      window: coerceString((obj as any).window, windowLabelFor('recurring_cast')),
+      dismissible: false,
+      people,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseAcrossTimeJson(raw: string): AcrossTimeObservation[] {
+  const json = extractJson(raw);
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json);
+    if (!Array.isArray(arr)) return [];
+    const out: AcrossTimeObservation[] = [];
+    for (const item of arr) {
+      if (!item || typeof item !== 'object') continue;
+      const type = (item as any).type as AcrossTimeType;
+      if (!TYPE_SET.has(type)) continue;
+      // These types have their own dedicated prompts — ignore stray output here.
+      if (DEDICATED_PROMPT_TYPES.has(type)) continue;
+      const evidence = coerceEvidence((item as any).evidence);
+      const minEvidence = type === 'first_impression' ? 1 : 2;
+      if (evidence.length < minEvidence) continue;
+      const title = coerceString((item as any).title);
+      const body  = coerceString((item as any).body);
+      if (!title || !body) continue;
+      out.push({
+        type,
+        title,
+        body,
+        evidence: evidence.slice(0, 3),
+        window: coerceString((item as any).window, windowLabelFor(type)),
+        dismissible: DISMISSIBLE_TYPES.has(type),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }

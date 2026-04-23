@@ -31,6 +31,7 @@ export const COMPANION_V2: MindV2 = {
   accent: 'rgba(152, 212, 250, 0.90)',
   symbol: '🫶',
   teaser: "I'm here. What's on your mind?",
+  callGreeting: 'Hey.',
   // No avatar asset — picker renders a fallback icon.
   openingLines: [
     "Hey. What's alive for you right now?",
@@ -96,6 +97,7 @@ export const RAMANA_MAHARSHI_V2: MindV2 = {
   accent: 'rgba(253, 230, 138, 0.90)',
   symbol: '✨',
   teaser: 'Who is the one who is asking?',
+  callGreeting: 'Welcome.',
   image: require('../../assets/minds/ramana.jpg'),
   openingLines: [
     "You have come. Good. Now — what is it that has brought you?",
@@ -150,6 +152,7 @@ export const KRISHNA_V2: MindV2 = {
   accent: 'rgba(167, 139, 250, 0.90)',
   symbol: '🪈',
   teaser: 'Arjuna, what is in front of you?',
+  callGreeting: 'Welcome, friend.',
   image: require('../../assets/minds/krishna.png'),
   openingLines: [
     "Arjuna, speak. What is in front of you?",
@@ -201,6 +204,7 @@ export const KRISHNAMURTI_V2: MindV2 = {
   accent: 'rgba(147, 197, 253, 0.90)',
   symbol: '👁',
   teaser: 'Look at it directly.',
+  callGreeting: 'Hello.',
   image: require('../../assets/minds/krishnamurti.jpg'),
   openingLines: [
     "Begin. Say whatever is actually there.",
@@ -255,6 +259,7 @@ export const SHANKARACHARYA_V2: MindV2 = {
   accent: 'rgba(251, 191, 36, 0.90)',
   symbol: '🕉',
   teaser: 'What is eternal, and what moves?',
+  callGreeting: 'Greetings.',
   image: require('../../assets/minds/shankaracharya.jpg'),
   openingLines: [
     "Begin. What appears to be real, and what has troubled you today?",
@@ -306,6 +311,7 @@ export const BUDDHA_V2: MindV2 = {
   accent: 'rgba(110, 231, 183, 0.90)',
   symbol: '☸️',
   teaser: 'Come. Sit. What are you carrying?',
+  callGreeting: 'Welcome.',
   image: require('../../assets/minds/buddha.jpg'),
   openingLines: [
     "Come. Sit. What are you carrying?",
@@ -357,6 +363,7 @@ export const RUMI_V2: MindV2 = {
   accent: 'rgba(252, 165, 165, 0.85)',
   symbol: '🌹',
   teaser: 'Come in, friend. Bring the ache with you.',
+  callGreeting: 'Greetings, friend.',
   image: require('../../assets/minds/rumi.jpg'),
   openingLines: [
     "Welcome, friend. What is knocking at the door?",
@@ -411,6 +418,7 @@ export const JUNG_V2: MindV2 = {
   accent: 'rgba(196, 181, 253, 0.90)',
   symbol: '🔮',
   teaser: 'Tell me what has been stirring.',
+  callGreeting: 'Hello.',
   image: require('../../assets/minds/jung.jpg'),
   openingLines: [
     "Tell me what has been stirring. The small details are not small.",
@@ -463,6 +471,7 @@ export const MUNGER_V2: MindV2 = {
   accent: 'rgba(148, 163, 184, 0.90)',
   symbol: '🧠',
   teaser: 'Name the decision.',
+  callGreeting: 'Hello there.',
   image: require('../../assets/minds/munger.jpg'),
   openingLines: [
     "Name the decision.",

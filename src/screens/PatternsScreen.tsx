@@ -58,6 +58,8 @@ import { buildCurationContext } from '../services/CurationContextBuilder';
 import PaywallModal from '../components/PaywallModal';
 import TalkScreen from './TalkScreenV2';
 import ObservationCard from '../components/home/ObservationCard';
+import WhoShowsUpCard from '../components/home/WhoShowsUpCard';
+import WhatPullsYouCard from '../components/home/WhatPullsYouCard';
 import ThisMonthCard from '../components/home/ThisMonthCard';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -480,16 +482,25 @@ export default function PatternsScreen() {
             {/* Surfaced observations */}
             {curation.surfaced.length > 0 ? (
               <>
-                {curation.surfaced.map((obs, i) => (
-                  <ObservationCard
-                    key={`${obs.type}-${i}`}
-                    obs={obs}
-                    hidden={locallyHidden.has(obs.title)}
-                    onSitWith={openSitWith}
-                    onDismiss={openDismiss}
-                    onSeeEntries={() => onExpandSection(obs.type)}
-                  />
-                ))}
+                {curation.surfaced.map((obs, i) => {
+                  if (obs.type === 'recurring_cast' && obs.people && obs.people.length > 0) {
+                    return <WhoShowsUpCard key={`${obs.type}-${i}`} obs={obs} />;
+                  }
+                  if (obs.type === 'whats_pulling_you' &&
+                      ((obs.toward && obs.toward.length > 0) || (obs.away && obs.away.length > 0))) {
+                    return <WhatPullsYouCard key={`${obs.type}-${i}`} obs={obs} />;
+                  }
+                  return (
+                    <ObservationCard
+                      key={`${obs.type}-${i}`}
+                      obs={obs}
+                      hidden={locallyHidden.has(obs.title)}
+                      onSitWith={openSitWith}
+                      onDismiss={openDismiss}
+                      onSeeEntries={() => onExpandSection(obs.type)}
+                    />
+                  );
+                })}
 
                 {/* More patterns expander */}
                 {visibleAdditional.length > 0 && (
@@ -508,16 +519,25 @@ export default function PatternsScreen() {
 
                     {moreExpanded && (
                       <Animated.View style={{ opacity: moreOpacity }}>
-                        {curation.additional.map((obs, i) => (
-                          <ObservationCard
-                            key={`additional-${obs.type}-${i}`}
-                            obs={obs}
-                            hidden={locallyHidden.has(obs.title)}
-                            onSitWith={openSitWith}
-                            onDismiss={openDismiss}
-                            onSeeEntries={() => onExpandSection(obs.type)}
-                          />
-                        ))}
+                        {curation.additional.map((obs, i) => {
+                          if (obs.type === 'recurring_cast' && obs.people && obs.people.length > 0) {
+                            return <WhoShowsUpCard key={`additional-${obs.type}-${i}`} obs={obs} />;
+                          }
+                          if (obs.type === 'whats_pulling_you' &&
+                              ((obs.toward && obs.toward.length > 0) || (obs.away && obs.away.length > 0))) {
+                            return <WhatPullsYouCard key={`additional-${obs.type}-${i}`} obs={obs} />;
+                          }
+                          return (
+                            <ObservationCard
+                              key={`additional-${obs.type}-${i}`}
+                              obs={obs}
+                              hidden={locallyHidden.has(obs.title)}
+                              onSitWith={openSitWith}
+                              onDismiss={openDismiss}
+                              onSeeEntries={() => onExpandSection(obs.type)}
+                            />
+                          );
+                        })}
                       </Animated.View>
                     )}
                   </>

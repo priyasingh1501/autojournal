@@ -23,11 +23,12 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  Dimensions, ActivityIndicator, ScrollView,
+  Dimensions, ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Video, ResizeMode } from 'expo-av';
 import { useConversation, ConversationProvider } from '@elevenlabs/react-native';
 
@@ -46,6 +47,8 @@ import {
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
 import { ELEVENLABS_AGENT_ID, getConversationToken } from '../services/ElevenLabsConvAIService';
 import { SourceContext } from '../services/openingLineSelector';
+import { getMindV2 } from '../services/mindsConfigV2';
+import { Audio } from 'expo-av';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -59,7 +62,7 @@ interface Props {
 type ConvState = 'selecting' | 'connecting' | 'active' | 'post-call' | 'error';
 
 // During 'active' we track a finer UI phase for the avatar / rings.
-type UIPhase = 'listening' | 'thinking' | 'speaking';
+type UIPhase = 'listening' | 'speaking';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -217,6 +220,34 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   const [postCallReflection,  setPostCallReflection]  = useState<string | null>(null);
   const [reflectionLoading,   setReflectionLoading]   = useState(false);
   const [wellbeingAlert,      setWellbeingAlert]       = useState<DistressTier | null>(null);
+  const [activeMindName,      setActiveMindName]       = useState<string>('untangle');
+  const ringSoundRef = useRef<Audio.Sound | null>(null);
+
+  // ── Ringtone helpers ────────────────────────────────────────────────────────
+  // Declared above useConversation so onConnect / onError and the isSpeaking
+  // effect can all reference stopRing without a use-before-declare error.
+  const stopRing = useCallback(async () => {
+    const s = ringSoundRef.current;
+    if (!s) return;
+    ringSoundRef.current = null;
+    try { await s.stopAsync(); } catch { /* already stopped */ }
+    try { await s.unloadAsync(); } catch { /* already unloaded */ }
+  }, []);
+
+  const startRing = useCallback(async () => {
+    try {
+      await stopRing();
+      const { sound } = await Audio.Sound.createAsync(
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('../../assets/audio/call_ring.mp3'),
+        { isLooping: true, volume: 0.8, shouldPlay: true },
+      );
+      ringSoundRef.current = sound;
+    } catch (e) {
+      // Missing file / playback failure — silent fallback, call still works.
+      console.warn('[TalkScreenV2] ring playback failed:', e);
+    }
+  }, [stopRing]);
 
   const selectedMindIdRef       = useRef<string | null>(null);
   const conversationStartedAtRef = useRef<number>(0);
@@ -228,12 +259,13 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   const distressChecking        = useRef(false);
   const tier3Delivered          = useRef(false);
   const wellbeingModalActiveRef = useRef(false);
-  const thinkPulse = useRef(new Animated.Value(1)).current;
-  const thinkLoop  = useRef<Animated.CompositeAnimation | null>(null);
 
   // ── ElevenLabs conversation hook ────────────────────────────────────────────
   const conversation = useConversation({
     onConnect: () => {
+      // WebRTC is up, but the agent's first-message audio hasn't started yet.
+      // Keep the ring playing until the agent actually speaks (handled in the
+      // isSpeaking effect) — that's the real "line picked up" moment.
       if (activeRef.current) {
         setConvState('active');
         setUIPhase('listening');
@@ -250,6 +282,7 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
     },
     onError: (err: any) => {
       console.error('[TalkScreenV2] conversation error:', err);
+      stopRing();
       if (activeRef.current) {
         setError(typeof err === 'string' ? err : 'Call error — please try again.');
         setConvState('error');
@@ -268,7 +301,6 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
 
       if (source === 'user') {
         allUserTextsRef.current.push(message.trim());
-        setUIPhase('thinking');
 
         // Fire-and-forget distress detection (same logic as TalkScreen).
         const turnCount = allUserTextsRef.current.length;
@@ -288,36 +320,33 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
             .finally(() => { distressChecking.current = false; });
         }
       } else {
-        // Agent response arrived → speaking phase.
+        // Agent response text arrived. Ring was already stopped on onConnect;
+        // isSpeaking (driven by SDK onModeChange) is the source of truth for
+        // the speaking/listening transition — we just update the caption here.
         setLastAiText(message);
-        setUIPhase('speaking');
       }
     },
   });
 
-  // isSpeaking = AI is currently playing audio.
-  // When it stops, return to listening.
+  // Speaking shows while the agent's audio is playing. The SDK's
+  // `isSpeaking` briefly flaps false between streamed audio chunks, which
+  // caused visible listening/speaking flicker — debounce the false→listening
+  // transition so short gaps within one agent turn stay as 'speaking'.
+  //
+  // Also: the first time isSpeaking goes true is the "line picked up" moment.
+  // Kill the ringtone here rather than on onConnect so the ring keeps playing
+  // through the WebRTC-connected-but-agent-hasn't-spoken-yet gap.
   useEffect(() => {
     if (convState !== 'active') return;
-    if (!conversation.isSpeaking && uiPhase === 'speaking') {
-      setUIPhase('listening');
+    if (conversation.isSpeaking) {
+      stopRing();
+      setUIPhase('speaking');
+      return;
     }
-  }, [conversation.isSpeaking, convState]);
+    const t = setTimeout(() => setUIPhase('listening'), 700);
+    return () => clearTimeout(t);
+  }, [conversation.isSpeaking, convState, stopRing]);
 
-  // Thinking pulse animation.
-  useEffect(() => {
-    if (uiPhase === 'thinking') {
-      thinkLoop.current = Animated.loop(
-        Animated.sequence([
-          Animated.timing(thinkPulse, { toValue: 1.10, duration: 700, useNativeDriver: true }),
-          Animated.timing(thinkPulse, { toValue: 1.00, duration: 700, useNativeDriver: true }),
-        ]),
-      );
-      thinkLoop.current.start();
-    } else {
-      thinkLoop.current?.stop(); thinkPulse.setValue(1);
-    }
-  }, [uiPhase]);
 
   // Call timer.
   useEffect(() => {
@@ -332,7 +361,9 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
     return () => {
       activeRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
+      stopRing();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-start when initialMindId is provided.
@@ -345,8 +376,10 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   const startBoot = useCallback(async (mindId: string | null) => {
     selectedMindIdRef.current    = mindId;
     conversationStartedAtRef.current = Date.now();
+    setActiveMindName(getMindV2(mindId)?.name ?? 'untangle');
     setConvState('connecting');
     setError(null);
+    startRing();
 
     try {
       // If the app-startup registerGlobals() lost the race against the Android
@@ -387,12 +420,16 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
       ]);
 
       // Opening message — uses the handcrafted opener pool in mindsConfigV2.
-      const opening = await getOpeningMessage(
+      const opener = await getOpeningMessage(
         effectiveSummary,
         undefined,
         mindId,
         sourceContext ?? null,
       );
+      // Call mode: prepend the mind's phone-pickup greeting so the agent
+      // answers like a real call (e.g. "Hello. Tell me what has been stirring.").
+      const greeting = getMindV2(mindId)?.callGreeting ?? 'Hello.';
+      const opening = `${greeting} ${opener}`;
 
       // Seed messagesRef with the opening so reflection has it.
       messagesRef.current = [{
@@ -424,6 +461,7 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   const handleEndCall = useCallback(async () => {
     activeRef.current = false;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    stopRing();
 
     // Record distress reentry if needed.
     const maxTier = callDistressRef.current;
@@ -486,7 +524,6 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   const stateLabel = convState === 'connecting' ? 'Connecting…'
     : convState === 'error'    ? 'Tap to retry'
     : uiPhase === 'speaking'   ? 'Speaking'
-    : uiPhase === 'thinking'   ? 'Thinking…'
     : 'Listening';
 
   const ringsActive = convState === 'active' &&
@@ -593,7 +630,7 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
 
         {/* Caller info */}
         <View style={styles.callerSection}>
-          <Text style={styles.callerName}>untangle</Text>
+          <Text style={styles.callerName}>{activeMindName}</Text>
           <Text style={styles.callerSub}>{formatDate(effectiveSummary.date)}</Text>
         </View>
 
@@ -604,26 +641,36 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
             <Ring delay={600}  active={ringsActive} />
             <Ring delay={1200} active={ringsActive} />
 
-            <Animated.View style={[styles.avatar, { transform: [{ scale: thinkPulse }] }]}>
-              <LinearGradient
-                colors={['rgba(9,41,173,0.75)', 'rgba(2,6,14,0.90)']}
-                style={styles.avatarGradient}
-              >
-                <Feather
-                  name={
-                    convState === 'connecting'  ? 'loader'    :
-                    uiPhase   === 'listening'   ? 'mic'       :
-                    uiPhase   === 'thinking'    ? 'loader'    :
-                    convState === 'error'       ? 'wifi-off'  : 'volume-2'
-                  }
-                  size={36}
-                  color={
-                    uiPhase === 'listening' ? '#e94560' :
-                    convState === 'error'   ? '#e63946' :
-                    'rgba(224,242,254,0.90)'
-                  }
-                />
-              </LinearGradient>
+            <Animated.View style={styles.avatar}>
+              {Platform.OS === 'ios' ? (
+                <BlurView intensity={25} tint="dark" style={styles.avatarInner}>
+                  <View style={[StyleSheet.absoluteFill, styles.avatarBorderOverlay]} />
+                  <Feather
+                    name={
+                      convState === 'connecting'  ? 'loader'    :
+                      convState === 'error'       ? 'wifi-off'  :
+                      uiPhase   === 'listening'   ? 'mic'       : 'volume-2'
+                    }
+                    size={36}
+                    color="rgba(255,255,255,0.92)"
+                  />
+                </BlurView>
+              ) : (
+                <View style={[styles.avatarInner, styles.avatarAndroid]}>
+                  <Feather
+                    name={
+                      convState === 'connecting'  ? 'loader'    :
+                      convState === 'error'       ? 'wifi-off'  :
+                      uiPhase   === 'listening'   ? 'mic'       : 'volume-2'
+                    }
+                    size={36}
+                    color="rgba(255,255,255,0.92)"
+                  />
+                </View>
+              )}
+              {uiPhase === 'listening' && convState === 'active' && (
+                <View style={styles.avatarRedDot} />
+              )}
             </Animated.View>
           </TouchableOpacity>
 
@@ -714,8 +761,25 @@ const styles = StyleSheet.create({
   callerSub: { fontSize: 14, color: 'rgba(152,212,250,0.60)', fontFamily: 'GillSans-Light', marginTop: 6 },
   avatarSection: { alignItems: 'center', marginTop: 52 },
   avatarWrap: { width: AVATAR_SIZE, height: AVATAR_SIZE, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2, overflow: 'hidden', borderWidth: 1.5, borderColor: 'rgba(152,212,250,0.30)' },
-  avatarGradient: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2 },
+  avatarInner: {
+    width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: AVATAR_SIZE / 2,
+    overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarBorderOverlay: {
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.40)',
+    borderRadius: AVATAR_SIZE / 2,
+  },
+  avatarAndroid: {
+    backgroundColor: 'rgba(15,25,50,0.78)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
+  },
+  avatarRedDot: {
+    position: 'absolute', top: 4, right: 4,
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: '#ef4444',
+  },
   statePill: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 24, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: 'rgba(152,212,250,0.07)', borderRadius: 20, borderWidth: 1, borderColor: 'rgba(152,212,250,0.12)' },
   stateDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(152,212,250,0.50)' },
   stateDotListening: { backgroundColor: '#e94560' },

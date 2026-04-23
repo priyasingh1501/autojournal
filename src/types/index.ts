@@ -231,6 +231,12 @@ export interface MindV2 extends Omit<Mind, 'image'> {
   /** Only set on Companion — used when wellbeingState === 'hard_stretch'. */
   openingLinesDistress?: readonly string[];
   systemPrompt: string;
+  /**
+   * Short phone-pickup greeting prepended to the opening line in CALL mode
+   * only (not chat). Kept per-mind so each voice stays intact — e.g. Jung's
+   * "Hello." vs Rumi's "Greetings, friend."
+   */
+  callGreeting: string;
 }
 
 export interface MindHighlight {
@@ -333,6 +339,23 @@ export interface PatternsEvidence {
   date: string; // YYYY-MM-DD
 }
 
+export type RecurringCastRole = 'support' | 'friction' | 'aspiration' | 'obligation';
+
+export interface RecurringCastPerson {
+  name: string;                  // "Priya", "your manager", "a close friend"
+  role: RecurringCastRole;
+  appearance: string;            // one sentence about how they appear
+  mentions: number;              // how many entries reference them
+  evidence: PatternsEvidence[];  // ≥2 verbatim quotes naming them
+}
+
+export interface PullItem {
+  theme: string;                 // short phrase
+  detail: string;                // one-sentence observational detail
+  mentions: number;              // distinct entries where it appears
+  evidence: PatternsEvidence[];  // ≥2 verbatim quotes
+}
+
 export interface AcrossTimeObservation {
   type: AcrossTimeType;
   title: string;
@@ -340,6 +363,11 @@ export interface AcrossTimeObservation {
   evidence: PatternsEvidence[];
   window: string;       // "last 30 days" / "last 60 days" etc
   dismissible: boolean; // only true for "wondering_about"
+  /** Structured breakdown for recurring_cast — rendered as per-person visual cards. */
+  people?: RecurringCastPerson[];
+  /** Structured pulls for whats_pulling_you — rendered as two columns. */
+  toward?: PullItem[];
+  away?: PullItem[];
 }
 
 export interface PatternsReport {
@@ -350,7 +378,7 @@ export interface PatternsReport {
   thisMonth: {
     reflection: string;
     whatsLoud: string[];
-    intentionsProgress: Array<{ intention: string; note: string }> | null;
+    intentionsProgress: Array<{ intention: string; note: string; mentions: number }> | null;
     emotionalArc: Array<{ week: number; dominantEmotion: string; note: string }> | null;
   };
   acrossTime: AcrossTimeObservation[];

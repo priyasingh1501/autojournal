@@ -20,7 +20,7 @@ const EMOTION_SET = [
  * Infers 1–3 emotional tone tags from the transcript text using Haiku.
  * Returns an empty array on failure — never throws.
  */
-async function detectEmotions(text: string): Promise<string[]> {
+export async function detectEmotions(text: string): Promise<string[]> {
   try {
     const wordCount = text.trim().split(/\s+/).length;
     if (wordCount < 5) return []; // too short to classify reliably

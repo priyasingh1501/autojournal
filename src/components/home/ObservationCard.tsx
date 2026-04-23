@@ -113,10 +113,42 @@ export default function ObservationCard({ obs, hidden, onSitWith, onDismiss, onS
 
 // ── DefaultBody: most types ───────────────────────────────────────────────────
 
+// Types whose body is authored as 2–4 sentence prose by a dedicated prompt —
+// we render the full body instead of a trimmed headline.
+const FULL_BODY_TYPES = new Set<AcrossTimeObservation['type']>([
+  'first_impression', 'wondering_about', 'gone_quiet', 'stated_vs_actual',
+]);
+
 function DefaultBody({ obs, isDismissible: _isDismissible }: { obs: AcrossTimeObservation; isDismissible: boolean }) {
+  const isGoneQuiet = obs.type === 'gone_quiet';
+  const showFullBody = FULL_BODY_TYPES.has(obs.type);
+
+  if (showFullBody) {
+    return (
+      <>
+        <Text style={[c.fullBody, isGoneQuiet && c.headlineMuted]}>
+          {obs.body.trim()}
+        </Text>
+
+        {obs.evidence.length > 0 ? (
+          <View style={c.evidenceWrap}>
+            {obs.evidence.map((e, i) => (
+              <Text
+                key={i}
+                style={[c.evidenceText, i > 0 && c.evidenceTextSpaced]}
+              >
+                "{e.excerpt}"
+              </Text>
+            ))}
+          </View>
+        ) : null}
+      </>
+    );
+  }
+
+  // Legacy fallback — short headline style for types that still route here.
   const headline = deriveHeadline(obs);
   const countLine = deriveCountLine(obs);
-  const isGoneQuiet = obs.type === 'gone_quiet';
   const firstEvidence = obs.evidence[0] ?? null;
 
   return (
@@ -131,7 +163,7 @@ function DefaultBody({ obs, isDismissible: _isDismissible }: { obs: AcrossTimeOb
         <Text style={c.countLine}>{countLine}</Text>
       ) : null}
 
-      {!isGoneQuiet && firstEvidence ? (
+      {firstEvidence ? (
         <View style={c.evidenceWrap}>
           <Text style={c.evidenceText}>"{firstEvidence.excerpt}"</Text>
         </View>
@@ -278,6 +310,13 @@ const c = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 5,
   },
+  fullBody: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: T.primaryText,
+    fontFamily: 'GillSans-Light',
+    marginBottom: 10,
+  },
   headlineMuted: {
     color: T.secondaryText,
   },
@@ -302,6 +341,9 @@ const c = StyleSheet.create({
     color: T.secondaryText,
     lineHeight: 18,
     fontFamily: 'GillSans-Light',
+  },
+  evidenceTextSpaced: {
+    marginTop: 6,
   },
   actionsRow: {
     flexDirection: 'row',

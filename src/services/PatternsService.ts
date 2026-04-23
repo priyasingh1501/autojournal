@@ -14,10 +14,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { claudeProxy } from './AIProxy';
 import { StorageService } from './StorageService';
-import { AcrossTimeObservation, DailySummary, PatternsReport, TranscriptEntry, VoiceMode } from '../types';
+import { AcrossTimeObservation, DailySummary, Intention, PatternsReport, TranscriptEntry, VoiceMode } from '../types';
 import {
   allowedAcrossTimeTypes,
-  parsePatternsOutput,
+  parseMindMovesJson,
+  parseSingleObservationJson,
+  parseStatedVsActualJson,
+  parseThisMonthJson,
+  parseWhatPullsYouJson,
+  parseWhoShowsUpJson,
   windowLabelFor,
 } from './patternsParser';
 import { getDismissed, isDismissed, DismissedObservation } from './patternsDismiss';
@@ -110,14 +115,22 @@ type EmotionalArcWeek = { week: number; dominantEmotion: string; note: string };
 
 /**
  * Compute a 4-week emotional arc from this month's entry emotionTags.
- * Returns null if fewer than 2 weeks have tagged entries.
- * week 1 = most recent 7 days, week 4 = days 22-28 ago.
+ * Returns null if no week has tagged entries.
+ *
+ * Display week numbers follow calendar order (oldest → newest):
+ *   W1 = 22–28 days ago   (bucket index 3)
+ *   W2 = 15–21 days ago   (bucket index 2)
+ *   W3 = 8–14 days ago    (bucket index 1)
+ *   W4 = 0–7 days ago     (bucket index 0, most recent)
+ *
+ * Empty buckets are omitted, but surviving weeks keep their real calendar
+ * position — so a gap in data shows up as a gap in the card, not a sequential
+ * renumber that lies about when the emotion occurred.
  */
 async function computeEmotionalArc(
   thisMonthSummaries: DailySummary[],
 ): Promise<Array<EmotionalArcWeek> | null> {
   const today = Date.now();
-  // bucket[0] = last 7 days (week 1 in display), bucket[3] = days 22-28 (week 4)
   const buckets: Array<Map<string, { count: number; note: string }>> = [
     new Map(), new Map(), new Map(), new Map(),
   ];
@@ -141,7 +154,8 @@ async function computeEmotionalArc(
   }
 
   const weeks: EmotionalArcWeek[] = [];
-  for (let i = 0; i < 4; i++) {
+  // Walk from oldest bucket to newest so W1..W4 come out in calendar order.
+  for (let i = 3; i >= 0; i--) {
     const bucket = buckets[i];
     if (bucket.size === 0) continue;
     let top = '';
@@ -149,14 +163,10 @@ async function computeEmotionalArc(
     for (const [tag, data] of bucket) {
       if (data.count > topData.count) { top = tag; topData = data; }
     }
-    weeks.push({ week: i + 1, dominantEmotion: top, note: topData.note });
+    weeks.push({ week: 4 - i, dominantEmotion: top, note: topData.note });
   }
 
-  // Reverse so week 1 = earliest in the month (calendar order)
-  weeks.reverse();
-  for (let i = 0; i < weeks.length; i++) weeks[i].week = i + 1;
-
-  return weeks.length >= 2 ? weeks : null;
+  return weeks.length >= 1 ? weeks : null;
 }
 
 // ── Voice mode + early observations (on-device, no Claude) ───────────────────
@@ -329,102 +339,302 @@ async function buildContext(stats: ArchiveStats): Promise<BuiltContext> {
   return { thisMonthText, archiveText };
 }
 
-// ── Prompt ────────────────────────────────────────────────────────────────────
+// ── Prompts ───────────────────────────────────────────────────────────────────
+// Each major card on the Patterns screen has its own focused prompt. They run
+// in parallel so total latency stays close to a single call while each prompt
+// can enforce its own voice, recurrence bar, and output shape.
 
-function buildSystemPrompt(
-  allowedTypes: readonly string[],
-  dismissed: DismissedObservation[],
+function buildWhoShowsUpSystemPrompt(): string {
+  return `You are reading someone's private journal archive and producing the "Who shows up" card — a breakdown of specific people or roles that appear repeatedly across the entries.
+
+VOICE RULES (hard):
+- Observational, specific, never diagnostic.
+- Use second person ("you"). No advice, no prescriptions.
+- FORBIDDEN: personality labels, clinical language, "you are a [noun]" claims about the user OR about the people in their life.
+
+OUTPUT FORMAT — a single raw JSON object, no code fences, no preamble:
+{
+  "title":  "People who keep showing up",
+  "window": "last 60 days",
+  "body":   "<1–2 sentence overview of the cast as a fallback>",
+  "people": [
+    {
+      "name":       "<verbatim name the writer used (e.g. 'Priya'), OR a role if they didn't name them (e.g. 'your manager', 'a close friend')>",
+      "role":       "<one of: support | friction | aspiration | obligation>",
+      "appearance": "<ONE observational sentence: how and when they tend to appear>",
+      "mentions":   <integer: how many DISTINCT entries reference this person>,
+      "evidence": [
+        { "excerpt": "<EXACT quote from an entry that names this person — verbatim>", "date": "YYYY-MM-DD" },
+        { "excerpt": "<EXACT quote from a DIFFERENT entry that names this person>", "date": "YYYY-MM-DD" }
+      ]
+    }
+  ]
+}
+
+RECURRENCE BAR (hard — entries that don't meet it MUST be omitted, not softened):
+- A person qualifies ONLY if they appear in at least 3 DISTINCT entries.
+- Each qualifying person MUST have at least 2 evidence excerpts, each a verbatim quote
+  from a different entry, each quote containing the person's name or referent.
+- Each excerpt's "date" MUST match the bracketed [YYYY-MM-DD] on the entry it came from.
+- If no one meets this bar, return an empty people array. Do NOT pad.
+
+ROLE DEFINITIONS:
+- support:    the person tends to ease, steady, or comfort the writer.
+- friction:   the person tends to create tension, conflict, or strain.
+- aspiration: the person reflects something the writer wants to grow toward.
+- obligation: the person the writer writes about from a sense of duty or weight.
+If a person fits multiple roles, pick the dominant one across their appearances.
+
+Do NOT cap the number of people. Include every person who clears the bar.
+Do NOT fabricate quotes. If you can't find a verbatim excerpt, omit that person.
+
+Return ONLY the JSON object — no explanation, no code fences.`;
+}
+
+function buildFirstImpressionSystemPrompt(voiceMode: VoiceMode): string {
+  return `You are reading someone's earliest journal entries (between 3 and 8 entries total) and producing the "First read" card — the app's explicitly provisional first impression of what the writer seems to be about.
+
+VOICE RULES (hard):
+- Explicitly tentative. Open with phrases like "even this early...", "in just your first few entries...", "a first read, with the caveat that...".
+- Never make confident claims. Always acknowledge the small window.
+- Use second person ("you"). No trait labels, no personality typing, no advice.
+
+VOICE CALIBRATION: ${voiceMode === 'provisional' ? 'You have very limited data — be explicitly tentative.' : voiceMode === 'emerging' ? 'You have enough data to see patterns forming but not confirm them.' : 'You have substantial data but this is still a first-impression card — keep it provisional by design.'}
+
+OUTPUT FORMAT — a single raw JSON object, no code fences, no preamble:
+{
+  "title":  "A first read on you",
+  "window": "first impression",
+  "body":   "<one paragraph (3–5 sentences) — explicitly provisional first impression based on the earliest entries>",
+  "evidence": [
+    { "excerpt": "<EXACT verbatim quote from an early entry>", "date": "YYYY-MM-DD" }
+  ]
+}
+
+HARD BAR (return {"body":"","evidence":[]} if not met):
+- At least 1 verbatim evidence quote.
+- Each quote's "date" MUST match the bracketed [YYYY-MM-DD] header.
+- Do NOT fabricate quotes or impressions beyond what the entries actually show.
+
+Return ONLY the JSON object — no explanation, no code fences.`;
+}
+
+function buildWonderingAboutSystemPrompt(voiceMode: VoiceMode): string {
+  return `You are reading someone's private journal archive and producing the "Something you might be wondering about" card — a tentative observation about a question or uncertainty the writer seems to be circling, offered as a question rather than a claim.
+
+VOICE RULES (hard):
+- Tentative, observational. Frame as a question the writer seems to be asking themselves, not a conclusion you've reached.
+- Use second person ("you"). No advice, no prescriptions, no diagnosis.
+- FORBIDDEN: trait labels, personality claims, "you are X". Use "it seems like you might be wondering", "a question that keeps surfacing", "something unresolved".
+
+VOICE CALIBRATION: ${voiceMode === 'provisional' ? 'Very tentative — acknowledge the small window.' : voiceMode === 'emerging' ? 'Starting to notice patterns but acknowledge they are still forming.' : 'Observations can be confident the pattern exists, while the question itself remains open.'}
+
+OUTPUT FORMAT — a single raw JSON object, no code fences, no preamble:
+{
+  "title":  "Something you might be wondering about",
+  "window": "last 90 days",
+  "body":   "<2–4 sentences describing the question the writer seems to be circling, time-stamped>",
+  "evidence": [
+    { "excerpt": "<EXACT verbatim quote>", "date": "YYYY-MM-DD" },
+    { "excerpt": "<EXACT verbatim quote from a DIFFERENT entry>", "date": "YYYY-MM-DD" }
+  ]
+}
+
+HARD BAR (return {"body":"","evidence":[]} if not met):
+- At least 2 verbatim evidence quotes from different entries.
+- Each quote's "date" MUST match the bracketed [YYYY-MM-DD] header.
+- If the entries don't genuinely show the writer circling a question, omit rather than invent one.
+
+Return ONLY the JSON object — no explanation, no code fences.`;
+}
+
+function buildGoneQuietSystemPrompt(voiceMode: VoiceMode): string {
+  return `You are reading someone's private journal archive and producing the "Something that's gone quiet" card — a topic or concern that used to be loud in earlier entries and has recently dropped off.
+
+VOICE RULES (hard):
+- Observational, never diagnostic. Describe the change, don't interpret why.
+- Use second person ("you"). No advice.
+- Time-stamp both halves: when it was loud and when it went quiet.
+
+VOICE CALIBRATION: ${voiceMode === 'provisional' ? 'Too early for this observation — return empty.' : voiceMode === 'emerging' ? 'Acknowledge patterns are still forming.' : 'You have enough data for a confident comparison between earlier and recent entries.'}
+
+OUTPUT FORMAT — a single raw JSON object, no code fences, no preamble:
+{
+  "title":  "Something that's gone quiet",
+  "window": "last 60 days",
+  "body":   "<2–4 sentences: what was loud, when it was loud, and when it dropped off>",
+  "evidence": [
+    { "excerpt": "<EXACT verbatim quote from an earlier entry where the topic was loud>", "date": "YYYY-MM-DD" },
+    { "excerpt": "<EXACT verbatim quote from another earlier entry>", "date": "YYYY-MM-DD" }
+  ]
+}
+
+HARD BAR (return {"body":"","evidence":[]} if not met):
+- At least 2 verbatim quotes from when the topic WAS loud (not from the silent period).
+- Each quote's "date" MUST match the bracketed [YYYY-MM-DD] header.
+- The topic MUST have had a real presence earlier (3+ entries) and genuinely dropped off in the last 2-3 weeks.
+- If no topic clearly went quiet, return empty — do not fabricate decline.
+
+Return ONLY the JSON object — no explanation, no code fences.`;
+}
+
+function buildMindMovesSystemPrompt(): string {
+  return `You are reading someone's private journal archive and producing the "How your mind moves" card — a single observation that combines two things: (1) HOW the writer processes things on the page (their thinking texture), and (2) HOW their thinking has SHIFTED — stances, framings, or emphases that have moved over time.
+
+VOICE RULES (hard):
+- Observational, never diagnostic. No trait labels, no "you're a systems thinker", no MBTI/Big Five language.
+- Use second person ("you"). No advice, no prescriptions.
+- Specific examples beat abstract claims.
+
+OUTPUT FORMAT — a single raw JSON object, no code fences, no preamble:
+{
+  "title":  "How your mind moves",
+  "window": "last 60 days",
+  "body":   "<3–5 sentences. First, describe the texture of your thinking (analyse vs narrate, resolve in one entry vs across entries, cause-effect vs associative, zoomed-in detail vs zoomed-out systems, voice vs typed differences if both exist). Then, describe ONE concrete shift you can see — a stance, framing, or emphasis that has moved. Time-stamp both halves when possible.>",
+  "evidence": [
+    { "excerpt": "<EXACT verbatim quote illustrating the texture>", "date": "YYYY-MM-DD" },
+    { "excerpt": "<EXACT verbatim quote illustrating the shift — from earlier>", "date": "YYYY-MM-DD" },
+    { "excerpt": "<EXACT verbatim quote illustrating where the shift landed — from more recent entry>", "date": "YYYY-MM-DD" }
+  ]
+}
+
+HARD BAR (return {"body":"","evidence":[]} if not met):
+- Both halves must be grounded: at least one quote supporting the texture claim, and two quotes (earlier + later) supporting the shift.
+- Each quote's "date" MUST match the bracketed [YYYY-MM-DD] header on the entry.
+- If you can't find a real shift, only write the texture half and include 2 texture quotes. Don't fabricate movement.
+
+Return ONLY the JSON object — no explanation, no code fences.`;
+}
+
+function buildStatedVsActualSystemPrompt(): string {
+  return `You are reading someone's private journal archive and producing the "A gap worth noticing" card — one or two specific divergences between something the writer EXPLICITLY stated as a value or intention and what ACTUALLY appears in their entries.
+
+VOICE RULES (hard):
+- Observational and evidenced, never accusatory or diagnostic.
+- Use "I noticed", "You named… around the same time entries mentioned…" — NEVER "you are X", "you don't really care about", "you're avoiding".
+- Use second person ("you"). No advice, no prescriptions.
+- Tentative language: "seems to", "appears", "often" — leave room for the writer to disagree.
+
+OUTPUT FORMAT — a single raw JSON object, no code fences, no preamble:
+{
+  "title":  "Something worth noticing",
+  "window": "last 60 days",
+  "body":   "<2–4 sentences describing ONE gap: what you named as a value/intention on what date, and what the entries since then show. If you surface a second gap, separate with a paragraph break in the body.>",
+  "stated": [
+    { "excerpt": "<EXACT verbatim quote where the writer named the value or intention>", "date": "YYYY-MM-DD" }
+  ],
+  "actual": [
+    { "excerpt": "<EXACT verbatim quote showing the divergent behavior>", "date": "YYYY-MM-DD" },
+    { "excerpt": "<EXACT verbatim quote from a DIFFERENT entry>", "date": "YYYY-MM-DD" }
+  ]
+}
+
+HARD BAR (omit the whole observation if any of these fail):
+- The "stated" side MUST be a direct quote where the writer explicitly named the value/intention. Not inferred.
+- The "actual" side MUST have ≥2 verbatim quotes from DIFFERENT entries showing the divergence.
+- Each quote's "date" MUST match the bracketed [YYYY-MM-DD] on the entry it came from.
+- Maximum 2 gaps total. Prefer 1 strong gap over 2 weak ones.
+- If you can't find a stated-value quote AND ≥2 behavior quotes to contradict it, return: {"body": "", "stated": [], "actual": []}. Do NOT fabricate. Do NOT infer values the writer didn't name.
+
+Return ONLY the JSON object — no explanation, no code fences.`;
+}
+
+function buildWhatPullsYouSystemPrompt(): string {
+  return `You are reading someone's private journal archive and producing the "What moves you toward and away" card.
+
+VOICE RULES (hard):
+- Observational, specific, never diagnostic.
+- Use second person ("you"). No advice, no prescriptions.
+- FORBIDDEN: personality labels, trait claims, "you are X". Say "you move toward / you tend to avoid".
+
+OUTPUT FORMAT — a single raw JSON object, no code fences, no preamble:
+{
+  "title":  "What moves you toward and away",
+  "window": "last 60 days",
+  "toward": [
+    {
+      "theme":    "<short phrase or fragment naming what you move toward>",
+      "detail":   "<ONE observational sentence describing the pull, time-stamped when relevant>",
+      "mentions": <integer: how many DISTINCT entries show this pull>,
+      "evidence": [
+        { "excerpt": "<EXACT verbatim quote from an entry>", "date": "YYYY-MM-DD" },
+        { "excerpt": "<EXACT verbatim quote from a DIFFERENT entry>", "date": "YYYY-MM-DD" }
+      ]
+    }
+  ],
+  "away": [
+    {
+      "theme":    "<short phrase naming what you avoid or resist>",
+      "detail":   "<ONE observational sentence describing the avoidance>",
+      "mentions": <integer>,
+      "evidence": [
+        { "excerpt": "<verbatim quote>", "date": "YYYY-MM-DD" },
+        { "excerpt": "<verbatim quote from different entry>", "date": "YYYY-MM-DD" }
+      ]
+    }
+  ]
+}
+
+RECURRENCE BAR (hard):
+- Each item in "toward" or "away" MUST appear in at least 3 DISTINCT entries.
+- Each item MUST include at least 2 verbatim evidence excerpts from DIFFERENT entries.
+- Each excerpt's "date" MUST match the bracketed [YYYY-MM-DD] on the entry.
+- Omit items that can't clear the bar. Do NOT pad either list.
+- If nothing recurs, return empty arrays.
+
+Do NOT cap either list. Include every toward- or away-pattern that clears the bar.
+Return ONLY the JSON object — no explanation, no code fences.`;
+}
+
+function buildThisMonthSystemPrompt(
+  activeIntentions: Intention[],
   intentionsBlock: string,
-  voiceMode: VoiceMode,
 ): string {
-  const blocklist = dismissed.length === 0
-    ? ''
+  const intentionsSpec = activeIntentions.length === 0
+    ? `The user has NO active intentions. Return "intentionsProgress": null. Do NOT fabricate intentions.`
     : [
-        '\nPREVIOUSLY DISMISSED OBSERVATIONS (the user marked these as "not quite" or "too soft" — do NOT reproduce them; pick a genuinely different angle, or omit a section entirely rather than re-serve a rejected observation):',
-        ...dismissed.slice(-40).map(d => `  - [${d.type}] "${d.title}" (reason: ${d.reason})`),
+        `The user has ${activeIntentions.length} active intention(s), listed at the top of this prompt.`,
+        `Return ONE entry in "intentionsProgress" for EACH active intention — never skip one.`,
+        `Each note should be one honest observational sentence:`,
+        `  - If the entries show the intention coming up, describe what you saw (e.g. "You wrote about running three times, all before noon.").`,
+        `  - If the entries don't touch on it this month, say so plainly (e.g. "Didn't come up in your entries this month.").`,
+        `Do NOT score, grade, or encourage. Observe only.`,
+        `The "intention" field MUST match the active intention text verbatim.`,
       ].join('\n');
-  const voiceCalibration = voiceMode === 'provisional'
-    ? `VOICE CALIBRATION — PROVISIONAL (fewer than 8 entries): You have very limited data. Be explicitly tentative. Open observations with phrases like "even this early...", "in just your first few entries...", "something that's already showing up...". Never make confident declarations. Always acknowledge you are working from a small window.`
-    : voiceMode === 'emerging'
-    ? `VOICE CALIBRATION — EMERGING (8–20 entries): You have enough data to see patterns forming but not fully confirm them. Use language like "starting to notice...", "a pattern that seems to be forming...", "coming up more than once...". Be confident the observation exists while being honest it is still early.`
-    : `VOICE CALIBRATION — ESTABLISHED (20+ entries): You have substantial data. Use declarative observations. The patterns are real. Speak with appropriate confidence while maintaining an observational rather than diagnostic voice. Avoid hedging that would weaken observations you have strong evidence for.`;
 
-  const sectionCatalog = [
-    'early_signal: (appears from entry 3) Explicitly tentative first observation about what is already showing up, even with limited data. Open with phrases like "even this early...", "in just your first few entries...". Never make confident claims — acknowledge the small window. Title like "Something already showing up".',
-    'first_impression: (appears only when entryCount is between 3 and 8) The app\'s first read on what this person seems to be about, based on their earliest entries. One paragraph, explicitly provisional. Title like "A first read on you".',
-    'whats_loud: A theme that has shown up often, recently. Title like "What\'s been loud lately".',
-    'returning_question: A question the writer keeps circling back to across entries. Title like "A question you keep returning to".',
-    'mind_moving: A way their thinking has shifted — a stance, framing, or emphasis that has moved. Title like "How your mind has been moving".',
-    'wondering_about: A tentative observation about something the writer seems to be wondering about, offered as a question rather than a claim. DISMISSIBLE. Title like "Something you might be wondering about".',
-    'gone_quiet: A topic or concern that used to be loud and has recently dropped off. Title like "Something that\'s gone quiet".',
-    'whats_pulling_you: Recurring patterns of what the writer moves toward — excitement, aspiration, new challenges — and what they consistently avoid or resist. 2-4 sentences covering 2-3 toward-patterns and 1-2 away-patterns. No labels or type claims — only what is directly observable in the entries. Do NOT say "you are X"; say "you move toward / you tend to avoid". Title like "What moves you toward and away".',
-    'stated_vs_actual: SPARSE AND TENTATIVE. Surface only 1-2 specific divergences where something the writer explicitly stated as a value or intention is clearly contradicted by what actually appears in the entries. Both sides MUST be grounded in direct quotes or unambiguous paraphrase — never infer this without strong textual support on both sides. Maximum 2 divergences in the body. Voice: evidenced and observational, never accusatory. "I noticed" not "you are." DISMISSIBLE. Title like "Something worth noticing".',
-    'recurring_cast: Specific people or roles that appear repeatedly across entries, plus HOW they tend to appear — as support, friction, aspiration, obligation. 2-4 people/roles, each 1-2 sentences. Names are fine if the writer used them; roles ("your manager", "a close friend") are fine too. Title like "People who keep showing up".',
-    'thinking_texture: How the writer processes things in writing — do they analyse or narrate? Do they resolve thoughts within one entry or across entries? Do they use cause-effect or associative language? Do they zoom in on detail or out to systems? If both voice and typed entries exist, note any difference in texture. 3-4 sentences, pure observation, no labels ("not: you\'re a systems thinker"). Title like "How you tend to think on the page".',
-    'self_language: (threshold: 8+ entries) Scan for verbatim self-referential phrases the writer uses to describe themselves: "I\'m the kind of person who", "I always", "I never", "I tend to", "I\'m bad at", "I\'m good at", "I\'m someone who", "I can\'t", "I don\'t". Extract 3-6 of the most distinctive phrases verbatim — do NOT paraphrase or interpret. Format the body as one phrase per line, nothing else. No interpretation, no preamble, no explanation. Evidence array must be empty — the phrases ARE the content. Title like "Words you use about yourself". The card will display these phrases exactly as written.',
-    'repeating_story: (threshold: 12+ entries) Identify narrative conclusions the user has already reached and keeps restating as fact. These are NOT open questions (unlike returning_question) — they are calcified beliefs: "things always go wrong when...", "I\'m someone who never...", "it always ends up that...", "people like me don\'t...". Body: state the distilled pattern in one phrase, then note how many entries it appeared in and in what contexts. Max 2 repeating stories per generation. Include 1 verbatim evidence excerpt. Voice: purely observational — "you\'ve said something like this X times" not "you believe that...". DISMISSIBLE. Title like "A story you keep telling".',
-  ].join('\n  - ');
-
-  const allowedList = allowedTypes.length === 0
-    ? 'NONE. Return an empty array.'
-    : allowedTypes.join(', ');
-
-  return `You are reading someone's private journal archive. Your task is to produce an observational "Patterns" report — NOT a personality assessment.
+  return `You are reading a month of someone's private journal entries and producing the "This Month" card.
 
 VOICE RULES (hard):
 - Tentative, observational, specific. Describe what's present, don't diagnose.
-- Time-stamp observations ("over the last three weeks...", "in early March...", "since Feb 20...").
-- FORBIDDEN: classification language, trait labels, type labels, Big Five / Enneagram / MBTI references, "you are a [noun]" claims, clinical-sounding adjectives ("anxious personality", "avoidant", etc.).
+- Time-stamp when relevant ("in the last week...", "since mid-month...").
+- FORBIDDEN: trait labels, personality claims, clinical language, "you are a [noun]", advice, prescriptions.
 - Write in second person ("you").
-- No advice, no prescriptions, no "you should".
 
-OUTPUT FORMAT — two sentinel-separated sections, nothing else:
-
-===THIS_MONTH===
-A single JSON object (raw JSON, no code fences, no trailing commas):
+OUTPUT FORMAT — a single raw JSON object, no code fences, no preamble:
 {
-  "reflection": "<3–5 sentence prose about the month so far. Warm, specific, time-stamped.>",
-  "whatsLoud": ["<short phrase>", "<short phrase>", "<short phrase>"],  // 1–3 items, naming what's been loud this month
-  "intentionsProgress": null  // see rules below — null when no active intentions are provided
+  "reflection": "<3–5 sentences of prose summarising the month so far — specific and time-stamped>",
+  "whatsLoud": ["<full-sentence theme>", "<full-sentence theme>", ...],
+  "intentionsProgress": null | [ { "intention": "<verbatim intention text>", "note": "<one-line observational note>" }, ... ]
 }
 
-If ACTIVE INTENTIONS are listed at the top of this prompt, populate intentionsProgress
-with one short status per intention — an observational one-sentence note about what
-showed up this month, e.g. "You called her three times; once this past weekend was the
-longest call." If NO active intentions were provided, intentionsProgress MUST be null.
-Do NOT fabricate intentions the user didn't declare. Do NOT score or grade — observe.
+RECURRING THEMES RULES (for "whatsLoud"):
+- The goal is to tell the user where their focus has been repeatedly across the month —
+  topics, concerns, or areas of life their attention keeps returning to.
+- Each theme MUST be a full observational sentence, not a label or short phrase.
+  Example: "Your health has been rough throughout the month and your attention has kept coming back to it."
+  Example: "Work deadlines have dominated — they showed up in most entries from the last three weeks."
+- Each theme MUST be genuinely recurring: appears in at least 3 entries AND across at least 2 different weeks of the month.
+- Do NOT include one-off incidents, single-week preoccupations, or themes you can't support with repeated appearances.
+- Do NOT cap the list artificially — include every theme that meets the recurrence bar.
+  If only one theme truly recurs, return one. If five recur, return five. If none do, return [].
+- Order themes by how much of the month's attention they took up, loudest first.
 
-===ACROSS_TIME===
-A single JSON array of observation objects. ONLY include observations of the following types (the archive is not yet mature enough for others):
-  TYPES ALLOWED THIS RUN: ${allowedList}
+INTENTIONS RULES:
+${intentionsSpec}
 
-Each observation object:
-{
-  "type": "<one of: early_signal | first_impression | whats_loud | returning_question | mind_moving | wondering_about | gone_quiet | whats_pulling_you | stated_vs_actual | recurring_cast | thinking_texture | self_language | repeating_story>",
-  "title": "<short observational title>",
-  "body": "<2–4 sentences of prose observation, time-stamped>",
-  "evidence": [
-    { "excerpt": "<EXACT quote pulled verbatim from an entry — not a paraphrase>", "date": "YYYY-MM-DD" },
-    { "excerpt": "...", "date": "YYYY-MM-DD" }
-  ],
-  "window": "<human-readable window label>"
+Return ONLY the JSON object — no explanation, no code fences.${intentionsBlock ? `\n\n${intentionsBlock}` : ''}`;
 }
 
-EVIDENCE RULES (hard):
-- For self_language: evidence array MUST be empty [] — the phrases in the body are the content.
-- For early_signal, first_impression, repeating_story: include at least 1 evidence item.
-- For all other types: include 2–3 evidence items.
-- Each "excerpt" MUST be a verbatim fragment from the entries provided — not summarised, not invented.
-- Each "date" MUST match the bracketed [YYYY-MM-DD] header on the entry the excerpt came from.
-- If you can't produce the required evidence for an observation, OMIT that observation.
-
-SECTION CATALOG:
-  - ${sectionCatalog}
-
-${voiceCalibration}
-
-Return ONLY the two sentinel sections and their JSON — no preamble, no explanation, no code fences around the sentinel blocks.${intentionsBlock ? `\n\n${intentionsBlock}` : ''}${blocklist}`;
-}
 
 // ── Generate ──────────────────────────────────────────────────────────────────
 
@@ -440,6 +650,20 @@ export interface GenerateResult {
  * From entry 1: texture_early is computed on-device without a Claude call.
  * From entry 3: first_impression and early_signal are Claude-generated.
  */
+/**
+ * Count how many times an intention was mentioned in journal entries during
+ * the last 4 completed+current weeks. Uses the on-device rolling
+ * weeklyMentionCounts tracked by IntentionsService.recordMention.
+ */
+function countMentionsLastFourWeeks(intention: Intention): number {
+  const counts = intention.weeklyMentionCounts ?? [];
+  if (counts.length === 0) return 0;
+  // Week keys are ISO-8601 ("YYYY-Www"). Lexicographic sort puts newest last.
+  const sorted = [...counts].sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+  const recent = sorted.slice(-4);
+  return recent.reduce((n, w) => n + w.count, 0);
+}
+
 export async function generate(): Promise<GenerateResult> {
   const stats = await inspectArchive();
   if (stats.entryCount === 0) {
@@ -451,64 +675,145 @@ export async function generate(): Promise<GenerateResult> {
   const dismissed  = await getDismissed();
   const activeIntentions = await getActiveIntentions().catch(() => []);
   const intentionsBlock = buildIntentionContextBlock(activeIntentions);
-  const system     = buildSystemPrompt(allowed, dismissed, intentionsBlock, voiceMode);
   const { thisMonthText, archiveText } = await buildContext(stats);
 
-  const userContent = [
+  const thisMonthUser = [
+    thisMonthText,
+    `\nArchive stats: ${stats.archiveDays} days, ${stats.entryCount} entries logged.`,
+    `\nProduce the This Month JSON object now.`,
+  ].filter(Boolean).join('\n\n');
+
+  const fullArchiveUser = [
     thisMonthText,
     archiveText,
     `\nArchive stats: ${stats.archiveDays} days, ${stats.entryCount} entries logged.`,
-    `\nPlease produce the two-section report now.`,
   ].filter(Boolean).join('\n\n');
 
-  const response = await claudeProxy.messages.create({
-    model: 'claude-opus-4-7',
-    max_tokens: 3000,
-    system,
-    messages: [{ role: 'user', content: userContent }],
-  });
+  const makeCall = (system: string, user: string, maxTokens: number) =>
+    claudeProxy.messages.create(
+      {
+        model: 'claude-sonnet-4-6',
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: user }],
+      },
+      { timeoutMs: 90_000 },
+    );
 
-  const raw = response.content
-    .filter((b: any) => b.type === 'text')
-    .map((b: any) => b.text)
-    .join('');
+  // Only fire a per-card call if the archive is mature enough for that type.
+  // `allowed` comes from allowedAcrossTimeTypes() and already encodes the
+  // entry-count + archive-day thresholds.
+  const allowedSet = new Set(allowed);
+  const nullResponse = Promise.resolve(null as any);
+  const maybe = <T>(cond: boolean, call: () => Promise<T>) =>
+    cond ? call() : (nullResponse as Promise<T | null>);
 
-  const report = parsePatternsOutput(raw, {
-    generatedAt: Date.now(),
-    archiveDays: stats.archiveDays,
-    entryCount:  stats.entryCount,
-  });
+  const [
+    thisMonthRes,
+    whoShowsUpRes,
+    whatPullsYouRes,
+    mindMovesRes,
+    statedVsActualRes,
+    firstImpressionRes,
+    wonderingAboutRes,
+    goneQuietRes,
+  ] = await Promise.all([
+    makeCall(buildThisMonthSystemPrompt(activeIntentions, intentionsBlock), thisMonthUser, 800),
+    maybe(allowedSet.has('recurring_cast'),
+      () => makeCall(buildWhoShowsUpSystemPrompt(), `${fullArchiveUser}\n\nProduce the Who Shows Up JSON object now.`, 1600)),
+    maybe(allowedSet.has('whats_pulling_you'),
+      () => makeCall(buildWhatPullsYouSystemPrompt(), `${fullArchiveUser}\n\nProduce the What Pulls You JSON object now.`, 1600)),
+    maybe(allowedSet.has('mind_moving') || allowedSet.has('thinking_texture'),
+      () => makeCall(buildMindMovesSystemPrompt(), `${fullArchiveUser}\n\nProduce the How Your Mind Moves JSON object now.`, 700)),
+    maybe(allowedSet.has('stated_vs_actual'),
+      () => makeCall(buildStatedVsActualSystemPrompt(), `${fullArchiveUser}\n\nProduce the A Gap Worth Noticing JSON object now.`, 700)),
+    maybe(allowedSet.has('first_impression'),
+      () => makeCall(buildFirstImpressionSystemPrompt(voiceMode), `${fullArchiveUser}\n\nProduce the First Read JSON object now.`, 500)),
+    maybe(allowedSet.has('wondering_about'),
+      () => makeCall(buildWonderingAboutSystemPrompt(voiceMode), `${fullArchiveUser}\n\nProduce the Wondering About JSON object now.`, 600)),
+    maybe(allowedSet.has('gone_quiet'),
+      () => makeCall(buildGoneQuietSystemPrompt(voiceMode), `${fullArchiveUser}\n\nProduce the Gone Quiet JSON object now.`, 600)),
+  ]);
 
-  report.voiceMode = voiceMode;
+  const extractText = (res: any) =>
+    res ? res.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('') : '';
+
+  const parsedThisMonth = parseThisMonthJson(extractText(thisMonthRes));
+  const whoShowsUp      = whoShowsUpRes     ? parseWhoShowsUpJson(extractText(whoShowsUpRes))         : null;
+  const whatPullsYou    = whatPullsYouRes   ? parseWhatPullsYouJson(extractText(whatPullsYouRes))     : null;
+  const mindMoves       = mindMovesRes      ? parseMindMovesJson(extractText(mindMovesRes))           : null;
+  const statedVsActual  = statedVsActualRes ? parseStatedVsActualJson(extractText(statedVsActualRes)) : null;
+  const firstImpression = firstImpressionRes
+    ? parseSingleObservationJson(extractText(firstImpressionRes), 'first_impression')
+    : null;
+  const wonderingAbout  = wonderingAboutRes
+    ? parseSingleObservationJson(extractText(wonderingAboutRes), 'wondering_about')
+    : null;
+  const goneQuiet       = goneQuietRes
+    ? parseSingleObservationJson(extractText(goneQuietRes), 'gone_quiet')
+    : null;
+
+  // Join LLM intention notes with on-device mention counts so every active
+  // intention has a row, even ones the model skipped.
+  let intentionsProgress: PatternsReport['thisMonth']['intentionsProgress'] = null;
+  if (activeIntentions.length > 0) {
+    const noteByIntention = new Map<string, string>();
+    for (const n of parsedThisMonth.intentionNotes ?? []) {
+      noteByIntention.set(n.intention.toLowerCase().trim(), n.note);
+    }
+    intentionsProgress = activeIntentions.map(i => ({
+      intention: i.text,
+      note:      noteByIntention.get(i.text.toLowerCase().trim()) ?? '',
+      mentions:  countMentionsLastFourWeeks(i),
+    }));
+  }
 
   // Compute emotional arc on-device from emotionTags — no Claude call needed.
   const monthCutoff = Date.now() - 30 * 86_400_000;
   const thisMonthSummaries = stats.summaries.filter(
     s => new Date(s.date + 'T12:00:00').getTime() >= monthCutoff,
   );
-  report.thisMonth.emotionalArc = await computeEmotionalArc(thisMonthSummaries);
+  const emotionalArc = await computeEmotionalArc(thisMonthSummaries);
 
-  // Inject texture_early (on-device, entry 1+) at the front of acrossTime.
-  const textureEarly = computeTextureEarly(stats.allTranscripts);
-
-  // Backfill window labels; filter prompt-level blocklist bypasses.
-  report.acrossTime = report.acrossTime
+  // Merge every per-card output into one acrossTime array in display order.
+  const merged: AcrossTimeObservation[] = [];
+  if (firstImpression) merged.push(firstImpression);
+  if (whoShowsUp)      merged.push(whoShowsUp);
+  if (whatPullsYou)    merged.push(whatPullsYou);
+  if (mindMoves)       merged.push(mindMoves);
+  if (statedVsActual)  merged.push(statedVsActual);
+  if (wonderingAbout)  merged.push(wonderingAbout);
+  if (goneQuiet)       merged.push(goneQuiet);
+  const fullAcrossTime = merged
     .filter(o => !isDismissed(dismissed, o.type, o.title))
     .map(o => ({ ...o, window: o.window || windowLabelFor(o.type) }));
 
-  // Prepend texture_early so it's always available to the curator.
-  if (textureEarly) {
-    report.acrossTime = [textureEarly, ...report.acrossTime];
-  }
-
-  const usage = {
-    inputTokens:  (response as any)?.usage?.input_tokens  ?? 0,
-    outputTokens: (response as any)?.usage?.output_tokens ?? 0,
+  const report: PatternsReport = {
+    generatedAt: Date.now(),
+    archiveDays: stats.archiveDays,
+    entryCount:  stats.entryCount,
+    voiceMode,
+    thisMonth: {
+      reflection:         parsedThisMonth.reflection,
+      whatsLoud:          parsedThisMonth.whatsLoud,
+      intentionsProgress,
+      emotionalArc,
+    },
+    acrossTime: fullAcrossTime,
   };
-  // Cost tracking — keep lightweight so we can spot runaway prompts.
+
+  const sumUsage = (field: 'input_tokens' | 'output_tokens') =>
+    [
+      thisMonthRes, whoShowsUpRes, whatPullsYouRes, mindMovesRes,
+      statedVsActualRes, firstImpressionRes, wonderingAboutRes, goneQuietRes,
+    ].reduce((n, r) => n + ((r as any)?.usage?.[field] ?? 0), 0);
+  const usage = {
+    inputTokens:  sumUsage('input_tokens'),
+    outputTokens: sumUsage('output_tokens'),
+  };
   console.log(
     `[PatternsService] generated: archiveDays=${stats.archiveDays} entries=${stats.entryCount} ` +
-    `tokens_in=${usage.inputTokens} tokens_out=${usage.outputTokens} acrossTime=${report.acrossTime.length}`,
+    `tokens_in=${usage.inputTokens} tokens_out=${usage.outputTokens} acrossTime=${fullAcrossTime.length}`,
   );
 
   await saveReport(report);

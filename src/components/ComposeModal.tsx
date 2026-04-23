@@ -22,6 +22,7 @@ import { generateDailySummary } from '../services/SummaryService';
 import { UserContextService } from '../services/UserContextService';
 import { ActionablesService } from '../services/ActionablesService';
 import { detectAndSuggestIntention } from '../services/IntentionsService';
+import { detectEmotions } from '../services/BatchTranscriptionService';
 import { effectiveDateStr } from '../services/dayRollover';
 import { invalidateDigest } from '../services/DigestService';
 import { TranscriptEntry } from '../types';
@@ -300,6 +301,13 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
           .catch(() => {});
         // Intention detection — weekly-throttled inside the service.
         detectAndSuggestIntention(entry).catch(() => {});
+        // Emotion tags — async Haiku classification, persisted after save.
+        detectEmotions(entry.text)
+          .then(tags => {
+            if (tags.length === 0) return;
+            return StorageService.updateTranscript({ ...entry, emotionTags: tags }, date);
+          })
+          .catch(() => {});
       }
 
       reset();

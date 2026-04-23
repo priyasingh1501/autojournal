@@ -2,39 +2,31 @@ import { AcrossTimeObservation } from '../types';
 
 export function accentColorFor(type: AcrossTimeObservation['type']): string {
   switch (type) {
-    case 'returning_question': return '#7f77dd';
-    case 'whats_loud':         return '#888780';
     case 'gone_quiet':         return '#888780';
     case 'wondering_about':    return '#ef9f27';
     case 'whats_pulling_you':  return '#5dcaa5';
     case 'thinking_texture':   return '#378add';
-    case 'stated_vs_actual':   return '#ef9f27';
+    case 'stated_vs_actual':   return '#c89b6e';
     case 'recurring_cast':     return '#d4537e';
     case 'mind_moving':        return '#378add';
-    case 'early_signal':       return '#5dcaa5';
     case 'first_impression':   return '#7f77dd';
     case 'texture_early':      return '#888780';
-    case 'self_language':      return '#c89b6e';
-    case 'repeating_story':    return '#d4537e';
+    default:                   return '#888780';
   }
 }
 
 export function typeLabelFor(type: AcrossTimeObservation['type']): string {
   switch (type) {
-    case 'returning_question': return 'returning';
-    case 'whats_loud':         return 'loud right now';
     case 'gone_quiet':         return 'gone quiet';
-    case 'wondering_about':    return "something i'm noticing";
+    case 'wondering_about':    return 'a question forming';
     case 'whats_pulling_you':  return "what's pulling you";
     case 'thinking_texture':   return 'how your mind moves';
-    case 'stated_vs_actual':   return "something i'm noticing";
+    case 'stated_vs_actual':   return 'a gap worth noticing';
     case 'recurring_cast':     return 'who shows up';
     case 'mind_moving':        return 'how your mind moves';
-    case 'early_signal':       return 'early signal';
     case 'first_impression':   return 'first read';
     case 'texture_early':      return 'how you show up';
-    case 'self_language':      return 'your words';
-    case 'repeating_story':    return 'a story you keep telling';
+    default:                   return '';
   }
 }
 
@@ -62,15 +54,6 @@ export function deriveHeadline(obs: AcrossTimeObservation): string {
   const fallback = title || trimToWords(body, 10);
 
   switch (obs.type) {
-    case 'returning_question': {
-      // Try quoted text (both straight and curly quotes)
-      const quoted = body.match(/["""]([^"""]+\?[^"""]*)["""]/);
-      if (quoted) return quoted[1].trim();
-      const questionSentence = body.match(/[A-Z][^.!?]*\?/);
-      if (questionSentence) return trimToWords(questionSentence[0].trim(), 10);
-      return trimToWords(firstClause(body), 10) || fallback;
-    }
-
     case 'gone_quiet': {
       const daysMatch = body.match(/(\d+)\s+days?\s+ago/i);
       // straight and curly quotes for topic extraction
@@ -88,14 +71,6 @@ export function deriveHeadline(obs: AcrossTimeObservation): string {
     case 'stated_vs_actual':
       return trimToWords(firstSentence(body), 10) || fallback;
 
-    case 'whats_loud': {
-      // Body: "Work has been the loudest theme…" → extract subject → "Work has been loud."
-      const subjectMatch = body.match(/^([A-Z][^,.]+?)\s+has been\b/i);
-      if (subjectMatch) return `${subjectMatch[1].trim()} has been loud.`;
-      // Fallback: take first sentence trimmed to 5 words
-      return trimToWords(firstSentence(body), 5) || fallback;
-    }
-
     case 'recurring_cast': {
       const first = firstSentence(body);
       const char = trimToWords(
@@ -108,16 +83,6 @@ export function deriveHeadline(obs: AcrossTimeObservation): string {
     case 'whats_pulling_you':
       return ''; // intentional — uses two-column layout instead
 
-    case 'self_language':
-      return ''; // intentional — phrases are the content, no headline
-
-    case 'repeating_story': {
-      // First quoted phrase in body is the distilled narrative
-      const quoted = body.match(/["""]([^"""]+)["""]/);
-      if (quoted) return `"${quoted[1].trim()}"`;
-      return trimToWords(firstClause(body), 10) || fallback;
-    }
-
     default:
       return trimToWords(firstSentence(body), 10) || fallback;
   }
@@ -127,14 +92,6 @@ export function deriveCountLine(obs: AcrossTimeObservation): string {
   const body = obs.body.trim();
 
   switch (obs.type) {
-    case 'returning_question': {
-      const m = body.match(/(\d+)\s+times?/i);
-      return m ? `${m[1]} times this month` : obs.window;
-    }
-    case 'whats_loud': {
-      const m = body.match(/(\d+)\s+(?:of your\s+)?entries?/i);
-      return m ? `in ${m[1]} of your entries this month` : obs.window;
-    }
     case 'gone_quiet': {
       const m = body.match(/was\s+(?:loud|common|frequent|prominent)[^.]+\./i);
       return m ? m[0].trim() : obs.window;
@@ -154,15 +111,6 @@ export function deriveCountLine(obs: AcrossTimeObservation): string {
     case 'recurring_cast': {
       const m = body.match(/(\d+)\s+entries?/i);
       return m ? `in ${m[1]} entries` : obs.window;
-    }
-    case 'self_language': {
-      const phrases = parseSelfLanguagePhrases(obs.body);
-      return phrases.length > 4 ? `${phrases.length - 4} more phrase${phrases.length - 4 !== 1 ? 's' : ''}` : '';
-    }
-
-    case 'repeating_story': {
-      const m = obs.body.match(/(\d+)\s+(?:times?|entries?)/i);
-      return m ? `${m[0].toLowerCase()}` : obs.window;
     }
 
     default:

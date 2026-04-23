@@ -34,28 +34,24 @@ test('allowedAcrossTimeTypes returns [] for 1-2 entries (Claude types need 3+)',
   assert.deepEqual(allowedAcrossTimeTypes(10, 2), []);
 });
 
-test('early_signal + first_impression appear at 3 entries', () => {
+test('first_impression appears at 3 entries', () => {
   const t = allowedAcrossTimeTypes(0, 3);
-  assert.ok(t.includes('early_signal'), 'missing early_signal');
   assert.ok(t.includes('first_impression'), 'missing first_impression');
-  assert.ok(!t.includes('whats_loud'), 'whats_loud should not appear at 3 entries');
+  assert.ok(!t.includes('whats_pulling_you'), 'whats_pulling_you should not appear at 3 entries');
 });
 
 test('first_impression disappears after 8 entries', () => {
   const t = allowedAcrossTimeTypes(0, 9);
   assert.ok(!t.includes('first_impression'), 'first_impression should disappear after 8 entries');
-  assert.ok(t.includes('early_signal'));
 });
 
-test('whats_loud fades in at 5 entries', () => {
-  const t = allowedAcrossTimeTypes(0, 5);
-  assert.ok(t.includes('whats_loud'));
-  assert.ok(!t.includes('returning_question'));
+test('whats_pulling_you fades in at 7 entries', () => {
+  const t = allowedAcrossTimeTypes(0, 7);
+  assert.ok(t.includes('whats_pulling_you'));
 });
 
-test('returning_question + mind_moving fade in at 8-10 entries', () => {
+test('mind_moving fades in at 10 entries', () => {
   const t = allowedAcrossTimeTypes(0, 10);
-  assert.ok(t.includes('returning_question'));
   assert.ok(t.includes('mind_moving'));
   assert.ok(!t.includes('wondering_about'));
 });
@@ -65,14 +61,9 @@ test('wondering_about fades in at 12 entries', () => {
   assert.ok(t.includes('wondering_about'));
 });
 
-test('self_language fades in at 8 entries', () => {
-  assert.ok(!allowedAcrossTimeTypes(0, 7).includes('self_language'), 'self_language needs 8 entries');
-  assert.ok(allowedAcrossTimeTypes(0, 8).includes('self_language'));
-});
-
-test('repeating_story fades in at 12 entries', () => {
-  assert.ok(!allowedAcrossTimeTypes(0, 11).includes('repeating_story'), 'repeating_story needs 12 entries');
-  assert.ok(allowedAcrossTimeTypes(0, 12).includes('repeating_story'));
+test('wondering_about fades in at 12 entries but not at 11', () => {
+  assert.ok(!allowedAcrossTimeTypes(0, 11).includes('wondering_about'), 'wondering_about needs 12 entries');
+  assert.ok(allowedAcrossTimeTypes(0, 12).includes('wondering_about'));
 });
 
 test('gone_quiet requires both 20 entries AND 21 days', () => {
@@ -103,7 +94,7 @@ test('parses a well-formed report end-to-end', () => {
 ===ACROSS_TIME===
 [
   {
-    "type": "whats_loud",
+    "type": "whats_pulling_you",
     "title": "What's been loud lately",
     "body": "Across the last three weeks, work reviews keep surfacing. The phrasing has shifted from dread to grinding acceptance.",
     "evidence": [
@@ -138,7 +129,7 @@ test('parses a well-formed report end-to-end', () => {
 
   assert.equal(out.acrossTime.length, 2);
   const [loud, wondering] = out.acrossTime;
-  assert.equal(loud.type, 'whats_loud');
+  assert.equal(loud.type, 'whats_pulling_you');
   assert.equal(loud.dismissible, false);
   assert.equal(loud.evidence.length, 2);
   assert.equal(wondering.type, 'wondering_about');
@@ -151,14 +142,14 @@ test('drops observations with fewer than 2 evidence items', () => {
 ===ACROSS_TIME===
 [
   {
-    "type": "whats_loud",
+    "type": "whats_pulling_you",
     "title": "Only one quote",
     "body": "Not enough evidence.",
     "evidence": [{ "excerpt": "solo", "date": "2026-03-01" }],
     "window": "last 30 days"
   },
   {
-    "type": "whats_loud",
+    "type": "whats_pulling_you",
     "title": "Two quotes",
     "body": "Enough.",
     "evidence": [
@@ -179,7 +170,7 @@ test('trims evidence arrays longer than 3 items to 3', () => {
 ===ACROSS_TIME===
 [
   {
-    "type": "returning_question",
+    "type": "whats_pulling_you",
     "title": "Too many",
     "body": "Four evidence items.",
     "evidence": [

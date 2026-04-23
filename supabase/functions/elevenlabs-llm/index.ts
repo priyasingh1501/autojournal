@@ -47,6 +47,15 @@ Deno.serve(async (req) => {
     if (!sysContent || sysContent.startsWith('Task description: You are an AI agent')) {
       console.error('[elevenlabs-llm] Missing mind persona — responding as generic. len=%d', sysContent.length);
     }
+
+    // Voice-mode directive — this webhook only runs for live calls, so a
+    // hard rule on brevity is always appropriate. Appended after the mind's
+    // own prompt so the persona leads and this shapes delivery.
+    const VOICE_DIRECTIVE = `
+
+VOICE MODE
+You are speaking, not writing. Respond in 1–3 short sentences per turn. Leave room for the user to reply. Do not lecture, do not stack multiple teachings in one turn — pick the one thing worth saying and say it. If there is a question worth asking, ask it and stop.`;
+    const systemForClaude = (sysContent || '') + VOICE_DIRECTIVE;
     const convMsgs = messages
       .filter((m) => m.role !== 'system')
       .map((m) => ({
@@ -81,7 +90,7 @@ Deno.serve(async (req) => {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: maxTokens,
         stream: true,
-        system: systemMsg?.content ?? '',
+        system: systemForClaude,
         messages: normalised,
       }),
     });

@@ -52,7 +52,8 @@ async function callEdge<T>(fn: string, body: object, timeoutMs = 30_000): Promis
 
 export const claudeProxy = {
   messages: {
-    create: (params: object) => callEdge<any>('claude', params),
+    create: (params: object, options?: { timeoutMs?: number }) =>
+      callEdge<any>('claude', params, options?.timeoutMs),
   },
 };
 
