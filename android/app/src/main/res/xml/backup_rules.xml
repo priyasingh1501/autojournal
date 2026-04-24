@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android Auto Backup rules — API 23-30.
+
+  Default behaviour is to include every file the app writes except caches. We
+  keep that behaviour and only carve out two things:
+
+    1. The DALL-E wisdom-image cache — regeneratable from Supabase on reinstall,
+       and would easily blow the 25 MB backup cap if the user has browsed the
+       Wisdom tab heavily.
+    2. WebView storage — nothing in there worth restoring, and it creates
+       churn in the backup payload.
+
+  Journal data (summaries, transcripts, intentions, settings) lives in
+  AsyncStorage's SQLite DB at databases/RKStorage, which is covered by the
+  default include and so survives uninstall.
+-->
+<full-backup-content>
+  <exclude domain="file" path="wisdom_images/" />
+
+  <exclude domain="database" path="webview.db" />
+  <exclude domain="database" path="webview.db-journal" />
+  <exclude domain="database" path="webviewCookiesChromium.db" />
+  <exclude domain="database" path="webviewCache.db" />
+</full-backup-content>

@@ -14,7 +14,7 @@ import type { MindV2, WellbeingState } from '../types';
 
 // ── Source context ──────────────────────────────────────────────────────────
 
-export type SourceContextKind = 'pattern' | 'day' | 'short' | 'none';
+export type SourceContextKind = 'pattern' | 'day' | 'short' | 'prompt' | 'none';
 
 export interface SourceContext {
   kind: Exclude<SourceContextKind, 'none'>;
@@ -32,6 +32,14 @@ export interface DaySource {
 export interface ShortSource {
   title: string;
   author: string;
+}
+export interface PromptSource {
+  /** Chip label the user tapped, e.g. "whether to quit the job". */
+  topic: string;
+  /** Optional one-sentence framing the extractor emitted alongside the topic. */
+  why?: string;
+  /** Raw entry text the prompt came from — quoting it grounds the opener. */
+  entryText?: string;
 }
 
 /**
@@ -61,6 +69,18 @@ export function shortSourceContext(s: ShortSource): SourceContext {
   return {
     kind: 'short',
     description: `The user tapped in from this wisdom short: "${s.title.trim()}" by ${s.author.trim()}`,
+  };
+}
+
+export function promptSourceContext(p: PromptSource): SourceContext {
+  const topic = p.topic.trim();
+  const whyPart = p.why?.trim() ? ` — ${p.why.trim()}` : '';
+  const quotePart = p.entryText?.trim()
+    ? ` They wrote: "${p.entryText.trim().slice(0, 280)}"`
+    : '';
+  return {
+    kind: 'prompt',
+    description: `The user tapped in wanting perspective on: ${topic}${whyPart}.${quotePart}`,
   };
 }
 

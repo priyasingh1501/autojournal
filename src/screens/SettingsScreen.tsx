@@ -10,7 +10,6 @@ import {
   Switch,
   Linking,
   Platform,
-  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -30,11 +29,12 @@ import {
 } from '../services/SmartNotificationService';
 import { AppSettings } from '../types';
 import { getCurrentUser, signOut } from '../services/AuthService';
-import IntentionsScreen from './IntentionsScreen';
 
 const DEFAULT_SETTINGS: AppSettings = {
   summaryTime: '21:00',
   batchSize: 0,
+  notificationsEnabled: true,
+  notificationTime: '19:30',
 };
 
 export default function SettingsScreen() {
@@ -53,14 +53,11 @@ export default function SettingsScreen() {
   const [wellbeingEnabled, setWellbeingEnabled] = useState(true);
 
   // Smart notifications
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [notificationTime, setNotificationTime] = useState('19:30');
 
   // Account
   const [userEmail, setUserEmail] = useState<string | null>(null);
-
-  // Intentions — replaces the previous tracker toggles permanently.
-  const [showIntentions, setShowIntentions] = useState(false);
 
   // Backfill state (one-shot upload of locally cached wisdom images)
   const [backfilling, setBackfilling] = useState(false);
@@ -80,7 +77,7 @@ export default function SettingsScreen() {
     const s = await StorageService.getSettings();
     if (s) {
       setSettings(s);
-      setNotificationsEnabled(s.notificationsEnabled ?? false);
+      setNotificationsEnabled(s.notificationsEnabled ?? true);
       setNotificationTime(s.notificationTime ?? '19:30');
     }
   };
@@ -307,39 +304,9 @@ export default function SettingsScreen() {
           )}
 
           <Text style={styles.hint}>
-            Personalised based on your mood, insights, and trackers. All logic runs on-device.
+            Personalised based on your mood, insights, and intentions. All logic runs on-device.
           </Text>
         </View>
-
-        {/* Intentions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Intentions</Text>
-          <Text style={styles.sectionSubtitle}>
-            Goals you're trying to live toward. They surface in your summaries
-            when your entries touch on them — not as a scoreboard.
-          </Text>
-          <TouchableOpacity
-            style={styles.lockRow}
-            onPress={() => setShowIntentions(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.lockRowLeft}>
-              <Feather name="target" size={16} color="rgba(152, 212, 250, 0.75)" />
-              <Text style={styles.lockRowLabel}>Manage intentions</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color="rgba(152, 212, 250, 0.55)" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Intentions modal */}
-        <Modal
-          visible={showIntentions}
-          animationType="slide"
-          presentationStyle="fullScreen"
-          onRequestClose={() => setShowIntentions(false)}
-        >
-          <IntentionsScreen onBack={() => setShowIntentions(false)} />
-        </Modal>
 
         {/* Storage */}
         <View style={styles.section}>

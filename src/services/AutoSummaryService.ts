@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { StorageService } from './StorageService';
 import { generateDailySummary } from './SummaryService';
+import { effectiveTodayStr, effectiveDateStr } from './dayRollover';
 
 const NOTIFICATION_CHANNEL = 'daily-summary';
 const NIGHTLY_NOTIFICATION_ID = 'nightly-summary-trigger';
@@ -121,8 +122,10 @@ export async function generateIfNeeded(date: string, regenerate = false): Promis
  */
 export async function checkAndAutoGenerate(): Promise<void> {
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const yesterdayStr = new Date(now.getTime() - 86_400_000).toISOString().split('T')[0];
+  const todayStr = effectiveTodayStr();
+  // Compute yesterday using local calendar date (noon avoids 3am rollover ambiguity)
+  const localYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0);
+  const yesterdayStr = effectiveDateStr(localYesterday.getTime());
 
   const hour = now.getHours();
   const minute = now.getMinutes();

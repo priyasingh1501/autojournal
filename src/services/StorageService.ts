@@ -35,6 +35,11 @@ const KEYS = {
   CUSTOM_SHORTS: 'wisdom_custom_shorts',
 };
 
+function safeParse<T>(json: string | null, fallback: T): T {
+  if (!json) return fallback;
+  try { return JSON.parse(json) as T; } catch { return fallback; }
+}
+
 /** Returns a YYYY-MM-DD string in the device's local timezone. */
 function localDateStr(date: Date = new Date()): string {
   const y = date.getFullYear();
@@ -68,7 +73,7 @@ export const StorageService = {
   // Settings
   async getSettings(): Promise<AppSettings | null> {
     const json = await AsyncStorage.getItem(KEYS.SETTINGS);
-    const stored: AppSettings | null = json ? JSON.parse(json) : null;
+    const stored: AppSettings | null = safeParse<AppSettings | null>(json, null);
     // Keys are server-side (AIProxy/Edge Functions) — return stored settings as-is
     const base: AppSettings = stored ?? ({} as AppSettings);
     return base;
@@ -82,13 +87,13 @@ export const StorageService = {
   async getTodayTranscripts(): Promise<TranscriptEntry[]> {
     const key = KEYS.TRANSCRIPTS_PREFIX + todayKey();
     const json = await AsyncStorage.getItem(key);
-    return json ? JSON.parse(json) : [];
+    return safeParse<TranscriptEntry[]>(json, []);
   },
 
   async getTranscriptsForDate(date: string): Promise<TranscriptEntry[]> {
     const key = KEYS.TRANSCRIPTS_PREFIX + date;
     const json = await AsyncStorage.getItem(key);
-    return json ? JSON.parse(json) : [];
+    return safeParse<TranscriptEntry[]>(json, []);
   },
 
   async addTranscript(
@@ -102,7 +107,7 @@ export const StorageService = {
     const date = opts?.storageDate ?? effectiveDateStr(entry.timestamp);
     const key = KEYS.TRANSCRIPTS_PREFIX + date;
     const existing = await AsyncStorage.getItem(key);
-    const entries: TranscriptEntry[] = existing ? JSON.parse(existing) : [];
+    const entries: TranscriptEntry[] = safeParse<TranscriptEntry[]>(existing, []);
     entries.push(entry);
     await AsyncStorage.setItem(key, JSON.stringify(entries));
     DeviceEventEmitter.emit('transcriptAdded', { date });
@@ -116,7 +121,7 @@ export const StorageService = {
     const key = KEYS.TRANSCRIPTS_PREFIX + date;
     const existing = await AsyncStorage.getItem(key);
     if (!existing) return;
-    const entries: TranscriptEntry[] = JSON.parse(existing);
+    const entries: TranscriptEntry[] = safeParse<TranscriptEntry[]>(existing, []);
     const idx = entries.findIndex(e => e.id === entry.id);
     if (idx !== -1) {
       entries[idx] = entry;
@@ -130,7 +135,7 @@ export const StorageService = {
     const existing = await AsyncStorage.getItem(key);
     if (!existing) return;
     const idSet = new Set(ids);
-    const entries: TranscriptEntry[] = JSON.parse(existing);
+    const entries: TranscriptEntry[] = safeParse<TranscriptEntry[]>(existing, []);
     const filtered = entries.filter(e => !idSet.has(e.id));
     if (filtered.length === 0) {
       await AsyncStorage.removeItem(key);
@@ -151,7 +156,7 @@ export const StorageService = {
   // Pending clips (saved locally, not yet transcribed)
   async getPendingClips(): Promise<PendingClip[]> {
     const json = await AsyncStorage.getItem(KEYS.PENDING_CLIPS);
-    return json ? JSON.parse(json) : [];
+    return safeParse<PendingClip[]>(json, []);
   },
 
   async addPendingClip(clip: PendingClip): Promise<void> {
@@ -180,13 +185,13 @@ export const StorageService = {
   async getTodaySummary(): Promise<DailySummary | null> {
     const key = KEYS.SUMMARIES_PREFIX + todayKey();
     const json = await AsyncStorage.getItem(key);
-    return json ? JSON.parse(json) : null;
+    return safeParse<DailySummary | null>(json, null);
   },
 
   async getSummaryForDate(date: string): Promise<DailySummary | null> {
     const key = KEYS.SUMMARIES_PREFIX + date;
     const json = await AsyncStorage.getItem(key);
-    return json ? JSON.parse(json) : null;
+    return safeParse<DailySummary | null>(json, null);
   },
 
   async saveSummary(summary: DailySummary): Promise<void> {
@@ -201,7 +206,7 @@ export const StorageService = {
 
   async getLegacyInsight(weekKey: string): Promise<MonthlyInsight | null> {
     const json = await AsyncStorage.getItem(KEYS.WEEKLY_INSIGHTS_PREFIX + weekKey);
-    return json ? JSON.parse(json) : null;
+    return safeParse<MonthlyInsight | null>(json, null);
   },
 
   async saveLegacyInsight(insight: MonthlyInsight): Promise<void> {
@@ -213,7 +218,7 @@ export const StorageService = {
 
   async getMonthlyInsight(monthKey: string): Promise<MonthlyInsight | null> {
     const json = await AsyncStorage.getItem(KEYS.MONTHLY_INSIGHTS_PREFIX + monthKey);
-    return json ? JSON.parse(json) : null;
+    return safeParse<MonthlyInsight | null>(json, null);
   },
 
   async saveMonthlyInsight(insight: MonthlyInsight): Promise<void> {
@@ -236,7 +241,7 @@ export const StorageService = {
 
   async getEmotionAnalysis(windowTag: string): Promise<EmotionAnalysis | null> {
     const json = await AsyncStorage.getItem(KEYS.EMOTION_ANALYSIS_PREFIX + windowTag);
-    return json ? JSON.parse(json) : null;
+    return safeParse<EmotionAnalysis | null>(json, null);
   },
   async saveEmotionAnalysis(analysis: EmotionAnalysis, windowTag: string): Promise<void> {
     await AsyncStorage.setItem(KEYS.EMOTION_ANALYSIS_PREFIX + windowTag, JSON.stringify(analysis));
@@ -244,7 +249,7 @@ export const StorageService = {
 
   async getThoughtPatternAnalysis(windowTag: string): Promise<ThoughtPatternAnalysis | null> {
     const json = await AsyncStorage.getItem(KEYS.PATTERN_ANALYSIS_PREFIX + windowTag);
-    return json ? JSON.parse(json) : null;
+    return safeParse<ThoughtPatternAnalysis | null>(json, null);
   },
   async saveThoughtPatternAnalysis(analysis: ThoughtPatternAnalysis, windowTag: string): Promise<void> {
     await AsyncStorage.setItem(KEYS.PATTERN_ANALYSIS_PREFIX + windowTag, JSON.stringify(analysis));
@@ -252,7 +257,7 @@ export const StorageService = {
 
   async getPersonalityAnalysis(): Promise<PersonalityAnalysis | null> {
     const json = await AsyncStorage.getItem(KEYS.PERSONALITY_ANALYSIS);
-    return json ? JSON.parse(json) : null;
+    return safeParse<PersonalityAnalysis | null>(json, null);
   },
   async savePersonalityAnalysis(analysis: PersonalityAnalysis): Promise<void> {
     await AsyncStorage.setItem(KEYS.PERSONALITY_ANALYSIS, JSON.stringify(analysis));
@@ -260,7 +265,7 @@ export const StorageService = {
 
   async getGrowthTipsAnalysis(): Promise<GrowthTipsAnalysis | null> {
     const json = await AsyncStorage.getItem(KEYS.GROWTH_TIPS_ANALYSIS);
-    return json ? JSON.parse(json) : null;
+    return safeParse<GrowthTipsAnalysis | null>(json, null);
   },
   async saveGrowthTipsAnalysis(analysis: GrowthTipsAnalysis): Promise<void> {
     await AsyncStorage.setItem(KEYS.GROWTH_TIPS_ANALYSIS, JSON.stringify(analysis));
@@ -269,7 +274,7 @@ export const StorageService = {
   // ── Goals ──────────────────────────────────────────────────────────────────
   async getGoals(): Promise<UserGoals | null> {
     const json = await AsyncStorage.getItem(KEYS.USER_GOALS);
-    return json ? JSON.parse(json) : null;
+    return safeParse<UserGoals | null>(json, null);
   },
   async saveGoals(goals: UserGoals): Promise<void> {
     await AsyncStorage.setItem(KEYS.USER_GOALS, JSON.stringify(goals));
@@ -288,7 +293,7 @@ export const StorageService = {
     }
     for (const [monthKey, batch] of byMonth) {
       const key = KEYS.EXPENSE_PREFIX + monthKey;
-      const existing: ExpenseEntry[] = JSON.parse((await AsyncStorage.getItem(key)) ?? '[]');
+      const existing: ExpenseEntry[] = safeParse<ExpenseEntry[]>(await AsyncStorage.getItem(key), []);
       // Two-layer deduplication:
       //  1. Transcript-level: if this transcript was already fully processed, skip all its entries
       //  2. Entry-level: if an entry with the same amount + date + category already exists
@@ -310,7 +315,7 @@ export const StorageService = {
   async getExpensesForMonth(yearMonth: string): Promise<ExpenseEntry[]> {
     const key = KEYS.EXPENSE_PREFIX + yearMonth;
     const json = await AsyncStorage.getItem(key);
-    return json ? JSON.parse(json) : [];
+    return safeParse<ExpenseEntry[]>(json, []);
   },
 
   // ── App lock PIN ────────────────────────────────────────────────────────────
@@ -342,7 +347,7 @@ export const StorageService = {
 
   async getSavedShorts(): Promise<SavedShort[]> {
     const json = await AsyncStorage.getItem(KEYS.WISDOM_SAVED);
-    return json ? JSON.parse(json) : [];
+    return safeParse<SavedShort[]>(json, []);
   },
 
   async saveShort(shortId: string): Promise<void> {
@@ -406,7 +411,7 @@ export const StorageService = {
 
   async getJournalSignal(): Promise<JournalSignal | null> {
     const json = await AsyncStorage.getItem(KEYS.WISDOM_SIGNAL);
-    return json ? JSON.parse(json) : null;
+    return safeParse<JournalSignal | null>(json, null);
   },
 
   async saveJournalSignal(signal: JournalSignal): Promise<void> {
@@ -428,7 +433,7 @@ export const StorageService = {
 
   async getCustomShorts(): Promise<WisdomShort[]> {
     const json = await AsyncStorage.getItem(KEYS.CUSTOM_SHORTS);
-    return json ? JSON.parse(json) : [];
+    return safeParse<WisdomShort[]>(json, []);
   },
 
   async saveCustomShort(short: WisdomShort): Promise<void> {

@@ -6,14 +6,16 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+
+export interface TodayCardBucket {
+  hour: number;  // 0–23
+  count: number;
+}
 
 export interface TodayCardData {
   entryCount: number;
   dominantEmotions: string[];
-  yesterdayEmotions: string[];
-  intentionsMentioned: Array<{ id: string; text: string; shortLabel: string; category: string }>;
-  activeIntentions: Array<{ id: string; text: string; shortLabel: string; category: string }>;
+  entriesByHour: TodayCardBucket[];  // always 24 entries, in hour order
   lastEntryAt: number | null;
 }
 
@@ -24,6 +26,7 @@ interface Props {
 const { height: SCREEN_H } = Dimensions.get('window');
 
 function entryLabel(n: number): string {
+  if (n === 0) return 'No entries yet today';
   if (n === 1) return '1 entry today';
   return `${n} entries today`;
 }
@@ -35,6 +38,36 @@ function relativeTime(ts: number): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24)  return `${hrs}h ago`;
   return '';
+}
+
+// ── 24-hour timeline strip ──────────────────────────────────────────────────
+// Mirrors DayDigestView's HourlyStrip so Home and the Journal digest read
+// visually the same.
+function HourlyStrip({ buckets }: { buckets: TodayCardBucket[] }) {
+  const maxCount = Math.max(1, ...buckets.map(b => b.count));
+  return (
+    <View style={strip.wrap}>
+      <View style={strip.row}>
+        {buckets.map(b => {
+          const active = b.count > 0;
+          const intensity = !active ? 0 : Math.min(3, Math.ceil((b.count / maxCount) * 3));
+          return (
+            <View
+              key={b.hour}
+              style={[strip.cell, strip[`cell${intensity}` as 'cell0' | 'cell1' | 'cell2' | 'cell3']]}
+            />
+          );
+        })}
+      </View>
+      <View style={strip.legend}>
+        <Text style={strip.legendText}>12am</Text>
+        <Text style={strip.legendText}>6am</Text>
+        <Text style={strip.legendText}>noon</Text>
+        <Text style={strip.legendText}>6pm</Text>
+        <Text style={strip.legendText}>11pm</Text>
+      </View>
+    </View>
+  );
 }
 
 export default function TodayCard({ data }: Props) {
@@ -56,28 +89,6 @@ export default function TodayCard({ data }: Props) {
 
   const timeStr = data.lastEntryAt ? relativeTime(data.lastEntryAt) : '';
 
-  if (data.entryCount === 0) {
-    return (
-      <View style={s.card}>
-        <View style={s.inner}>
-
-          {data.activeIntentions.length > 0 && (
-            <View style={s.block}>
-              <Text style={s.nudgeText}>Did you touch on any of your intentions?</Text>
-              {data.activeIntentions.map(i => (
-                <View key={i.id} style={s.intentionRow}>
-                  <Feather name="target" size={11} color="rgba(152,212,250,0.35)" />
-                  <Text style={[s.intentionText, s.intentionTextDim]} numberOfLines={1}>{i.text}</Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={s.card}>
       <View style={s.inner}>
@@ -89,6 +100,8 @@ export default function TodayCard({ data }: Props) {
           {!!timeStr && <Text style={s.timeText}>{timeStr}</Text>}
         </View>
 
+        <HourlyStrip buckets={data.entriesByHour} />
+
         {data.dominantEmotions.length > 0 && (
           <View style={s.block}>
             <Text style={s.blockLabel}>FEELING</Text>
@@ -99,18 +112,6 @@ export default function TodayCard({ data }: Props) {
                 </View>
               ))}
             </View>
-          </View>
-        )}
-
-        {data.intentionsMentioned.length > 0 && (
-          <View style={s.block}>
-            <Text style={s.blockLabel}>INTENTIONS TOUCHED</Text>
-            {data.intentionsMentioned.map(i => (
-              <View key={i.id} style={s.intentionRow}>
-                <Feather name="target" size={11} color="rgba(152,212,250,0.65)" />
-                <Text style={s.intentionText} numberOfLines={1}>{i.text}</Text>
-              </View>
-            ))}
           </View>
         )}
 
@@ -132,41 +133,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 18,
     gap: 12,
   },
-
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(152,212,250,0.10)',
-  },
-
-  // ── Empty state ──────────────────────────────────────────────────────────────
-
-  emptyHeading: {
-    fontSize: 17,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(224,242,254,0.88)',
-    letterSpacing: -0.2,
-  },
-
-  yesterdayLabel: {
-    fontSize: 13,
-    lineHeight: 20,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.55)',
-  },
-
-  yesterdayEmotions: {
-    color: 'rgba(224,242,254,0.65)',
-  },
-
-  nudgeText: {
-    fontSize: 12,
-    fontFamily: 'GillSans-Light',
-    color: 'rgba(152,212,250,0.60)',
-    letterSpacing: 0.1,
-    marginBottom: 2,
-  },
-
-  // ── Active state ─────────────────────────────────────────────────────────────
 
   topRow: {
     flexDirection: 'row',
@@ -218,23 +184,32 @@ const s = StyleSheet.create({
     fontFamily: 'GillSans-Light',
     textTransform: 'lowercase',
   },
+});
 
-  intentionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 3,
+const strip = StyleSheet.create({
+  wrap: { marginTop: 2 },
+  row: {
+    flexDirection: 'row', gap: 2,
+    height: 18,
+    marginBottom: 6,
   },
-
-  intentionText: {
+  cell: {
     flex: 1,
-    fontSize: 13,
-    lineHeight: 19,
-    color: 'rgba(224,242,254,0.85)',
-    fontFamily: 'GillSans-Light',
+    borderRadius: 2,
+    backgroundColor: 'rgba(9,41,173,0.10)',
   },
-
-  intentionTextDim: {
-    color: 'rgba(224,242,254,0.50)',
+  cell0: { backgroundColor: 'rgba(9,41,173,0.10)' },
+  cell1: { backgroundColor: 'rgba(152,212,250,0.30)' },
+  cell2: { backgroundColor: 'rgba(152,212,250,0.55)' },
+  cell3: { backgroundColor: 'rgba(152,212,250,0.85)' },
+  legend: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  legendText: {
+    fontSize: 9, letterSpacing: 0.3,
+    color: 'rgba(152,212,250,0.50)',
+    fontFamily: 'GillSans-Light',
+    textTransform: 'uppercase',
   },
 });

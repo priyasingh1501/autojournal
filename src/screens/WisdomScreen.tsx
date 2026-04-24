@@ -340,24 +340,22 @@ export default function WisdomScreen() {
 
     // Because filter: rank the full library using the day's extracted signal so
     // the cards shown are genuinely related to what was written that day.
+    // "For you today" is only surfaced in this path — when the user landed here
+    // from a summary card's wisdom block — not on direct Wisdom-tab entry.
     if (becauseFilter) {
       const feedSelection = buildFeed(becauseFilter.signal, savedIds, seenIds, undefined, fullLibrary);
-      return flattenFeed(feedSelection);
+      let flat = flattenFeed(feedSelection);
+      if (forYouToday) {
+        flat = [forYouToday, ...flat.filter(s => s.id !== forYouToday.id)];
+      }
+      return flat;
     }
 
     const feedOptions = { loopState, placement: 'wisdom_tab' as const, stanceEnabled: true };
     const feedSelection = buildFeed(
       activeSignal, savedIds, seenIds, selectedEmotion ?? undefined, fullLibrary, feedOptions,
     );
-    let flat = flattenFeed(feedSelection);
-
-    // Prepend "For you today" as the first card when the flag is on and not
-    // already at position 0. Deduplicate its occurrence further in the feed.
-    if (forYouToday) {
-      flat = [forYouToday, ...flat.filter(s => s.id !== forYouToday.id)];
-    }
-
-    return flat;
+    return flattenFeed(feedSelection);
   }, [activeSignal, savedIds, seenIds, selectedEmotion, becauseFilter, showSaved, fullLibrary, loopState, forYouToday]);
 
   // ── Deep-link: scroll to a specific short (from notification tap) ─────────
@@ -650,8 +648,12 @@ export default function WisdomScreen() {
           setSelectedEmotion(emotion);
           setSelectedMoodId(null);
           setBecauseFilter(null);
+          scrollToIndex(0, false);
         }}
-        onClear={() => setSelectedEmotion(null)}
+        onClear={() => {
+          setSelectedEmotion(null);
+          scrollToIndex(0, false);
+        }}
         onClose={() => setShowFilterSheet(false)}
       />
     </SafeAreaView>

@@ -22,6 +22,7 @@ import { generateDailySummary } from '../services/SummaryService';
 import { UserContextService } from '../services/UserContextService';
 import { ActionablesService } from '../services/ActionablesService';
 import { detectAndSuggestIntention } from '../services/IntentionsService';
+import { extractPromptsForEntry } from '../services/PerspectivePromptsService';
 import { detectEmotions } from '../services/BatchTranscriptionService';
 import { effectiveDateStr } from '../services/dayRollover';
 import { invalidateDigest } from '../services/DigestService';
@@ -302,11 +303,16 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
         // Intention detection — weekly-throttled inside the service.
         detectAndSuggestIntention(entry).catch(() => {});
         // Emotion tags — async Haiku classification, persisted after save.
+        // Chain prompt extraction AFTER the emotion write so the second
+        // updateTranscript call sees the tags (both services write-merge the
+        // same row, so last-writer-wins — order matters).
         detectEmotions(entry.text)
           .then(tags => {
-            if (tags.length === 0) return;
-            return StorageService.updateTranscript({ ...entry, emotionTags: tags }, date);
+            if (tags.length === 0) return entry;
+            const withTags = { ...entry, emotionTags: tags };
+            return StorageService.updateTranscript(withTags, date).then(() => withTags);
           })
+          .then(latest => extractPromptsForEntry(latest ?? entry))
           .catch(() => {});
       }
 

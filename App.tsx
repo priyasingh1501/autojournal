@@ -20,6 +20,7 @@ import PinLockScreen from './src/screens/PinLockScreen';
 import WisdomScreen from './src/screens/WisdomScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
 import { StorageService } from './src/services/StorageService';
 import { getSession, supabase } from './src/services/AuthService';
 import {
@@ -237,6 +238,9 @@ export default function App() {
   const [authed,       setAuthed]       = useState(false);
   // 'login' | 'signup'
   const [authScreen,   setAuthScreen]   = useState<'login' | 'signup'>('login');
+  // null = still checking; false = first launch, show OnboardingScreen;
+  // true = flag present, skip onboarding on subsequent launches.
+  const [onboarded,    setOnboarded]    = useState<boolean | null>(null);
 
   // PIN lock: true = show lock screen (PIN set + not yet verified this session)
   const [isLocked, setIsLocked] = useState(false);
@@ -244,18 +248,23 @@ export default function App() {
   // Track previous AppState so we only re-lock on genuine background→foreground transitions
   const appStateRef = useRef(AppState.currentState);
 
-  // Check auth session + PIN state before rendering
+  // Check auth session + PIN state + onboarding flag before rendering
   useEffect(() => {
     (async () => {
       try {
-        const session = await getSession();
+        const [session, onboardFlag] = await Promise.all([
+          getSession(),
+          AsyncStorage.getItem('onboarding_complete'),
+        ]);
         setAuthed(!!session);
+        setOnboarded(onboardFlag === '1');
         if (session) {
           const pinSet = await StorageService.hasPinSet();
           if (pinSet) setIsLocked(true);
         }
       } catch {
         // ignore — default to showing auth
+        setOnboarded(true); // don't trap the user behind onboarding on read failure
       } finally {
         setReady(true);
       }
@@ -363,12 +372,22 @@ export default function App() {
       }
     })();
 
-    // Schedule smart daily notification (no-op if already scheduled today or disabled)
-    StorageService.getSettings().then(s => {
-      if (s?.notificationsEnabled) {
-        scheduleSmartNotifications(s.notificationTime).catch(() => {});
-      }
-    }).catch(() => {});
+    // Schedule smart daily notification (no-op if already scheduled today).
+    // Default-on: undefined notificationsEnabled is treated as true, so new
+    // installs and existing users get the daily reminder without opting in.
+    // Request permission on first launch if still undetermined.
+    (async () => {
+      try {
+        const s = await StorageService.getSettings();
+        const enabled = s?.notificationsEnabled ?? true;
+        if (!enabled) return;
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') {
+          await Notifications.requestPermissionsAsync();
+        }
+        scheduleSmartNotifications(s?.notificationTime).catch(() => {});
+      } catch {}
+    })();
 
     // Re-check whenever app comes back to foreground, and re-lock if PIN is set
     const stateSub = AppState.addEventListener('change', async (nextState: AppStateStatus) => {
@@ -376,10 +395,12 @@ export default function App() {
       appStateRef.current = nextState;
       if (nextState === 'active') {
         checkAndAutoGenerate();
-        // Re-schedule smart notification on each foreground (skips if already done today)
+        // Re-schedule smart notification on each foreground (skips if already done today).
+        // Default-on: undefined notificationsEnabled is treated as true.
         StorageService.getSettings().then(s => {
-          if (s?.notificationsEnabled) {
-            scheduleSmartNotifications(s.notificationTime).catch(() => {});
+          const enabled = s?.notificationsEnabled ?? true;
+          if (enabled) {
+            scheduleSmartNotifications(s?.notificationTime).catch(() => {});
           }
         }).catch(() => {});
         // Re-ensure the 23:59 day-close notification is scheduled for tonight
@@ -445,6 +466,24 @@ export default function App() {
         <StatusBar style="light" />
         <View style={{ flex: 1, backgroundColor: '#02060E' }} />
       </SafeAreaProvider>
+    );
+  }
+
+  // First-launch onboarding — shown before login/signup. OnboardingScreen
+  // persists `onboarding_complete` itself; we flip state to unmount it and
+  // default the user to the signup screen since they just chose to begin.
+  if (ready && onboarded === false) {
+    return (
+      <ErrorBoundary>
+        <SafeAreaProvider>
+          <OnboardingScreen
+            onComplete={() => {
+              setOnboarded(true);
+              setAuthScreen('signup');
+            }}
+          />
+        </SafeAreaProvider>
+      </ErrorBoundary>
     );
   }
 

@@ -2,7 +2,7 @@
  * HomeScreen — capture tab.
  *
  * Layout: MicTile (ocean video + breathing orb) at the top, followed by
- * WarmLineCard and TodayCard, with SecondaryActions pinned at the bottom.
+ * TodayCard, with SecondaryActions pinned at the bottom.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -34,10 +34,16 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   getPendingSuggestion,
-  getActive,
 } from '../services/IntentionsService';
 import { curate, CurationResult } from '../services/mindCuration';
-import { intentionTouchesEntry } from '../services/digestCompute';
+import {
+  getRecentPerspectivePrompts,
+  type ResolvedPerspectivePrompt,
+} from '../services/PerspectivePromptsService';
+import {
+  promptSourceContext,
+  type SourceContext,
+} from '../services/openingLineSelector';
 import { buildCurationContext } from '../services/CurationContextBuilder';
 import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 import ComposeModal from '../components/ComposeModal';
@@ -74,39 +80,26 @@ function dominantEmotionsFrom(entries: Awaited<ReturnType<typeof StorageService.
 
 async function computeTodayData(): Promise<TodayCardData | null> {
   try {
-    const today   = localDateStr();
-    const yesterday = localDateStr(new Date(Date.now() - 86400000));
-    const [entries, yesterdayEntries] = await Promise.all([
-      StorageService.getTranscriptsForDate(today),
-      StorageService.getTranscriptsForDate(yesterday),
-    ]);
+    const today = localDateStr();
+    const entries = await StorageService.getTranscriptsForDate(today);
 
-    const dominantEmotions  = dominantEmotionsFrom(entries);
-    const yesterdayEmotions = dominantEmotionsFrom(yesterdayEntries);
+    const dominantEmotions = dominantEmotionsFrom(entries);
 
-    const actives = await getActive();
-    const mapIntention = (i: typeof actives[0]) => ({
-      id:         i.id,
-      text:       i.text,
-      shortLabel: i.shortLabel || i.text.slice(0, 14),
-      category:   i.category ?? 'other',
-    });
-    // Mirror digestCompute.ts: keyword-match each intention against today's entries.
-    const intentionsMentioned = actives
-      .filter(i => entries.some(e => e.text && intentionTouchesEntry(i, e.text)))
-      .slice(0, 6)
-      .map(mapIntention);
-
-    const activeIntentions = actives.slice(0, 6).map(mapIntention);
+    // 24-hour buckets — always 24 entries so the timeline strip renders stably,
+    // even on an empty day (all cells at intensity 0).
+    const hourCounts: number[] = new Array(24).fill(0);
+    for (const e of entries) {
+      const h = new Date(e.timestamp).getHours();
+      if (h >= 0 && h < 24) hourCounts[h]++;
+    }
+    const entriesByHour = hourCounts.map((count, hour) => ({ hour, count }));
 
     const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
 
     return {
       entryCount: entries.length,
       dominantEmotions,
-      yesterdayEmotions,
-      intentionsMentioned,
-      activeIntentions,
+      entriesByHour,
       lastEntryAt: sorted[0]?.timestamp ?? null,
     };
   } catch {
@@ -140,6 +133,13 @@ export default function HomeScreen() {
   // ── Today card ───────────────────────────────────────────────────────────────
   const [todayData, setTodayData] = useState<TodayCardData | null>(null);
 
+  // ── Perspective prompts (recent, for the Get-a-new-perspective carousel) ─────
+  const [recentPrompts, setRecentPrompts] = useState<ResolvedPerspectivePrompt[]>([]);
+  // Source context stashed when the user taps a chip — passed to ChatScreen
+  // so the opener references the specific topic rather than the day in
+  // general. Cleared when the curated picker / chat closes.
+  const [chatSourceContext, setChatSourceContext] = useState<SourceContext | null>(null);
+
   // ── Modals ───────────────────────────────────────────────────────────────────
   const [showCompose, setShowCompose]     = useState(false);
   const [showPerspective, setShowPerspective] = useState(false);
@@ -165,6 +165,9 @@ export default function HomeScreen() {
 
     // Load today data
     computeTodayData().then(setTodayData).catch(() => {});
+
+    // Load recent perspective prompts for the Get-a-new-perspective carousel.
+    getRecentPerspectivePrompts().then(setRecentPrompts).catch(() => {});
   }, []);
 
   // Widget / notification deep link: { openCompose: true } opens the compose
@@ -336,12 +339,41 @@ export default function HomeScreen() {
 
   const handlePerspective = async () => {
     try {
+      setChatSourceContext(null);
       const ctx    = await buildCurationContext({ sourceSurface: 'home' });
       const result = curate(ctx);
       track('curation_rule_fired', {
         rule:             result.matchedRuleId,
         specialists:      result.specialists.map(s => s.id),
         source_surface:   'home',
+      });
+      setCuration(result);
+      setCurationWellbeing(ctx.wellbeingState);
+    } catch {
+      setPerspectiveInitialMindId(undefined);
+      setShowPerspective(true);
+    }
+  };
+
+  // Tapping a specific chip in the Get-a-new-perspective carousel: surface the
+  // curated picker seeded with the topic so the Haiku opening-line adapter
+  // references it directly (e.g. "You said you've been putting off X…").
+  const handlePromptTap = async (prompt: ResolvedPerspectivePrompt) => {
+    try {
+      setChatSourceContext(promptSourceContext({
+        topic:     prompt.topic,
+        why:       prompt.why,
+        entryText: prompt.entryText,
+      }));
+      const ctx = await buildCurationContext({
+        sourceSurface: 'home',
+        sourceContent: { type: 'prompt', data: prompt },
+      });
+      const result = curate(ctx);
+      track('curation_rule_fired', {
+        rule:            result.matchedRuleId,
+        specialists:     result.specialists.map(s => s.id),
+        source_surface:  'home_prompt',
       });
       setCuration(result);
       setCurationWellbeing(ctx.wellbeingState);
@@ -377,7 +409,11 @@ export default function HomeScreen() {
 
           {/* Perspective card */}
           <View style={s.cards}>
-            <SecondaryActions onPerspective={handlePerspective} />
+            <SecondaryActions
+              onPerspective={handlePerspective}
+              prompts={recentPrompts}
+              onPromptTap={handlePromptTap}
+            />
           </View>
 
           {/* Intentions card — pending suggestion */}
@@ -434,14 +470,25 @@ export default function HomeScreen() {
         {showPerspective && callMindId === undefined && (
           <ChatScreen
             initialMindId={perspectiveInitialMindId}
-            onClose={() => { setShowPerspective(false); setCallMindId(undefined); setPerspectiveInitialMindId(undefined); }}
+            sourceContext={chatSourceContext ?? undefined}
+            onClose={() => {
+              setShowPerspective(false);
+              setCallMindId(undefined);
+              setPerspectiveInitialMindId(undefined);
+              setChatSourceContext(null);
+            }}
             onCallRequested={(mindId) => setCallMindId(mindId ?? null)}
           />
         )}
         {showPerspective && callMindId !== undefined && (
           <TalkScreen
             initialMindId={callMindId}
-            onClose={() => { setShowPerspective(false); setCallMindId(undefined); setPerspectiveInitialMindId(undefined); }}
+            onClose={() => {
+              setShowPerspective(false);
+              setCallMindId(undefined);
+              setPerspectiveInitialMindId(undefined);
+              setChatSourceContext(null);
+            }}
           />
         )}
       </Modal>
@@ -459,6 +506,7 @@ export default function HomeScreen() {
         onClose={() => {
           setCuration(null);
           setCurationWellbeing(undefined);
+          setChatSourceContext(null);
         }}
       />
     </SafeAreaView>

@@ -50,6 +50,7 @@ export function MicWidget() {
 
       {/* ── Layer 3: Label + type button ─────────────────────────────── */}
       <FlexWidget
+        clickAction="OPEN_COMPOSE"
         style={{
           width: 'match_parent',
           height: 'match_parent',
@@ -64,7 +65,6 @@ export function MicWidget() {
         />
 
         <FlexWidget
-          clickAction="OPEN_COMPOSE"
           style={{
             flexDirection: 'row',
             alignItems: 'center',

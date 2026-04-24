@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android Auto Backup rules — API 31+ (Android 12+).
+
+  Two separate rule sets:
+    - <cloud-backup>    governs cloud Google-account auto-backup (the uninstall/reinstall path we care about here).
+    - <device-transfer> governs Android's new "copy to new phone" direct-transfer flow.
+
+  Same exclusions as backup_rules.xml — see that file for rationale.
+-->
+<data-extraction-rules>
+  <cloud-backup>
+    <exclude domain="file" path="wisdom_images/" />
+    <exclude domain="database" path="webview.db" />
+    <exclude domain="database" path="webview.db-journal" />
+    <exclude domain="database" path="webviewCookiesChromium.db" />
+    <exclude domain="database" path="webviewCache.db" />
+  </cloud-backup>
+
+  <device-transfer>
+    <exclude domain="file" path="wisdom_images/" />
+    <exclude domain="database" path="webview.db" />
+    <exclude domain="database" path="webviewCache.db" />
+  </device-transfer>
+</data-extraction-rules>

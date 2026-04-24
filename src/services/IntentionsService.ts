@@ -10,7 +10,6 @@
  *   • Lightweight Haiku-powered detection from journal entries, throttled
  *     to at most one unprompted suggestion per week
  *   • Dismiss-blocklist with a 30-day TTL
- *   • Starter-pack migration from existing tracker settings
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -24,7 +23,6 @@ import {
   IntentionStatus,
   SuggestedIntention,
   TranscriptEntry,
-  AppSettings,
 } from '../types';
 import {
   parseDetectionResponse,
@@ -37,7 +35,6 @@ const INTENTIONS_KEY         = 'intentions';
 const PENDING_SUGGESTION_KEY = 'intention_pending_suggestion';
 const LAST_SUGGESTED_AT_KEY  = 'intentions_last_suggested_at';
 const DISMISSED_KEY          = 'intentions_dismissed';
-const STARTER_DONE_KEY       = 'intentions_starter_migration_done';
 
 const SUGGEST_COOLDOWN_MS = 7 * 86_400_000;
 const DISMISS_TTL_MS      = 30 * 86_400_000;
@@ -595,55 +592,6 @@ export async function detectAndSuggestIntention(entry: TranscriptEntry): Promise
   } catch {
     // Non-fatal — detection must never break entry save.
   }
-}
-
-// ── Starter pack migration ────────────────────────────────────────────────────
-
-export interface StarterPackResult {
-  created: Intention[];
-  alreadyDone: boolean;
-}
-
-const STARTER_TEMPLATES: Record<string, { text: string; cadence: IntentionCadence }> = {
-  meals:      { text: 'Eat balanced meals',          cadence: 'daily'  },
-  workout:    { text: 'Move my body most days',      cadence: 'daily'  },
-  meditation: { text: 'Meditate in the mornings',    cadence: 'daily'  },
-  spending:   { text: 'Stay mindful of my spending', cadence: 'weekly' },
-};
-
-export async function runStarterPackMigration(
-  opts: { force?: boolean } = {},
-): Promise<StarterPackResult> {
-  const done = await AsyncStorage.getItem(STARTER_DONE_KEY);
-  if (done === '1' && !opts.force) {
-    return { created: [], alreadyDone: true };
-  }
-
-  const settings: AppSettings | null = await StorageService.getSettings();
-  const enabled = settings?.enabledTrackers ?? [];
-  const active  = (await getActive()).map(i => i.text);
-
-  const created: Intention[] = [];
-  for (const key of enabled) {
-    const tpl = STARTER_TEMPLATES[key];
-    if (!tpl) continue;
-    if (isDuplicateIntention(tpl.text, active)) continue;
-    try {
-      const intention = await addIntention({
-        text:   tpl.text,
-        source: 'starter_pack',
-        cadence: tpl.cadence,
-      });
-      created.push(intention);
-    } catch { /* duplicate from another template — skip */ }
-  }
-
-  await AsyncStorage.setItem(STARTER_DONE_KEY, '1');
-  return { created, alreadyDone: false };
-}
-
-export async function isStarterPackDone(): Promise<boolean> {
-  return (await AsyncStorage.getItem(STARTER_DONE_KEY)) === '1';
 }
 
 // ── Prompt integration helper ─────────────────────────────────────────────────

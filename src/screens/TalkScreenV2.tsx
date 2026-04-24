@@ -503,13 +503,16 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   // ── Post-call actions ───────────────────────────────────────────────────────
   const handleSaveReflectionToSummary = useCallback(() => {
     if (postCallReflection) {
-      StorageService.saveSummary({
-        ...effectiveSummary,
-        reflectionText: postCallReflection,
-      }).catch(() => {});
+      StorageService.addTranscript({
+        id: `call_${Date.now()}`,
+        timestamp: Date.now(),
+        text: postCallReflection,
+        duration: 0,
+        kind: 'manual',
+      }, { storageDate: effectiveSummary.date }).catch(() => {});
     }
     onClose();
-  }, [postCallReflection, effectiveSummary, onClose]);
+  }, [postCallReflection, effectiveSummary.date, onClose]);
 
   // ── handleAvatarTap — interrupt AI speech ───────────────────────────────────
   const handleAvatarTap = useCallback(() => {

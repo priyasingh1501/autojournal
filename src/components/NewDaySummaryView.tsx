@@ -23,7 +23,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  ScrollView,
   ImageBackground,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -335,12 +334,7 @@ export default function NewDaySummaryView({
         </View>
       )}
 
-      <ScrollView
-        style={styles.cardScrollView}
-        contentContainerStyle={styles.cardScroll}
-        showsVerticalScrollIndicator={false}
-        directionalLockEnabled={true}
-      >
+      <View style={styles.cardScroll}>
         {/* Mood hint — small, sits just above the prose */}
         {moodHint && (
           <View style={styles.moodHintRow}>
@@ -429,7 +423,7 @@ export default function NewDaySummaryView({
             <Text style={styles.legacyNudgeText}>Regenerate to see the new summary</Text>
           </View>
         )}
-      </ScrollView>
+      </View>
     </>
   );
 }
@@ -479,9 +473,8 @@ const styles = StyleSheet.create({
   },
   staleBtnText: { fontSize: 12, fontFamily: 'GillSans-Light', color: 'rgba(224,242,254,0.90)' },
 
-  // Scroll body
-  cardScrollView: { flex: 1, backgroundColor: '#02060E' },
-  cardScroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28 },
+  // Content body
+  cardScroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 28, backgroundColor: '#02060E' },
 
   // Mood hint
   moodHintRow: {

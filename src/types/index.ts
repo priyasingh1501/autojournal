@@ -1,3 +1,22 @@
+export type PerspectivePromptCategory =
+  | 'decision'          // user is weighing options, hasn't committed
+  | 'conflict'          // interpersonal friction or internal tension
+  | 'loaded_emotion'    // entry carries a strong negative tag tied to a specific topic
+  | 'question'          // unresolved wondering — no answer landed
+  | 'avoidance'         // named something wanted-to-do that keeps being deferred
+  | 'values_tension';   // stated value clashes with described action
+
+/**
+ * A tappable "worth talking about" prompt extracted from a journal entry or
+ * day summary. Topic is the short chip label; `why` is a one-sentence seed
+ * the curated picker / opening-line selector uses to frame the chat.
+ */
+export interface PerspectivePrompt {
+  topic: string;                      // short phrase shown on the chip (≤ 48 chars)
+  category: PerspectivePromptCategory;
+  why?: string;                       // one-sentence context for the opener
+}
+
 export interface TranscriptEntry {
   id: string;
   timestamp: number;
@@ -6,6 +25,7 @@ export interface TranscriptEntry {
   kind?: 'voice' | 'manual'; // undefined treated as 'voice' for backward-compat
   photoUri?: string; // local file path, manual entries only
   emotionTags?: string[]; // 1–3 emotion labels inferred from voice transcript, e.g. ["anxious", "hopeful"]
+  perspectivePrompts?: PerspectivePrompt[]; // topics worth reflecting on, extracted post-save
 }
 
 export interface PendingClip {
@@ -42,7 +62,7 @@ export interface AppSettings {
   // Retained so the IntentionsService starter-pack migration can still map
   // prior tracker selections onto intentions; no longer editable in Settings.
   enabledTrackers?: ('meals' | 'workout' | 'meditation' | 'spending')[];
-  notificationsEnabled?: boolean;  // smart daily notification (default: false until opted in)
+  notificationsEnabled?: boolean;  // smart daily notification (default: true — users can opt out in Settings)
   notificationTime?: string;       // HH:MM local time for the daily notification, default "19:30"
 }
 
@@ -439,7 +459,7 @@ export interface DayDigest {
 // them from entries); intentions surface contextually in Day Summary +
 // Patterns rather than as a fixed carousel.
 export type IntentionCadence = 'daily' | 'weekly' | 'loose' | null;
-export type IntentionSource = 'manual' | 'detected' | 'starter_pack';
+export type IntentionSource = 'manual' | 'detected';
 export type IntentionStatus = 'active' | 'paused' | 'completed' | 'released';
 export type IntentionCategory =
   | 'health' | 'relationships' | 'work' | 'mind'

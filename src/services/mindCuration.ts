@@ -22,7 +22,7 @@ import type { AcrossTimeType } from '../types';
 // ── Public types ─────────────────────────────────────────────────────────────
 
 export interface CurationContextSourceContent {
-  type: 'pattern' | 'day' | 'short' | 'intention';
+  type: 'pattern' | 'day' | 'short' | 'intention' | 'prompt';
   data: any;
   patternType?: AcrossTimeType; // explicit type for pattern observations
 }

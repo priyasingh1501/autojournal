@@ -7,6 +7,7 @@ import { claudeProxy } from './AIProxy';
 import { UserContextService } from './UserContextService';
 import { ActionablesService } from './ActionablesService';
 import { detectAndSuggestIntention, getActive, recordMention } from './IntentionsService';
+import { extractPromptsForEntry } from './PerspectivePromptsService';
 import { effectiveDateStr } from './dayRollover';
 import { invalidateDigest } from './DigestService';
 
@@ -173,6 +174,9 @@ export async function transcribePendingClips(
     detectAndSuggestIntention(entry).catch(() => {});
     // Keyword-match active intentions and record any mentions found.
     detectIntentionMentions(entry).catch(() => {});
+    // Fire-and-forget perspective-prompt extraction — writes back onto
+    // the entry so the Home carousel and summary card can aggregate them.
+    extractPromptsForEntry(entry).catch(() => {});
     // Summary generation is deferred to the 23:59 close-out — no per-entry
     // generation during the day.
   }
