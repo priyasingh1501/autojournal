@@ -15,6 +15,7 @@ import {
   Modal,
   Platform,
   AppState,
+  DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
@@ -36,6 +37,8 @@ import {
   getPendingSuggestion,
 } from '../services/IntentionsService';
 import { curate, CurationResult } from '../services/mindCuration';
+import { SubscriptionService } from '../services/SubscriptionService';
+import PaywallModal from '../components/PaywallModal';
 import {
   getRecentPerspectivePrompts,
   type ResolvedPerspectivePrompt,
@@ -113,7 +116,10 @@ export default function HomeScreen() {
 
   // ── Mic / recording state ────────────────────────────────────────────────────
   const [micState, setMicState]       = useState<MicState>('idle');
-  const [audioLevel]                  = useState<number>(0); // AudioRecorderService doesn't expose metering
+  const [audioLevel, setAudioLevel]   = useState<number>(0);
+  const [audioTooQuiet, setAudioTooQuiet] = useState(false);
+  const audioLevelHistoryRef = useRef<number[]>([]);
+  const recordingStartRef    = useRef<number>(0);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const elapsedTimerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -152,6 +158,18 @@ export default function HomeScreen() {
   const [curationWellbeing, setCurationWellbeing] =
     useState<import('../types').WellbeingState | undefined>(undefined);
 
+  // ── Paywall (matches JournalScreen's perspective gate) ───────────────────────
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paywallHint, setPaywallHint] = useState<string | undefined>();
+  // What the user tried to do when they hit the gate — replayed on upgrade.
+  // 'generic' = the card-level "Get a new perspective" tap; otherwise the
+  // specific prompt they tapped on a chip.
+  const pendingActionRef = useRef<
+    | { kind: 'generic' }
+    | { kind: 'prompt'; prompt: ResolvedPerspectivePrompt }
+    | null
+  >(null);
+
   // ── On mount ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     // Load warm line
@@ -170,6 +188,26 @@ export default function HomeScreen() {
     getRecentPerspectivePrompts().then(setRecentPrompts).catch(() => {});
   }, []);
 
+  // Reload prompts when the tab regains focus AND when a new transcript lands
+  // mid-session (extraction is fire-and-forget after save, ~1–3s after the
+  // entry is written, so a short wait is enough for the new chip to appear).
+  useFocusEffect(
+    useCallback(() => {
+      getRecentPerspectivePrompts().then(setRecentPrompts).catch(() => {});
+    }, []),
+  );
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('transcriptAdded', () => {
+      // Wait briefly for the Haiku extraction to finish writing back onto
+      // the entry, then reload. 2s is conservative — usually 800ms-ish.
+      setTimeout(() => {
+        getRecentPerspectivePrompts().then(setRecentPrompts).catch(() => {});
+      }, 2000);
+    });
+    return () => sub.remove();
+  }, []);
+
   // Widget / notification deep link: { openCompose: true } opens the compose
   // modal when the Home tab comes into focus.
   useEffect(() => {
@@ -186,11 +224,17 @@ export default function HomeScreen() {
         if (s === 'recording') {
           setMicState('recording');
           setRecordingElapsed(0);
+          recordingStartRef.current = Date.now();
+          audioLevelHistoryRef.current = [];
+          setAudioTooQuiet(false);
           if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
           elapsedTimerRef.current = setInterval(() => setRecordingElapsed(e => e + 1), 1000);
         } else if (s === 'idle') {
           if (elapsedTimerRef.current) { clearInterval(elapsedTimerRef.current); elapsedTimerRef.current = null; }
           setRecordingElapsed(0);
+          setAudioLevel(0);
+          setAudioTooQuiet(false);
+          audioLevelHistoryRef.current = [];
           // Only revert to idle if we're not about to enter processing
           if (!isTranscribingRef.current) {
             setMicState('idle');
@@ -205,6 +249,23 @@ export default function HomeScreen() {
         Alert.alert('Error', err);
         isTranscribingRef.current = false;
         setMicState('idle');
+      },
+      onAudioLevel: (db) => {
+        setAudioLevel(db);
+        // Only flag "too quiet" once recording has been going long enough to
+        // ignore the initial silence right after tap. Look at the last ~2s
+        // of samples (status interval = 100 ms → ~20 samples).
+        const elapsedMs = Date.now() - recordingStartRef.current;
+        if (elapsedMs < 1500) return;
+        const hist = audioLevelHistoryRef.current;
+        hist.push(db);
+        if (hist.length > 20) hist.shift();
+        if (hist.length >= 20) {
+          const avg = hist.reduce((a, b) => a + b, 0) / hist.length;
+          // expo-av metering is in dB (0 = max, ~-160 = silence). −45 dB is
+          // a soft whisper; below that, Whisper struggles.
+          setAudioTooQuiet(avg < -45);
+        }
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -302,10 +363,12 @@ export default function HomeScreen() {
     batchWellbeingFiredRef.current = false;
     setMicState('processing');
     setBatchProgress({ total: 0, completed: 0, failed: 0 });
+    let entryProduced = false;
+    let finalCompleted = 0;
     try {
       await transcribePendingClips(
-        (p) => setBatchProgress(p),
-        (entry) => checkWellbeing(entry, true).catch(() => {}),
+        (p) => { setBatchProgress(p); finalCompleted = p.completed; },
+        (entry) => { entryProduced = true; checkWellbeing(entry, true).catch(() => {}); },
       );
     } catch (err) {
       console.warn('[HomeScreen] transcribePendingClips error:', err);
@@ -315,6 +378,15 @@ export default function HomeScreen() {
       setBatchProgress(null);
       computeTodayData().then(setTodayData).catch(() => {});
       getWarmLine().then(setWarmLine).catch(() => {});
+      // If clips were processed but produced no usable transcript, the audio
+      // was likely too quiet for Whisper. Tell the user instead of failing
+      // silently.
+      if (!entryProduced && finalCompleted > 0) {
+        Alert.alert(
+          "Couldn't catch that",
+          'The audio was too quiet to transcribe. Try recording a bit closer to the mic.',
+        );
+      }
       // Retry any clips that arrived during this batch
       StorageService.getPendingClips().then(remaining => {
         if (remaining.length > 0) handleTranscribeNow();
@@ -338,6 +410,15 @@ export default function HomeScreen() {
   const handleCompose = () => setShowCompose(true);
 
   const handlePerspective = async () => {
+    const allowed = await SubscriptionService.canUseConversation();
+    if (!allowed) {
+      pendingActionRef.current = { kind: 'generic' };
+      setPaywallHint('Unlimited AI conversations are a Pro feature.');
+      setShowPaywall(true);
+      return;
+    }
+    await SubscriptionService.recordConversationUsed();
+
     try {
       setChatSourceContext(null);
       const ctx    = await buildCurationContext({ sourceSurface: 'home' });
@@ -359,6 +440,15 @@ export default function HomeScreen() {
   // curated picker seeded with the topic so the Haiku opening-line adapter
   // references it directly (e.g. "You said you've been putting off X…").
   const handlePromptTap = async (prompt: ResolvedPerspectivePrompt) => {
+    const allowed = await SubscriptionService.canUseConversation();
+    if (!allowed) {
+      pendingActionRef.current = { kind: 'prompt', prompt };
+      setPaywallHint('Unlimited AI conversations are a Pro feature.');
+      setShowPaywall(true);
+      return;
+    }
+    await SubscriptionService.recordConversationUsed();
+
     try {
       setChatSourceContext(promptSourceContext({
         topic:     prompt.topic,
@@ -406,6 +496,14 @@ export default function HomeScreen() {
             warmLineLoading={warmLineLoading}
             recordingElapsed={recordingElapsed}
           />
+
+          {micState === 'recording' && audioTooQuiet && (
+            <View style={s.audioHint}>
+              <Text style={s.audioHintText}>
+                It's quiet — try speaking a bit louder or moving closer to the mic.
+              </Text>
+            </View>
+          )}
 
           {/* Perspective card */}
           <View style={s.cards}>
@@ -509,6 +607,27 @@ export default function HomeScreen() {
           setChatSourceContext(null);
         }}
       />
+
+      {/* Paywall — fired when a free user hits their conversation cap.
+          On upgrade, replay whatever they tapped (generic perspective or a
+          specific chip) so they don't lose their place. */}
+      <PaywallModal
+        visible={showPaywall}
+        featureHint={paywallHint}
+        onClose={() => {
+          setShowPaywall(false);
+          pendingActionRef.current = null;
+        }}
+        onSuccess={() => {
+          setShowPaywall(false);
+          const pending = pendingActionRef.current;
+          pendingActionRef.current = null;
+          if (!pending) return;
+          // Re-enter the same handler — gate now passes, so it proceeds.
+          if (pending.kind === 'generic') handlePerspective();
+          else handlePromptTap(pending.prompt);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -533,5 +652,20 @@ const s = StyleSheet.create({
   cards: {
     paddingHorizontal: 16,
   },
-
+  audioHint: {
+    marginHorizontal: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(252,165,165,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(252,165,165,0.28)',
+  },
+  audioHintText: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: 'rgba(252,205,165,0.92)',
+    fontFamily: 'GillSans-Light',
+    textAlign: 'center',
+  },
 });

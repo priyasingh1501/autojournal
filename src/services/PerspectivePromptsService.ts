@@ -146,6 +146,48 @@ function normalizeTopic(topic: string): string {
 }
 
 /**
+ * Pulls perspective prompts from entries on a single date, newest first,
+ * deduplicated by normalised topic. Used by the Day Digest view.
+ */
+export async function getPromptsForDate(
+  date: string,
+  cap = 6,
+): Promise<ResolvedPerspectivePrompt[]> {
+  try {
+    const entries = await StorageService.getTranscriptsForDate(date);
+
+    const all: ResolvedPerspectivePrompt[] = [];
+    for (const e of entries) {
+      if (!e.perspectivePrompts || e.perspectivePrompts.length === 0) continue;
+      for (const p of e.perspectivePrompts) {
+        all.push({
+          ...p,
+          entryId: e.id,
+          date,
+          entryTimestamp: e.timestamp,
+          entryText: e.text,
+        });
+      }
+    }
+
+    all.sort((a, b) => b.entryTimestamp - a.entryTimestamp);
+
+    const seen = new Set<string>();
+    const deduped: ResolvedPerspectivePrompt[] = [];
+    for (const p of all) {
+      const key = normalizeTopic(p.topic);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(p);
+      if (deduped.length >= cap) break;
+    }
+    return deduped;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Pulls perspective prompts from entries in the last `lookbackDays` days,
  * newest first, deduplicated by normalised topic. Used by the Home carousel.
  */

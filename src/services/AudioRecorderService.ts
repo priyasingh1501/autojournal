@@ -8,6 +8,7 @@ export type RecordingStatus = 'idle' | 'monitoring' | 'recording';
 type StatusCallback    = (status: RecordingStatus) => void;
 type PendingClipCallback = (clip: PendingClip) => void;
 type ErrorCallback     = (error: string) => void;
+type AudioLevelCallback = (db: number) => void;
 
 const MAX_RECORDING_MS = 25 * 60 * 1000; // 25 minutes
 
@@ -20,15 +21,18 @@ class AudioRecorderService {
   private onStatus:      StatusCallback      = () => {};
   private onPendingClip: PendingClipCallback = () => {};
   private onError:       ErrorCallback       = () => {};
+  private onAudioLevel:  AudioLevelCallback | null = null;
 
   setCallbacks(callbacks: {
     onStatus:      StatusCallback;
     onPendingClip: PendingClipCallback;
     onError:       ErrorCallback;
+    onAudioLevel?: AudioLevelCallback;
   }) {
     this.onStatus      = callbacks.onStatus;
     this.onPendingClip = callbacks.onPendingClip;
     this.onError       = callbacks.onError;
+    this.onAudioLevel  = callbacks.onAudioLevel ?? null;
   }
 
   private setStatus(status: RecordingStatus) {
@@ -107,7 +111,18 @@ class AudioRecorderService {
 
     try {
       const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+          isMeteringEnabled: true,
+        },
+        (status) => {
+          // Forward dB level (0 = max, around -160 = silence) to the UI so
+          // it can warn the user if their voice is consistently too quiet.
+          if (status.isRecording && typeof status.metering === 'number') {
+            this.onAudioLevel?.(status.metering);
+          }
+        },
+        100, // status update interval (ms)
       );
       this.recording = recording;
       this.recordingStartTime = Date.now();

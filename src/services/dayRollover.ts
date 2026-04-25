@@ -1,15 +1,16 @@
 /**
  * Day-rollover helper.
  *
- * An entry logged at 01:30 local belongs to yesterday's day, not today's —
- * matches how humans think about late nights. The cutoff is 03:00 by default
- * (i.e. 00:00 → 02:59 rolls back to the previous calendar date).
+ * Default cutoff is 00:00 (midnight) — entries bucket into the calendar date
+ * they were captured on. The function still accepts a custom `rolloverHour`
+ * so callers/tests can opt into late-night behavior (e.g. hour=3 makes 01:30
+ * roll back to the previous day).
  *
  * Kept pure (no AsyncStorage reads) so both call sites and tests share
  * the same logic.
  */
 
-const DEFAULT_ROLLOVER_HOUR = 3;
+const DEFAULT_ROLLOVER_HOUR = 0;
 
 function pad(n: number): string {
   return String(n).padStart(2, '0');

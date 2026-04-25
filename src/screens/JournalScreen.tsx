@@ -48,7 +48,8 @@ import CuratedMindPicker from '../components/CuratedMindPicker';
 import { effectiveTodayStr } from '../services/dayRollover';
 import { curate, CurationResult } from '../services/mindCuration';
 import { buildCurationContext } from '../services/CurationContextBuilder';
-import { daySourceContext, SourceContext } from '../services/openingLineSelector';
+import { daySourceContext, promptSourceContext, SourceContext } from '../services/openingLineSelector';
+import type { ResolvedPerspectivePrompt } from '../services/PerspectivePromptsService';
 import { track } from '../services/AnalyticsService';
 import TalkScreen from './TalkScreenV2';
 import ChatScreen, { ResumeChatInput } from './ChatScreen';
@@ -295,7 +296,7 @@ export default function JournalScreen() {
 
   // Mode / date
   const [mode, setMode] = useState<'day' | 'week'>('day');
-  const [viewingDate, setViewingDate] = useState<string>(localDateStr());
+  const [viewingDate, setViewingDate] = useState<string>(effectiveTodayStr());
 
   // Summary state (for day mode)
   const [summary, setSummary] = useState<DailySummary | null>(null);
@@ -331,8 +332,15 @@ export default function JournalScreen() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [paywallHint, setPaywallHint] = useState<string | undefined>();
   const pendingPerspectiveRef = useRef<DailySummary | null>(null);
+  // When set, the curated picker's onPick will route the user into a chat
+  // seeded with this prompt instead of a day summary. Used by digest carousel.
+  const pendingPromptRef = useRef<ResolvedPerspectivePrompt | null>(null);
   const pendingGenerateDateRef = useRef<string | null>(null);
   const [showSearch, setShowSearch] = useState(false);
+  // Visibility for the prompt-driven chat modal — distinct from the summary
+  // chat modal which keys off `perspectiveSummary`. Both render the same
+  // ChatScreen but only the summary path passes a `summary` prop.
+  const [showPromptChat, setShowPromptChat] = useState(false);
 
   // Curated picker state.
   const [curation, setCuration] = useState<CurationResult | null>(null);
@@ -479,9 +487,22 @@ export default function JournalScreen() {
   };
 
   const openChatWithCuratedMind = (mindId: string | null) => {
+    setCuration(null);
+
+    // Prompt-driven flow (digest carousel chip tap). Source context was
+    // staked out by handlePromptTap; we just need to flip the chat modal on.
+    const prompt = pendingPromptRef.current;
+    if (prompt) {
+      pendingPromptRef.current = null;
+      setChatInitialMindId(mindId);
+      setCallMindId(undefined);
+      setShowPromptChat(true);
+      return;
+    }
+
+    // Day-summary flow (existing).
     const item = pendingPerspectiveRef.current;
     pendingPerspectiveRef.current = null;
-    setCuration(null);
     if (!item) return;
     // Build a source context from the day the user tapped in from. The
     // opener selector will pick from openingLinesWithContext + run the
@@ -495,6 +516,48 @@ export default function JournalScreen() {
     setChatInitialMindId(mindId);
     setCallMindId(undefined);
     setPerspectiveSummary(item);
+  };
+
+  // Tap on a perspective chip inside the digest's "Worth talking about" row.
+  // Mirrors HomeScreen's handlePromptTap — same curation entry point with
+  // sourceContent.type='prompt', and seeds a SourceContext that quotes the
+  // entry the prompt came from so the opener feels grounded.
+  const handlePromptTap = async (prompt: ResolvedPerspectivePrompt) => {
+    const allowed = await SubscriptionService.canUseConversation();
+    if (!allowed) {
+      setPaywallHint('Unlimited AI conversations are a Pro feature.');
+      setShowPaywall(true);
+      return;
+    }
+    await SubscriptionService.recordConversationUsed();
+
+    pendingPromptRef.current = prompt;
+    setChatSourceContext(promptSourceContext({
+      topic:     prompt.topic,
+      why:       prompt.why,
+      entryText: prompt.entryText,
+    }));
+
+    try {
+      const ctx = await buildCurationContext({
+        sourceSurface: 'day_summary',
+        sourceContent: { type: 'prompt', data: prompt },
+      });
+      const result = curate(ctx);
+      track('curation_rule_fired', {
+        rule:           result.matchedRuleId,
+        specialists:    result.specialists.map(s => s.id),
+        source_surface: 'day_digest_prompt',
+      });
+      setCuration(result);
+      setCurationWellbeing(ctx.wellbeingState);
+    } catch {
+      // Fallback — open chat with no curation step
+      pendingPromptRef.current = null;
+      setChatInitialMindId(undefined);
+      setCallMindId(undefined);
+      setShowPromptChat(true);
+    }
   };
 
   // Resume a saved chat from the Reflection history list. Hydrates the
@@ -550,8 +613,9 @@ export default function JournalScreen() {
 
   // ── Date nav bounds ─────────────────────────────────────────────────────────
   // "Today" respects the 3am rollover — at 01:30 the user's "today" is still
-  // yesterday, and the digest/summary slot reflects that.
-  const todayStr = useMemo(() => effectiveTodayStr(), []);
+  // yesterday, and the digest/summary slot reflects that. Re-computed on every
+  // focus so the value follows midnight rollover when the screen stays mounted.
+  const todayStr = useMemo(() => effectiveTodayStr(), [focusTick]);
   const canGoForward = viewingDate < todayStr;
   const showDigestForToday =
     viewingDate === todayStr && !summary && !summaryLoading;
@@ -646,6 +710,7 @@ export default function JournalScreen() {
                   refreshKey={entries.length}
                   onGenerate={entries.length > 0 ? () => gatedHandleGenerate(viewingDate) : undefined}
                   generating={generatingDate === viewingDate}
+                  onPromptTap={handlePromptTap}
                 />
               </View>
             ) : (
@@ -730,27 +795,32 @@ export default function JournalScreen() {
         }}
       />
 
-      {/* Perspective modal */}
+      {/* Perspective modal — opens for either a day summary tap OR a digest
+          prompt-chip tap. The summary path passes a `summary` prop to
+          ChatScreen; the prompt path doesn't (chat is anchored on the
+          sourceContext alone, same as Home's chip-tap flow). */}
       <Modal
-        visible={!!perspectiveSummary}
+        visible={!!perspectiveSummary || showPromptChat}
         animationType="slide"
         presentationStyle="fullScreen"
         onRequestClose={() => {
           setPerspectiveSummary(null);
+          setShowPromptChat(false);
           setCallMindId(undefined);
           setChatInitialMindId(undefined);
           setChatSourceContext(null);
           setResumeChatInput(null);
         }}
       >
-        {perspectiveSummary && callMindId === undefined && (
+        {(perspectiveSummary || showPromptChat) && callMindId === undefined && (
           <ChatScreen
-            summary={perspectiveSummary}
+            summary={perspectiveSummary ?? undefined}
             initialMindId={chatInitialMindId}
             sourceContext={chatSourceContext}
             resumeChat={resumeChatInput ?? undefined}
             onClose={() => {
               setPerspectiveSummary(null);
+              setShowPromptChat(false);
               setChatInitialMindId(undefined);
               setChatSourceContext(null);
               setResumeChatInput(null);
@@ -761,13 +831,14 @@ export default function JournalScreen() {
             onCallRequested={(mindId) => setCallMindId(mindId ?? null)}
           />
         )}
-        {perspectiveSummary && callMindId !== undefined && (
+        {(perspectiveSummary || showPromptChat) && callMindId !== undefined && (
           <TalkScreen
-            summary={perspectiveSummary}
+            summary={perspectiveSummary ?? undefined}
             initialMindId={callMindId}
             sourceContext={chatSourceContext}
             onClose={() => {
               setPerspectiveSummary(null);
+              setShowPromptChat(false);
               setCallMindId(undefined);
               setChatInitialMindId(undefined);
               setChatSourceContext(null);

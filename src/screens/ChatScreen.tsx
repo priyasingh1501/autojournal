@@ -93,8 +93,10 @@ function formatRecordingTime(secs: number): string {
 }
 
 function formatDate(date: string): string {
-  const todayStr     = new Date().toISOString().split('T')[0];
-  const yesterdayStr = new Date(Date.now() - 86_400_000).toISOString().split('T')[0];
+  const localDateStr = (d: Date): string =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const todayStr     = localDateStr(new Date());
+  const yesterdayStr = localDateStr(new Date(Date.now() - 86_400_000));
   if (date === todayStr)     return 'Today';
   if (date === yesterdayStr) return 'Yesterday';
   return new Date(date + 'T12:00:00').toLocaleDateString([], {

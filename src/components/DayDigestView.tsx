@@ -21,6 +21,11 @@ import { Feather } from '@expo/vector-icons';
 import { DayDigest, Intention } from '../types';
 import { getDigest } from '../services/DigestService';
 import { getActiveIntentions } from '../services/IntentionsService';
+import {
+  getPromptsForDate,
+  type ResolvedPerspectivePrompt,
+} from '../services/PerspectivePromptsService';
+import PerspectiveCarousel from './PerspectiveCarousel';
 
 interface Props {
   date: string;           // YYYY-MM-DD (rollover-aware — caller's responsibility)
@@ -32,24 +37,29 @@ interface Props {
   onGenerate?: () => void;
   /** True while a summary is being generated. */
   generating?: boolean;
+  /** Called when the user taps a perspective chip. */
+  onPromptTap?: (prompt: ResolvedPerspectivePrompt) => void;
 }
 
-export default function DayDigestView({ date, onOpenHome, refreshKey, onGenerate, generating }: Props) {
+export default function DayDigestView({ date, onOpenHome, refreshKey, onGenerate, generating, onPromptTap }: Props) {
   const [digest, setDigest]         = useState<DayDigest | null>(null);
   const [intentions, setIntentions] = useState<Intention[]>([]);
+  const [prompts, setPrompts]       = useState<ResolvedPerspectivePrompt[]>([]);
   const [loading, setLoading]       = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [d, ints] = await Promise.all([
+      const [d, ints, ps] = await Promise.all([
         getDigest(date).catch(() => null),
         getActiveIntentions().catch(() => []),
+        getPromptsForDate(date).catch(() => []),
       ]);
       if (cancelled) return;
       setDigest(d);
       setIntentions(ints);
+      setPrompts(ps);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -109,6 +119,17 @@ export default function DayDigestView({ date, onOpenHome, refreshKey, onGenerate
               </View>
             ))}
           </View>
+        </View>
+      )}
+
+      {/* Perspective prompts — tappable chips that route into the curated picker */}
+      {prompts.length > 0 && onPromptTap && (
+        <View style={styles.block}>
+          <Text style={styles.blockLabel}>WORTH TALKING ABOUT</Text>
+          <PerspectiveCarousel
+            prompts={prompts}
+            onTap={(p) => onPromptTap(p as ResolvedPerspectivePrompt)}
+          />
         </View>
       )}
 
@@ -230,7 +251,6 @@ const styles = StyleSheet.create({
     color: 'rgba(152,212,250,0.55)',
     fontFamily: 'GillSans-Light',
     textAlign: 'center',
-    fontStyle: 'italic',
   },
   footerRow: {
     flexDirection: 'row', alignItems: 'center',
