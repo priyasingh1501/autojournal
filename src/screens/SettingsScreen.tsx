@@ -405,7 +405,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>untangle v1.3.1</Text>
+          <Text style={styles.footerText}>untangle v1.3.2</Text>
         </View>
       </ScrollView>
 
