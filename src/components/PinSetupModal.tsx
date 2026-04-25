@@ -1,12 +1,26 @@
 /**
- * PinSetupModal — full-screen modal for creating or changing the 4-digit app PIN.
+ * PinSetupModal — full-screen modal for creating, changing, or removing the
+ * 4-digit app PIN.
  *
- * Step 1: User enters a 4-digit PIN.
- * Step 2: User confirms by re-entering the same PIN.
- * On match → saves via StorageService and calls onDone().
+ * Setup mode (requireCurrent=false, verifyOnly=false):
+ *   Step 1: User enters a 4-digit PIN.
+ *   Step 2: User confirms by re-entering the same PIN.
+ *   On final match → saves via StorageService.savePin() and calls onDone().
+ *
+ * Change mode (requireCurrent=true, verifyOnly=false):
+ *   Step 0: User enters their CURRENT PIN — verified against StorageService.
+ *           Wrong PIN shakes and clears, doesn't advance.
+ *   Step 1: User enters a new 4-digit PIN.
+ *   Step 2: User confirms by re-entering the same PIN.
+ *   On final match → saves new PIN and calls onDone().
+ *
+ * Verify-only mode (verifyOnly=true):
+ *   Single step: User enters their current PIN — verified.
+ *   Wrong PIN shakes; correct PIN calls onDone() immediately. The CALLER is
+ *   responsible for the action that follows (e.g. removing the PIN).
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -27,9 +41,25 @@ interface Props {
   onDone: () => void;
   /** Called when the user cancels without saving */
   onCancel: () => void;
+  /**
+   * If true, the user must first enter their current PIN before being allowed
+   * to set a new one. Use this when the user is changing an existing PIN.
+   */
+  requireCurrent?: boolean;
+  /**
+   * If true, the modal asks for the current PIN ONLY and calls onDone() on
+   * verification success without prompting for a new PIN. Use this when the
+   * caller wants to gate a destructive action (e.g. disabling App Lock)
+   * behind PIN verification. Implies requireCurrent.
+   */
+  verifyOnly?: boolean;
+  /** Title shown in verify-only mode. Defaults to "Enter your PIN". */
+  verifyTitle?: string;
+  /** Subtitle shown in verify-only mode. Optional. */
+  verifySubtitle?: string;
 }
 
-type Step = 'enter' | 'confirm';
+type Step = 'verify' | 'enter' | 'confirm';
 
 const DOT_COUNT = 4;
 
@@ -67,15 +97,40 @@ function PinDots({
   );
 }
 
-export default function PinSetupModal({ visible, onDone, onCancel }: Props) {
-  const [step, setStep] = useState<Step>('enter');
+export default function PinSetupModal({
+  visible,
+  onDone,
+  onCancel,
+  requireCurrent = false,
+  verifyOnly = false,
+  verifyTitle,
+  verifySubtitle,
+}: Props) {
+  const needsVerify = requireCurrent || verifyOnly;
+  const initialStep: Step = needsVerify ? 'verify' : 'enter';
+  const [step, setStep] = useState<Step>(initialStep);
   const [firstPin, setFirstPin] = useState('');
   const [digits, setDigits] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
+  // When the modal is re-opened (visibility flips on), restart from the
+  // correct initial step for the current mode. Without this, a previous
+  // "verify" run could leave step stuck on 'enter' when the same component
+  // instance is reused.
+  useEffect(() => {
+    if (visible) {
+      setStep(initialStep);
+      setFirstPin('');
+      setDigits([]);
+      setErrorMsg('');
+      shakeAnim.setValue(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, requireCurrent, verifyOnly]);
+
   const reset = () => {
-    setStep('enter');
+    setStep(initialStep);
     setFirstPin('');
     setDigits([]);
     setErrorMsg('');
@@ -109,7 +164,23 @@ export default function PinSetupModal({ visible, onDone, onCancel }: Props) {
 
     const entered = next.join('');
 
-    if (step === 'enter') {
+    if (step === 'verify') {
+      // Verify the user knows the current PIN before letting them change it
+      // (or before letting them perform whatever destructive action the
+      // caller is gating on this modal in verify-only mode).
+      const ok = await StorageService.verifyPin(entered);
+      if (ok) {
+        if (verifyOnly) {
+          reset();
+          onDone();
+        } else {
+          setStep('enter');
+          setDigits([]);
+        }
+      } else {
+        triggerShake('Incorrect PIN — try again');
+      }
+    } else if (step === 'enter') {
       // Move to confirm step
       setFirstPin(entered);
       setStep('confirm');
@@ -133,11 +204,14 @@ export default function PinSetupModal({ visible, onDone, onCancel }: Props) {
     setDigits(prev => prev.slice(0, -1));
   };
 
-  const title = step === 'enter' ? 'Create a PIN' : 'Confirm your PIN';
+  const title =
+    step === 'verify'  ? (verifyOnly ? (verifyTitle ?? 'Enter your PIN') : 'Enter your current PIN')
+    : step === 'enter' ? (requireCurrent ? 'Choose a new PIN' : 'Create a PIN')
+    :                    'Confirm your PIN';
   const subtitle =
-    step === 'enter'
-      ? 'Choose a 4-digit PIN to lock the app'
-      : 'Re-enter the same PIN to confirm';
+    step === 'verify'  ? (verifyOnly ? (verifySubtitle ?? '') : 'Confirm it’s you before changing the PIN')
+    : step === 'enter' ? 'Choose a 4-digit PIN to lock the app'
+    :                    'Re-enter the same PIN to confirm';
 
   return (
     <Modal
@@ -156,11 +230,16 @@ export default function PinSetupModal({ visible, onDone, onCancel }: Props) {
           </View>
 
           <View style={s.inner}>
-            {/* Step indicator */}
-            <View style={s.stepDots}>
-              <View style={[s.stepDot, step === 'enter' && s.stepDotActive]} />
-              <View style={[s.stepDot, step === 'confirm' && s.stepDotActive]} />
-            </View>
+            {/* Step indicator — hidden in verify-only mode (single step) */}
+            {!verifyOnly && (
+              <View style={s.stepDots}>
+                {requireCurrent && (
+                  <View style={[s.stepDot, step === 'verify' && s.stepDotActive]} />
+                )}
+                <View style={[s.stepDot, step === 'enter' && s.stepDotActive]} />
+                <View style={[s.stepDot, step === 'confirm' && s.stepDotActive]} />
+              </View>
+            )}
 
             <Text style={s.title}>{title}</Text>
             <Text style={s.subtitle}>{subtitle}</Text>

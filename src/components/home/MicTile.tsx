@@ -15,6 +15,7 @@ interface Props {
   audioLevel?: number;
   onMicPress: () => void;
   onCompose: () => void;
+  onCall: () => void;
   shouldPlay: boolean;
   warmLine?: WarmLine | null;
   warmLineLoading?: boolean;
@@ -25,7 +26,7 @@ const { height: SCREEN_H } = Dimensions.get('window');
 const MIN_H = Math.max(Math.floor(SCREEN_H * 0.45), 220);
 
 export default function MicTile({
-  micState, audioLevel, onMicPress, onCompose, shouldPlay,
+  micState, audioLevel, onMicPress, onCompose, onCall, shouldPlay,
   warmLine, warmLineLoading, recordingElapsed,
 }: Props) {
   const videoRef = useRef<Video>(null);
@@ -75,6 +76,7 @@ export default function MicTile({
             audioLevel={audioLevel}
             onPress={onMicPress}
             onCompose={onCompose}
+            onCall={onCall}
             recordingElapsed={recordingElapsed}
             idleLabel={warmLine?.text
               ? warmLine.text.replace(/[.!?]\s*$/, '').trimEnd() + '. Tap to speak about it.'

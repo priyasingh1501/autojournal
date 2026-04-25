@@ -37,3 +37,8 @@ Thumbs.db
 npm-debug.log*
 
 credentials/
+.env.local
+
+# Sentry — auth tokens for sourcemap upload, never commit.
+android/sentry.properties
+ios/sentry.properties

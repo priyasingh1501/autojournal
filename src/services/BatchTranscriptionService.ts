@@ -143,16 +143,12 @@ export async function transcribePendingClips(
   if (segments.length > 0) {
     const mergedText = segments.join(' ');
 
-    // Detect emotional tone from the merged transcript (fire-and-forget fallback)
-    const emotionTags = await detectEmotions(mergedText);
-
     const entry: TranscriptEntry = {
       id: `batch_${Date.now()}`,
       timestamp: sorted[0].timestamp,   // time of the first clip
       text: mergedText,
       duration: totalDuration,
       kind: 'voice',
-      ...(emotionTags.length > 0 ? { emotionTags } : {}),
     };
     // The entry's storage bucket uses a 3am rollover (01:30 belongs to "last
     // night", not "early morning"), so pre-compute the date once and thread
@@ -160,6 +156,14 @@ export async function transcribePendingClips(
     const date = effectiveDateStr(entry.timestamp);
 
     await StorageService.addTranscript(entry, { storageDate: date });
+
+    // Detect emotional tone fire-and-forget — doesn't block the entry save
+    // or onBatchComplete so the UI can render immediately.
+    detectEmotions(mergedText).then(emotionTags => {
+      if (emotionTags.length > 0) {
+        StorageService.updateTranscript({ ...entry, emotionTags }, date).catch(() => {});
+      }
+    }).catch(() => {});
     // Invalidate shared caches so the next AI session and actionables reflect new entries
     UserContextService.invalidate();
     ActionablesService.invalidate();

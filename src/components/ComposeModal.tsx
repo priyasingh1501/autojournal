@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Feather } from '@expo/vector-icons';
 import {
   Modal,
@@ -96,6 +96,32 @@ function getPastDates(count: number): string[] {
     d.setDate(d.getDate() - i);
     return d.toISOString().split('T')[0];
   });
+}
+
+/**
+ * Renders the attached photo at its natural aspect ratio so portrait
+ * shots aren't cropped to a fixed height. Image.getSize is async; we
+ * start with a sane default (4:3) and update once the real dimensions
+ * arrive.
+ */
+function PhotoPreview({ uri }: { uri: string }) {
+  const [aspect, setAspect] = useState<number>(4 / 3);
+  useEffect(() => {
+    let cancelled = false;
+    Image.getSize(
+      uri,
+      (w, h) => { if (!cancelled && w > 0 && h > 0) setAspect(w / h); },
+      () => { /* keep default aspect ratio on failure */ },
+    );
+    return () => { cancelled = true; };
+  }, [uri]);
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.photoPreview, { aspectRatio: aspect }]}
+      resizeMode="cover"
+    />
+  );
 }
 
 export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtracted, editEntry, onDelete, targetDate }: Props) {
@@ -398,10 +424,11 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
               scrollEnabled={false}
             />
 
-            {/* Photo preview */}
+            {/* Photo preview — preserves natural aspect ratio so portrait
+                shots aren't cropped. */}
             {photoUri && (
               <View style={styles.photoPreviewContainer}>
-                <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
+                <PhotoPreview uri={photoUri} />
                 <TouchableOpacity
                   style={styles.removePhoto}
                   onPress={() => setPhotoUri(null)}
@@ -580,8 +607,8 @@ const styles = StyleSheet.create({
   },
   photoPreview: {
     width: '100%',
-    height: 200,
     borderRadius: 12,
+    backgroundColor: 'rgba(2,6,14,0.40)', // shows briefly while size loads
   },
   removePhoto: {
     position: 'absolute',

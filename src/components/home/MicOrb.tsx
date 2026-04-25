@@ -18,6 +18,7 @@ interface Props {
   audioLevel?: number;
   onPress: () => void;
   onCompose?: () => void;
+  onCall?: () => void;
   idleLabel?: string;
   recordingElapsed?: number;
 }
@@ -38,7 +39,7 @@ const HIT = { top: 20, bottom: 20, left: 20, right: 20 };
 // Max waveform heights per bar position (symmetric, tallest near orb)
 const MAX_H = [7, 13, 20, 16, 24, 24, 16, 20, 13, 7];
 
-export default function MicOrb({ state, audioLevel, onPress, onCompose, idleLabel, recordingElapsed }: Props) {
+export default function MicOrb({ state, audioLevel, onPress, onCompose, onCall, idleLabel, recordingElapsed }: Props) {
   const outerScale   = useRef(new Animated.Value(1)).current;
   const outerOpacity = useRef(new Animated.Value(0.25)).current;
   const innerScale   = useRef(new Animated.Value(1)).current;
@@ -215,10 +216,27 @@ export default function MicOrb({ state, audioLevel, onPress, onCompose, idleLabe
   );
 
   const showCompose = state === 'idle' && !!onCompose;
+  const showCall    = state === 'idle' && !!onCall;
 
   return (
     <View style={s.container}>
       <View style={s.row}>
+        {/* Call button — shown idle, mirrors compose on the right */}
+        {showCall && (
+          <TouchableOpacity onPress={onCall} activeOpacity={0.82} hitSlop={HIT}>
+            {Platform.OS === 'ios' ? (
+              <BlurView intensity={25} tint="dark" style={s.composeLink}>
+                <View style={[StyleSheet.absoluteFill, s.orbBorderOverlay]} />
+                <Feather name="phone" size={22} color="rgba(255,255,255,0.92)" />
+              </BlurView>
+            ) : (
+              <View style={[s.composeLink, s.composeLinkAndroid]}>
+                <Feather name="phone" size={22} color="rgba(255,255,255,0.92)" />
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+
         {/* Left waveform bars — innermost (index 4) closest to orb */}
         <Animated.View style={[s.barSide, { opacity: barsOpacity }]}>
           {barHeights.slice(0, 5).reverse().map((h, i) => (

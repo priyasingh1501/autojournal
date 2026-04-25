@@ -37,6 +37,26 @@ import { getShortsLibrary } from './src/services/SupabaseService';
 import { prewarmWisdomImages } from './src/services/WisdomImageService';
 import { buildFeed } from './src/services/WisdomService';
 import { ensureDayCloseNotificationScheduled } from './src/services/DayCloseScheduler';
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: 'https://7ea4c7f627c210867beb74e4a5d58eb0@o4511279422111744.ingest.us.sentry.io/4511279422308352',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+
+  // Configure Session Replay
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
 
 // Register LiveKit WebRTC globals lazily — prevents native crash killing the app.
 try {
@@ -59,17 +79,6 @@ if (global.navigator?.mediaDevices && typeof global.navigator.mediaDevices.getSu
 // Initialise PostHog as early as possible
 try { initAnalytics(); } catch (e) { console.warn('[Analytics] init failed:', e); }
 
-// Register the widget task handler (Android only).
-if (Platform.OS === 'android') {
-  try {
-    const { registerWidgetTaskHandler } = require('react-native-android-widget');
-    const { widgetTaskHandler } = require('./src/widgets/widgetTaskHandler');
-    registerWidgetTaskHandler(widgetTaskHandler);
-  } catch (e) {
-    console.warn('[Widget] registerWidgetTaskHandler failed:', e);
-  }
-}
-
 // Show notifications when app is in foreground too
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -84,7 +93,8 @@ Notifications.setNotificationHandler({
 const Tab = createBottomTabNavigator();
 
 // We expose a navigation ref so the Linking handler (which lives outside the
-// component tree) can navigate to the Journal tab when the widget opens the app.
+// component tree) can navigate to the right tab when a deep-link or
+// notification opens the app.
 export const navigationRef = React.createRef<NavigationContainerRef<any>>();
 
 // ── Error boundary — catches silent render crashes that would otherwise show blank ──
@@ -228,7 +238,7 @@ function AppTabs() {
   );
 }
 
-export default function App() {
+export default Sentry.wrap(function App() {
   // Track whether the app has finished mounting so we can route deeplinks correctly
   const isReady = useRef(false);
 
@@ -293,11 +303,10 @@ export default function App() {
   }, []);
 
   // ------------------------------------------------------------------
-  // Widget deeplink: untangle://home
-  // When the Android widget's mic button is tapped it calls
-  // Linking.openURL('untangle://home').  We navigate to the Journal tab
-  // so HomeScreen's useFocusEffect reads the WIDGET_MONITORING_KEY and
-  // starts / stops monitoring accordingly.
+  // Deep-link handler for the `untangle://` URL scheme. Used by:
+  //   • untangle://home    — focus Home tab
+  //   • untangle://compose — focus Home and open the compose modal
+  //   • untangle://wisdom  — focus Wisdom tab (optional ?shortId=...)
   // ------------------------------------------------------------------
   const handleDeepLink = (url: string) => {
     if (!isReady.current) return;
@@ -336,7 +345,7 @@ export default function App() {
       }
     })();
 
-    // Check if the app was cold-launched via the widget deeplink
+    // Check if the app was cold-launched via a deeplink
     Linking.getInitialURL().then(url => {
       if (url) handleDeepLink(url);
     });
@@ -532,4 +541,4 @@ export default function App() {
       </SafeAreaProvider>
     </ErrorBoundary>
   );
-}
+});

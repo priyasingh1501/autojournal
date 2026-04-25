@@ -15,6 +15,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
@@ -64,6 +65,16 @@ export default function DayDigestView({ date, onOpenHome, refreshKey, onGenerate
     })();
     return () => { cancelled = true; };
   }, [date, refreshKey]);
+
+  // Reload prompts when extraction completes for this date (no need to reload
+  // the full digest — only the prompts section changed).
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('perspectivePromptsUpdated', (payload: { date?: string }) => {
+      if (payload?.date && payload.date !== date) return;
+      getPromptsForDate(date).then(setPrompts).catch(() => {});
+    });
+    return () => sub.remove();
+  }, [date]);
 
   const touchedIntentions = useMemo(() => {
     if (!digest) return [];

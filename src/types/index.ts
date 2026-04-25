@@ -404,6 +404,22 @@ export interface PatternsReport {
   acrossTime: AcrossTimeObservation[];
 }
 
+/**
+ * MonthChapter — a literary retelling of a past month, generated from its
+ * archived PatternsReport. Lazy-generated when the user opens the Past months
+ * tab and cached forever per month.
+ */
+export interface MonthChapter {
+  month: string;            // 'YYYY-MM'
+  title: string;            // 3–7 word chapter title
+  story: string;            // 2–3 paragraph second-person narrative
+  /** Weights for enneagram types 1–9 (index 0 = type 1). Each in [0, 1]. */
+  enneagram: number[];      // length 9
+  imageUri?: string;        // local file:// path once DALL-E finishes
+  imagePrompt?: string;     // saved so we can regenerate if needed
+  generatedAt: number;
+}
+
 // ── User context ────────────────────────────────────────────────────────────
 // Replacement for the classification-heavy legacy UserContext sent to Claude
 // in mind conversations. Observational, derived from newer systems (Patterns,

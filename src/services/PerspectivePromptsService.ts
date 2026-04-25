@@ -13,6 +13,7 @@
  * re-running the model.
  */
 
+import { DeviceEventEmitter } from 'react-native';
 import { claudeProxy } from './AIProxy';
 import { StorageService } from './StorageService';
 import { effectiveDateStr } from './dayRollover';
@@ -122,6 +123,8 @@ export async function extractPromptsForEntry(entry: TranscriptEntry): Promise<vo
     const date = effectiveDateStr(entry.timestamp);
     const updated: TranscriptEntry = { ...entry, perspectivePrompts: prompts };
     await StorageService.updateTranscript(updated, date);
+    // Notify UI components so they reload without relying on a fixed timeout.
+    DeviceEventEmitter.emit('perspectivePromptsUpdated', { date });
   } catch {
     // Non-fatal — extraction must never break entry save.
   }

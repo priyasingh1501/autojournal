@@ -16,6 +16,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { StorageService } from '../services/StorageService';
 import { clearImageCache } from '../services/WisdomImageService';
 import PinSetupModal from '../components/PinSetupModal';
+import LegalDocModal, { LegalDoc } from '../components/LegalDocModal';
 import { SubscriptionService } from '../services/SubscriptionService';
 import PaywallModal from '../components/PaywallModal';
 import {
@@ -42,6 +43,14 @@ export default function SettingsScreen() {
   // PIN / App Lock
   const [pinEnabled, setPinEnabled] = useState(false);
   const [showPinSetup, setShowPinSetup] = useState(false);
+  // Drives which flow the PIN modal runs:
+  //   'create' — first-time setup (no current PIN to verify)
+  //   'change' — replacing an existing PIN (verify current, then create new)
+  //   'disable' — verify current PIN, then remove it (no new PIN entry)
+  const [pinIntent, setPinIntent] = useState<'create' | 'change' | 'disable'>('create');
+
+  // Legal docs
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
 
   // Subscription
   const [isPro, setIsPro]           = useState(false);
@@ -141,25 +150,13 @@ export default function SettingsScreen() {
               value={pinEnabled}
               onValueChange={async (val) => {
                 if (val) {
-                  // Enable — open setup modal
+                  // Enable — open setup modal in create mode
+                  setPinIntent('create');
                   setShowPinSetup(true);
                 } else {
-                  // Disable — confirm then remove
-                  Alert.alert(
-                    'Remove App Lock',
-                    'Are you sure you want to remove the PIN lock?',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Remove',
-                        style: 'destructive',
-                        onPress: async () => {
-                          await StorageService.removePin();
-                          setPinEnabled(false);
-                        },
-                      },
-                    ],
-                  );
+                  // Disable — verify current PIN first, then remove
+                  setPinIntent('disable');
+                  setShowPinSetup(true);
                 }
               }}
               trackColor={{ false: 'rgba(152, 212, 250, 0.12)', true: 'rgba(9, 41, 173, 0.60)' }}
@@ -170,7 +167,10 @@ export default function SettingsScreen() {
           {pinEnabled && (
             <TouchableOpacity
               style={styles.changePinBtn}
-              onPress={() => setShowPinSetup(true)}
+              onPress={() => {
+                setPinIntent('change');
+                setShowPinSetup(true);
+              }}
             >
               <Feather name="refresh-cw" size={13} color="rgba(152, 212, 250, 0.75)" />
               <Text style={styles.changePinText}>Change PIN</Text>
@@ -178,12 +178,22 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        {/* PIN setup modal */}
+        {/* PIN setup modal — drives create / change / disable based on intent */}
         <PinSetupModal
           visible={showPinSetup}
-          onDone={() => {
+          requireCurrent={pinIntent === 'change'}
+          verifyOnly={pinIntent === 'disable'}
+          verifyTitle={pinIntent === 'disable' ? 'Enter your PIN to disable App Lock' : undefined}
+          verifySubtitle={pinIntent === 'disable' ? 'This will remove the PIN protection.' : undefined}
+          onDone={async () => {
             setShowPinSetup(false);
-            setPinEnabled(true);
+            if (pinIntent === 'disable') {
+              await StorageService.removePin();
+              setPinEnabled(false);
+            } else {
+              // create or change — PIN now exists
+              setPinEnabled(true);
+            }
           }}
           onCancel={() => setShowPinSetup(false)}
         />
@@ -388,24 +398,24 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Legal</Text>
           <TouchableOpacity
             style={styles.legalRow}
-            onPress={() => Linking.openURL('https://untangle.app/privacy')}
+            onPress={() => setLegalDoc('privacy')}
           >
             <Feather name="shield" size={15} color="rgba(152, 212, 250, 0.65)" />
             <Text style={styles.legalLink}>Privacy Policy</Text>
-            <Feather name="external-link" size={13} color="rgba(152, 212, 250, 0.40)" />
+            <Feather name="chevron-right" size={16} color="rgba(152, 212, 250, 0.40)" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.legalRow}
-            onPress={() => Linking.openURL('https://untangle.app/terms')}
+            onPress={() => setLegalDoc('terms')}
           >
             <Feather name="file-text" size={15} color="rgba(152, 212, 250, 0.65)" />
             <Text style={styles.legalLink}>Terms of Service</Text>
-            <Feather name="external-link" size={13} color="rgba(152, 212, 250, 0.40)" />
+            <Feather name="chevron-right" size={16} color="rgba(152, 212, 250, 0.40)" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>untangle v1.3.2</Text>
+          <Text style={styles.footerText}>untangle v1.3.3</Text>
         </View>
       </ScrollView>
 
@@ -418,30 +428,35 @@ export default function SettingsScreen() {
           setIsTrialing(false);
         }}
       />
+
+      <LegalDocModal
+        visible={legalDoc !== null}
+        doc={legalDoc ?? 'privacy'}
+        onClose={() => setLegalDoc(null)}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#02060E' },
-  content: { padding: 20 },
+  content: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
 
   // ── Section cards ─────────────────────────────────────────────────────────
+  // Cards match the visual language of TodayCard / IntentionsCard /
+  // SecondaryActions on the rest of the app: near-black background, subtle
+  // blue-grey border, rounded 20.
   section: {
-    backgroundColor: 'rgba(3, 18, 40, 0.72)',
+    backgroundColor: 'rgba(2, 6, 14, 0.90)',
     borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(152, 212, 250, 0.13)',
-    shadowColor: '#98D4FA',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 8,
+    borderColor: 'rgba(152, 212, 250, 0.16)',
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '500',
     color: 'rgba(224, 242, 254, 0.95)',
     marginBottom: 6,

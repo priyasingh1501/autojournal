@@ -2,9 +2,11 @@
   "expo": {
     "name": "untangle",
     "slug": "auto-journal",
-    "version": "1.3.2",
+    "version": "1.3.3",
     "newArchEnabled": false,
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "scheme": "untangle",
     "orientation": "portrait",
     "icon": "./assets/jellyfish.jpg",
@@ -66,33 +68,15 @@
           "sounds": []
         }
       ],
+      "./plugins/withBackupRules",
       [
-        "react-native-android-widget",
+        "@sentry/react-native/expo",
         {
-          "widgets": [
-            {
-              "name": "MicWidget",
-              "label": "untangle",
-              "minWidth": "110dp",
-              "minHeight": "110dp",
-              "description": "Quick shortcut to type a note",
-              "previewImage": "./assets/jellyfish.jpg",
-              "updatePeriodMillis": 0
-            },
-            {
-              "name": "WisdomWidget",
-              "label": "Wisdom",
-              "minWidth": "180dp",
-              "minHeight": "110dp",
-              "description": "Daily wisdom short — tap to open in app",
-              "previewImage": "./assets/jellyfish.jpg",
-              "updatePeriodMillis": 1800000
-            }
-          ]
+          "url": "https://sentry.io/",
+          "project": "react-native",
+          "organization": "untangle-cn"
         }
-      ],
-      "./plugins/withExportedWidgetReceivers",
-      "./plugins/withBackupRules"
+      ]
     ],
     "extra": {
       "eas": {

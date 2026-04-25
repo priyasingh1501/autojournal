@@ -31,11 +31,37 @@ import {
   getActiveIntentions,
 } from './IntentionsService';
 
-const CACHE_KEY   = 'patterns_report';
-const HISTORY_KEY = 'patterns_report_history';
-const HISTORY_CAP = 10;
+const CACHE_KEY      = 'patterns_report';
+const HISTORY_KEY    = 'patterns_report_history';
+const HISTORY_CAP    = 10;
+const ARCHIVE_PREFIX = 'patterns_archive_';
 
 export const NOT_ENOUGH_DATA = 'NOT_ENOUGH_DATA';
+
+// ── Month helpers ─────────────────────────────────────────────────────────────
+
+/** Returns 'YYYY-MM' for the current calendar month. */
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Returns 'YYYY-MM' for the month a report was generated in. */
+function reportMonthKey(report: PatternsReport): string {
+  const d = new Date(report.generatedAt);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Timestamp of the first millisecond of the current calendar month. */
+function calendarMonthStart(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+}
+
+/** 'April 2026' style label for the current month. */
+function calendarMonthLabel(): string {
+  return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
 
 // ── Storage helpers ───────────────────────────────────────────────────────────
 
@@ -57,15 +83,59 @@ export async function getReportHistory(): Promise<PatternsReport[]> {
   }
 }
 
+/**
+ * Archive the current month's report under `patterns_archive_YYYY-MM` and
+ * clear the live cache + history. Called automatically when a new calendar
+ * month begins.
+ */
+export async function archiveCurrentMonth(): Promise<void> {
+  try {
+    const current = await getCachedReport();
+    if (!current) return;
+    const key = ARCHIVE_PREFIX + reportMonthKey(current);
+    await AsyncStorage.setItem(key, JSON.stringify(current));
+    await AsyncStorage.removeItem(CACHE_KEY);
+    await AsyncStorage.removeItem(HISTORY_KEY);
+  } catch { /* archive failures must not block generation */ }
+}
+
+/**
+ * Returns all monthly archives sorted newest-first, each with its YYYY-MM
+ * key and the full report.
+ */
+export async function getArchivedMonths(): Promise<Array<{ month: string; report: PatternsReport }>> {
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const archiveKeys = allKeys
+      .filter(k => k.startsWith(ARCHIVE_PREFIX))
+      .sort()
+      .reverse();
+    const out: Array<{ month: string; report: PatternsReport }> = [];
+    for (const key of archiveKeys) {
+      const json = await AsyncStorage.getItem(key);
+      if (json) out.push({ month: key.replace(ARCHIVE_PREFIX, ''), report: JSON.parse(json) });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 async function saveReport(report: PatternsReport): Promise<void> {
-  // Push the *previous* cached report into history before overwriting, so
-  // history captures the sequence of reports even if the user regenerates
-  // multiple times in a day.
   const previous = await getCachedReport();
   if (previous) {
+    // Within the same calendar month: merge acrossTime so regenerating never
+    // discards observations from an earlier run. Observations of types that
+    // re-ran get replaced (newer data = better); types that didn't run this
+    // time are kept from the previous report.
+    if (reportMonthKey(previous) === currentMonthKey()) {
+      const newTypes = new Set(report.acrossTime.map(o => o.type));
+      const kept = previous.acrossTime.filter(o => !newTypes.has(o.type));
+      report = { ...report, acrossTime: [...kept, ...report.acrossTime] };
+    }
+    // Always push previous into history
     const history = await getReportHistory();
     history.push(previous);
-    // Keep only the last N — oldest entries drop off the front.
     const capped = history.length > HISTORY_CAP ? history.slice(-HISTORY_CAP) : history;
     await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(capped));
   }
@@ -260,8 +330,9 @@ interface BuiltContext {
  *     entry per week provides quotable material without exploding the prompt.
  */
 async function buildContext(stats: ArchiveStats): Promise<BuiltContext> {
-  const today = Date.now();
-  const monthCutoff = today - 30 * 86_400_000;
+  const today      = Date.now();
+  const monthStart = calendarMonthStart();
+  const monthLabel = calendarMonthLabel();
 
   // When no summaries exist yet, build context directly from raw transcript entries.
   if (stats.summaries.length === 0 && stats.allTranscripts.length > 0) {
@@ -270,7 +341,7 @@ async function buildContext(stats: ArchiveStats): Promise<BuiltContext> {
       e => `[${new Date(e.timestamp).toISOString().slice(0, 10)}] "${clip(e.text, 400)}"`,
     );
     const thisMonthText = [
-      `# This month (${stats.allTranscripts.length} entr${stats.allTranscripts.length === 1 ? 'y' : 'ies'} so far — no daily summaries yet)`,
+      `# This month (${monthLabel}, ${stats.allTranscripts.length} entr${stats.allTranscripts.length === 1 ? 'y' : 'ies'} so far — no daily summaries yet)`,
       `## All entries so far`,
       entryBlocks.join('\n\n'),
     ].join('\n');
@@ -278,10 +349,10 @@ async function buildContext(stats: ArchiveStats): Promise<BuiltContext> {
   }
 
   const thisMonthSummaries = stats.summaries.filter(
-    s => new Date(s.date + 'T12:00:00').getTime() >= monthCutoff,
+    s => new Date(s.date + 'T12:00:00').getTime() >= monthStart,
   );
   const olderSummaries = stats.summaries.filter(
-    s => new Date(s.date + 'T12:00:00').getTime() < monthCutoff,
+    s => new Date(s.date + 'T12:00:00').getTime() < monthStart,
   );
 
   // Pull 2 sampled entries per recent week for quotable material.
@@ -301,7 +372,7 @@ async function buildContext(stats: ArchiveStats): Promise<BuiltContext> {
   for (const [, blocks] of weekBuckets) thisMonthEntryBlocks.push(...blocks);
 
   const thisMonthText = [
-    `# This month (last 30 days, ${thisMonthSummaries.length} days logged)`,
+    `# This month (${monthLabel}, ${thisMonthSummaries.length} days logged)`,
     thisMonthSummaries
       .map(s => `[${s.date}]\n${s.insightText ?? s.summary ?? ''}`)
       .join('\n\n'),
@@ -665,6 +736,13 @@ function countMentionsLastFourWeeks(intention: Intention): number {
 }
 
 export async function generate(): Promise<GenerateResult> {
+  // If the cached report is from a previous month, archive it before generating
+  // so this run starts a clean slate for the new month.
+  const existing = await getCachedReport();
+  if (existing && reportMonthKey(existing) !== currentMonthKey()) {
+    await archiveCurrentMonth();
+  }
+
   const stats = await inspectArchive();
   if (stats.entryCount === 0) {
     throw new Error(NOT_ENOUGH_DATA);
@@ -769,9 +847,8 @@ export async function generate(): Promise<GenerateResult> {
   }
 
   // Compute emotional arc on-device from emotionTags — no Claude call needed.
-  const monthCutoff = Date.now() - 30 * 86_400_000;
   const thisMonthSummaries = stats.summaries.filter(
-    s => new Date(s.date + 'T12:00:00').getTime() >= monthCutoff,
+    s => new Date(s.date + 'T12:00:00').getTime() >= calendarMonthStart(),
   );
   const emotionalArc = await computeEmotionalArc(thisMonthSummaries);
 

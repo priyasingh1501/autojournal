@@ -155,11 +155,36 @@ function DayRawEntries({
             </View>
           )}
           {e.photoUri ? (
-            <Image source={{ uri: e.photoUri }} style={dr.photo} resizeMode="cover" />
+            <EntryPhoto uri={e.photoUri} />
           ) : null}
         </TouchableOpacity>
       ))}
     </View>
+  );
+}
+
+/**
+ * Renders an entry's photo at its natural aspect ratio so portrait shots
+ * don't get cropped. Image.getSize is async; we start with a sane default
+ * (4:3) and update once the real dimensions arrive.
+ */
+function EntryPhoto({ uri }: { uri: string }) {
+  const [aspect, setAspect] = useState<number>(4 / 3);
+  useEffect(() => {
+    let cancelled = false;
+    Image.getSize(
+      uri,
+      (w, h) => { if (!cancelled && w > 0 && h > 0) setAspect(w / h); },
+      () => { /* fall back to default aspect ratio */ },
+    );
+    return () => { cancelled = true; };
+  }, [uri]);
+  return (
+    <Image
+      source={{ uri }}
+      style={[dr.photo, { aspectRatio: aspect }]}
+      resizeMode="cover"
+    />
   );
 }
 
@@ -368,11 +393,13 @@ export default function JournalScreen() {
         setMealMacrosByDate(lookup);
       })().catch(() => {});
 
-      // Apply deep-link params once per focus
+      // Every focus resets the view to today's day-mode summary so users
+      // don't get stranded on a past date after switching tabs. Deep-links
+      // (jumpToDate / view='week') still take precedence when present.
       const jumpTo: string | undefined = route?.params?.jumpToDate;
       const view: 'day' | 'week' | undefined = route?.params?.view;
-      if (view === 'week' || view === 'day') setMode(view);
-      if (jumpTo) setViewingDate(jumpTo);
+      setMode(view === 'week' ? 'week' : 'day');
+      setViewingDate(jumpTo ?? effectiveTodayStr());
     }, [route?.params?.view, route?.params?.jumpToDate]),
   );
 
@@ -1067,9 +1094,10 @@ const dr = StyleSheet.create({
     fontFamily: 'GillSans-Light',
   },
   photo: {
-    width: '100%', height: 160,
+    width: '100%',
     marginTop: 10,
     borderRadius: 10,
+    backgroundColor: 'rgba(2,6,14,0.40)', // shows while Image.getSize resolves
   },
   empty: {
     fontSize: 13,

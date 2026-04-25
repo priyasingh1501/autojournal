@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Alert,
   Text,
+  TouchableOpacity,
   Modal,
   Platform,
   AppState,
@@ -48,7 +49,6 @@ import {
   type SourceContext,
 } from '../services/openingLineSelector';
 import { buildCurationContext } from '../services/CurationContextBuilder';
-import { WIDGET_MONITORING_KEY } from '../widgets/widgetTaskHandler';
 import ComposeModal from '../components/ComposeModal';
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
 import CuratedMindPicker from '../components/CuratedMindPicker';
@@ -79,6 +79,29 @@ function dominantEmotionsFrom(entries: Awaited<ReturnType<typeof StorageService.
     }
   }
   return Object.entries(counts).sort(([, a], [, b]) => b - a).map(([tag]) => tag);
+}
+
+const MILESTONE_BANNERS: Record<number, string> = {
+  8:  'Recurring themes just unlocked',
+  20: 'Deeper patterns just unlocked',
+  50: 'Long-term arcs coming into view',
+};
+const MILESTONES_KEY = 'milestones_seen';
+
+async function checkEntryMilestone(): Promise<string | null> {
+  const dates = await StorageService.getTranscriptDates();
+  const counts = await Promise.all(dates.map(d => StorageService.getTranscriptsForDate(d).then(e => e.length)));
+  const total = counts.reduce((a, b) => a + b, 0);
+  const seenRaw = await AsyncStorage.getItem(MILESTONES_KEY);
+  const seen: number[] = seenRaw ? JSON.parse(seenRaw) : [];
+  for (const threshold of [8, 20, 50] as const) {
+    if (total >= threshold && !seen.includes(threshold)) {
+      seen.push(threshold);
+      await AsyncStorage.setItem(MILESTONES_KEY, JSON.stringify(seen));
+      return MILESTONE_BANNERS[threshold];
+    }
+  }
+  return null;
 }
 
 async function computeTodayData(): Promise<TodayCardData | null> {
@@ -146,6 +169,11 @@ export default function HomeScreen() {
   // general. Cleared when the curated picker / chat closes.
   const [chatSourceContext, setChatSourceContext] = useState<SourceContext | null>(null);
 
+  // ── Post-recording banner ────────────────────────────────────────────────────
+  const [recentEntry, setRecentEntry] = useState<(TranscriptEntry & { date: string }) | null>(null);
+  const [milestoneText, setMilestoneText] = useState<string | null>(null);
+  const recentEntryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ── Modals ───────────────────────────────────────────────────────────────────
   const [showCompose, setShowCompose]     = useState(false);
   const [showPerspective, setShowPerspective] = useState(false);
@@ -199,14 +227,33 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('transcriptAdded', () => {
-      // Wait briefly for the Haiku extraction to finish writing back onto
-      // the entry, then reload. 2s is conservative — usually 800ms-ish.
+      // Quick reload on entry save — prompts may not be ready yet (extraction
+      // is fire-and-forget). The perspectivePromptsUpdated listener below will
+      // fire a second reload once extraction actually writes the prompts.
       setTimeout(() => {
         getRecentPerspectivePrompts().then(setRecentPrompts).catch(() => {});
-      }, 2000);
+      }, 500);
     });
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('perspectivePromptsUpdated', () => {
+      getRecentPerspectivePrompts().then(setRecentPrompts).catch(() => {});
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Auto-dismiss the post-recording review card after 10 seconds.
+  useEffect(() => {
+    if (recentEntryTimerRef.current) clearTimeout(recentEntryTimerRef.current);
+    if (recentEntry) {
+      recentEntryTimerRef.current = setTimeout(() => setRecentEntry(null), 10000);
+    }
+    return () => {
+      if (recentEntryTimerRef.current) clearTimeout(recentEntryTimerRef.current);
+    };
+  }, [recentEntry]);
 
   // Widget / notification deep link: { openCompose: true } opens the compose
   // modal when the Home tab comes into focus.
@@ -290,48 +337,11 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Android widget sync ──────────────────────────────────────────────────────
-  const syncWidgetMonitoringIntent = useCallback(async () => {
-    if (Platform.OS !== 'android') return;
-    try {
-      const val        = await AsyncStorage.getItem(WIDGET_MONITORING_KEY);
-      const liveStatus = audioRecorderService.getStatus();
-      if (val === 'true' && liveStatus === 'idle') {
-        await audioRecorderService.startMonitoring();
-      } else if (val === 'false' && liveStatus !== 'idle') {
-        await audioRecorderService.stopMonitoring();
-      }
-    } catch { /* best-effort */ }
-  }, []);
-
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') syncWidgetMonitoringIntent();
-    });
-    return () => sub.remove();
-  }, [syncWidgetMonitoringIntent]);
-
   // ── On screen focus ──────────────────────────────────────────────────────────
   useFocusEffect(useCallback(() => {
     computeTodayData().then(setTodayData).catch(() => {});
     getPendingSuggestion().then(s => setPendingSuggestion(s ?? null)).catch(() => {});
-    syncWidgetMonitoringIntent();
-  }, [syncWidgetMonitoringIntent]));
-
-  // ── Widget state helper ──────────────────────────────────────────────────────
-  const updateWidgetState = async (monitoring: boolean) => {
-    if (Platform.OS !== 'android') return;
-    try {
-      await AsyncStorage.setItem(WIDGET_MONITORING_KEY, monitoring ? 'true' : 'false');
-      const { requestWidgetUpdate } = require('react-native-android-widget');
-      const { MicWidget } = require('../widgets/MicWidget');
-      await requestWidgetUpdate({
-        widgetName:   'MicWidget',
-        renderWidget: () => require('react').default.createElement(MicWidget, {}),
-      });
-    } catch { /* widget may not be placed yet */ }
-  };
+  }, []));
 
   // ── Mic press ────────────────────────────────────────────────────────────────
   const handleMicPress = async () => {
@@ -339,10 +349,8 @@ export default function HomeScreen() {
     if (micState === 'idle') {
       track('recording_started');
       await audioRecorderService.startMonitoring();
-      await updateWidgetState(true);
     } else {
       await audioRecorderService.stopMonitoring();
-      await updateWidgetState(false);
     }
   };
 
@@ -368,7 +376,13 @@ export default function HomeScreen() {
     try {
       await transcribePendingClips(
         (p) => { setBatchProgress(p); finalCompleted = p.completed; },
-        (entry) => { entryProduced = true; checkWellbeing(entry, true).catch(() => {}); },
+        (entry) => {
+          entryProduced = true;
+          checkWellbeing(entry, true).catch(() => {});
+          const date = localDateStr(new Date(entry.timestamp));
+          setRecentEntry({ ...entry, date });
+          checkEntryMilestone().then(text => { if (text) setMilestoneText(text); }).catch(() => {});
+        },
       );
     } catch (err) {
       console.warn('[HomeScreen] transcribePendingClips error:', err);
@@ -491,6 +505,7 @@ export default function HomeScreen() {
             audioLevel={audioLevel}
             onMicPress={handleMicPress}
             onCompose={handleCompose}
+            onCall={() => { setCallMindId(null); setShowPerspective(true); }}
             shouldPlay={shouldPlay}
             warmLine={warmLine}
             warmLineLoading={warmLineLoading}
@@ -503,6 +518,27 @@ export default function HomeScreen() {
                 It's quiet — try speaking a bit louder or moving closer to the mic.
               </Text>
             </View>
+          )}
+
+          {/* Post-recording banner */}
+          {recentEntry && (
+            <TouchableOpacity
+              style={[s.reviewBanner, !!milestoneText && s.reviewBannerMilestone]}
+              onPress={() => {
+                const date = recentEntry.date;
+                setRecentEntry(null);
+                setMilestoneText(null);
+                navigation.navigate('Journal', { jumpToDate: date });
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={[s.reviewBannerText, !!milestoneText && s.reviewBannerTextMilestone]}>
+                {milestoneText ? `${milestoneText} — tap to view` : 'Entry saved — tap to view'}
+              </Text>
+              <TouchableOpacity onPress={() => { setRecentEntry(null); setMilestoneText(null); }} hitSlop={10}>
+                <Text style={s.reviewBannerDismiss}>✕</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
           )}
 
           {/* Perspective card */}
@@ -667,5 +703,36 @@ const s = StyleSheet.create({
     color: 'rgba(252,205,165,0.92)',
     fontFamily: 'GillSans-Light',
     textAlign: 'center',
+  },
+  reviewBanner: {
+    marginHorizontal: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(152,212,250,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.18)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reviewBannerMilestone: {
+    backgroundColor: 'rgba(152,212,250,0.11)',
+    borderColor: 'rgba(152,212,250,0.30)',
+  },
+  reviewBannerText: {
+    fontSize: 13,
+    color: 'rgba(152,212,250,0.85)',
+    fontFamily: 'GillSans-Light',
+    flex: 1,
+  },
+  reviewBannerTextMilestone: {
+    color: 'rgba(224,242,254,0.92)',
+    fontFamily: 'GillSans',
+  },
+  reviewBannerDismiss: {
+    fontSize: 13,
+    color: 'rgba(152,212,250,0.40)',
+    fontFamily: 'GillSans-Light',
   },
 });
