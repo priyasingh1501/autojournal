@@ -37,6 +37,7 @@ import { getShortsLibrary } from './src/services/SupabaseService';
 import { prewarmWisdomImages } from './src/services/WisdomImageService';
 import { buildFeed } from './src/services/WisdomService';
 import { ensureDayCloseNotificationScheduled } from './src/services/DayCloseScheduler';
+import { maybePromptForUpdate } from './src/services/InAppUpdatesService';
 import * as Sentry from '@sentry/react-native';
 
 Sentry.init({
@@ -362,6 +363,10 @@ export default Sentry.wrap(function App() {
 
     // Ensure a 23:59 "day ready" notification is scheduled for tonight.
     ensureDayCloseNotificationScheduled().catch(() => {});
+
+    // Ask Google Play if a newer version is available; if so, kick off
+    // the in-app flexible update flow. No-op for sideloaded / dev builds.
+    maybePromptForUpdate().catch(() => {});
 
     // Pre-warm images for the first 5 wisdom shorts the user will see.
     // Runs fire-and-forget so startup is never delayed.
