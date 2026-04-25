@@ -1,6 +1,0 @@
-package com.priyasingh.autojournal.widget;
-
-import com.reactnativeandroidwidget.RNWidgetProvider;
-
-public class WisdomWidget extends RNWidgetProvider {
-}
