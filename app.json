@@ -2,7 +2,7 @@
   "expo": {
     "name": "untangle",
     "slug": "auto-journal",
-    "version": "1.3.3",
+    "version": "1.3.4",
     "newArchEnabled": false,
     "assetBundlePatterns": [
       "**/*"
