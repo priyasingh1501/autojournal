@@ -221,6 +221,13 @@ export default function MicOrb({ state, audioLevel, onPress, onCompose, onCall, 
   return (
     <View style={s.container}>
       <View style={s.row}>
+        {/* Left waveform bars — innermost (index 4) closest to orb */}
+        <Animated.View style={[s.barSide, { opacity: barsOpacity }]}>
+          {barHeights.slice(0, 5).reverse().map((h, i) => (
+            <Animated.View key={i} style={[s.bar, { height: h }]} />
+          ))}
+        </Animated.View>
+
         {/* Call button — shown idle, mirrors compose on the right */}
         {showCall && (
           <TouchableOpacity onPress={onCall} activeOpacity={0.82} hitSlop={HIT}>
@@ -236,13 +243,6 @@ export default function MicOrb({ state, audioLevel, onPress, onCompose, onCall, 
             )}
           </TouchableOpacity>
         )}
-
-        {/* Left waveform bars — innermost (index 4) closest to orb */}
-        <Animated.View style={[s.barSide, { opacity: barsOpacity }]}>
-          {barHeights.slice(0, 5).reverse().map((h, i) => (
-            <Animated.View key={i} style={[s.bar, { height: h }]} />
-          ))}
-        </Animated.View>
 
         {/* Orb section — narrower layout box when compose is shown so the
             mic orb and edit button sit symmetrically around the card center.

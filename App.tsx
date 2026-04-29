@@ -22,6 +22,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { StorageService } from './src/services/StorageService';
+import { SubscriptionService } from './src/services/SubscriptionService';
 import { getSession, supabase } from './src/services/AuthService';
 import {
   setupNotificationChannel,
@@ -43,17 +44,26 @@ import * as Sentry from '@sentry/react-native';
 Sentry.init({
   dsn: 'https://7ea4c7f627c210867beb74e4a5d58eb0@o4511279422111744.ingest.us.sentry.io/4511279422308352',
 
-  // Adds more context data to events (IP address, cookies, user, etc.)
-  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
-  sendDefaultPii: true,
+  // PII OFF — journal entries are sensitive; we don't want IPs, cookies, or
+  // other implicit identifiers attached to error reports.
+  sendDefaultPii: false,
 
   // Enable Logs
   enableLogs: true,
 
-  // Configure Session Replay
+  // Configure Session Replay. Mask everything by default — text, images, and
+  // vectors are explicitly enabled so future Sentry-RN default changes can't
+  // silently flip masking off and start capturing journal content.
   replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 1,
-  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+  integrations: [
+    Sentry.mobileReplayIntegration({
+      maskAllText: true,
+      maskAllImages: true,
+      maskAllVectors: true,
+    }),
+    Sentry.feedbackIntegration(),
+  ],
 
   // uncomment the line below to enable Spotlight (https://spotlightjs.com)
   // spotlight: __DEV__,
@@ -79,6 +89,12 @@ if (global.navigator?.mediaDevices && typeof global.navigator.mediaDevices.getSu
 
 // Initialise PostHog as early as possible
 try { initAnalytics(); } catch (e) { console.warn('[Analytics] init failed:', e); }
+
+// Initialise RevenueCat as early as possible so the customer-info listener is
+// attached before any auth event or paywall render. No-op on platforms where
+// the API key isn't supplied (iOS today). Safe to call before sign-in — RC
+// starts with an anonymous identity and we call `logIn` on SIGNED_IN below.
+try { SubscriptionService.configureRevenueCat(); } catch (e) { console.warn('[RevenueCat] configure failed:', e); }
 
 // Show notifications when app is in foreground too
 Notifications.setNotificationHandler({
@@ -256,6 +272,29 @@ export default Sentry.wrap(function App() {
   // PIN lock: true = show lock screen (PIN set + not yet verified this session)
   const [isLocked, setIsLocked] = useState(false);
 
+  // Mirror isLocked into a ref so the deep-link / notification handlers
+  // (which capture closures at subscribe time) see the current value.
+  const isLockedRef = useRef(false);
+  useEffect(() => { isLockedRef.current = isLocked; }, [isLocked]);
+
+  // Mirror authed into a ref so the AppState 'active' handler (registered
+  // once after `ready`) doesn't re-schedule notifications after sign-out.
+  const authedRef = useRef(false);
+  useEffect(() => { authedRef.current = authed; }, [authed]);
+
+  // Deep-links and notification taps that arrive while the app is PIN-locked
+  // are queued here and replayed after unlock — otherwise navigation happens
+  // behind the lock screen and sensitive params (wellbeing tier, emotion,
+  // etc.) are processed before the user has authenticated.
+  const pendingActionsRef = useRef<Array<() => void>>([]);
+  const runOrQueue = (action: () => void) => {
+    if (isLockedRef.current) {
+      pendingActionsRef.current.push(action);
+    } else {
+      action();
+    }
+  };
+
   // Track previous AppState so we only re-lock on genuine background→foreground transitions
   const appStateRef = useRef(AppState.currentState);
 
@@ -282,22 +321,45 @@ export default Sentry.wrap(function App() {
     })();
 
     // Listen for auth state changes (sign in / sign out)
-    // Also map RevenueCat billing identity to the Supabase user ID.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setAuthed(!!session);
       if (session?.user?.id) {
+        // Anchor trial calculation to the server-side created_at so it can't
+        // be reset by uninstall/reinstall or by clearing AsyncStorage. Runs
+        // on both INITIAL_SESSION and SIGNED_IN so existing users get
+        // backfilled on next launch.
+        if (session.user.created_at) {
+          SubscriptionService.setUserCreatedAt(session.user.created_at).catch(() => {});
+        }
+        // Identify the user with RevenueCat so entitlements survive reinstall
+        // and follow the user across devices. Runs on both INITIAL_SESSION
+        // (rebind on every cold start) and SIGNED_IN (fresh login). Pulls
+        // the latest entitlement state and updates the local subscribed flag.
+        SubscriptionService.identifyUser(session.user.id).catch(() => {});
         // Only identify on actual sign-in, not on every INITIAL_SESSION boot
         if (event === 'SIGNED_IN') {
-          analyticsIdentify(session.user.id, { email: session.user.email });
+          analyticsIdentify(session.user.id);
         }
-      } else {
+      } else if (event === 'SIGNED_OUT') {
+        // Wipe every per-user AsyncStorage key (transcripts, summaries, PIN,
+        // expenses, goals, subscription state, etc.) so a different account
+        // signing in on the same device starts truly fresh — and so the
+        // previous user's PIN doesn't lock the new user out.
         track('user_signed_out');
         analyticsReset();
-        // Clear per-user flags so a new account starts fresh
-        AsyncStorage.multiRemove([
-          'UNTANGLE_FIRST_NOTE_DONE',
-          'UNTANGLE_NOTIF_OPT_IN_DONE',
-        ]).catch(() => {});
+        // Reset PIN-lock state explicitly: the prior user's PIN is now
+        // cleared, but the cached `isLocked=true` would otherwise render a
+        // lock screen with nothing to verify against.
+        setIsLocked(false);
+        // Revert RC to anonymous BEFORE wiping AsyncStorage. RC's customer-
+        // info listener writes `sub_is_subscribed` after logOut() — if that
+        // write lands after clearAllUserData(), it leaves a stray key behind
+        // for the next user to inherit. Chain them to enforce the order.
+        SubscriptionService.logoutUser()
+          .catch(() => {})
+          .then(() => StorageService.clearAllUserData())
+          .then(() => Notifications.cancelAllScheduledNotificationsAsync().catch(() => {}))
+          .catch(() => {});
       }
     });
     return () => subscription.unsubscribe();
@@ -312,16 +374,16 @@ export default Sentry.wrap(function App() {
   const handleDeepLink = (url: string) => {
     if (!isReady.current) return;
     if (url.includes('untangle://home')) {
-      navigationRef.current?.navigate('Home');
+      runOrQueue(() => navigationRef.current?.navigate('Home'));
     }
     if (url.includes('untangle://compose')) {
-      navigationRef.current?.navigate('Home', { openCompose: true } as any);
+      runOrQueue(() => navigationRef.current?.navigate('Home', { openCompose: true } as any));
     }
     if (url.includes('untangle://wisdom')) {
       // e.g. untangle://wisdom?shortId=abc123
       const match = url.match(/[?&]shortId=([^&]+)/);
       const shortId = match ? decodeURIComponent(match[1]) : undefined;
-      navigationRef.current?.navigate('Wisdom', shortId ? { shortId } : undefined);
+      runOrQueue(() => navigationRef.current?.navigate('Wisdom', shortId ? { shortId } : undefined));
     }
   };
 
@@ -408,21 +470,26 @@ export default Sentry.wrap(function App() {
       const wasBackground = appStateRef.current.match(/background|inactive/);
       appStateRef.current = nextState;
       if (nextState === 'active') {
-        checkAndAutoGenerate();
-        // Re-schedule smart notification on each foreground (skips if already done today).
-        // Default-on: undefined notificationsEnabled is treated as true.
-        StorageService.getSettings().then(s => {
-          const enabled = s?.notificationsEnabled ?? true;
-          if (enabled) {
-            scheduleSmartNotifications(s?.notificationTime).catch(() => {});
+        // Skip user-data work if no one is signed in — otherwise post-logout
+        // foregrounds re-schedule notifications and re-run summary catch-up
+        // for an account that no longer exists locally.
+        if (authedRef.current) {
+          checkAndAutoGenerate();
+          // Re-schedule smart notification on each foreground (skips if already done today).
+          // Default-on: undefined notificationsEnabled is treated as true.
+          StorageService.getSettings().then(s => {
+            const enabled = s?.notificationsEnabled ?? true;
+            if (enabled) {
+              scheduleSmartNotifications(s?.notificationTime).catch(() => {});
+            }
+          }).catch(() => {});
+          // Re-ensure the 23:59 day-close notification is scheduled for tonight
+          ensureDayCloseNotificationScheduled().catch(() => {});
+          // Re-lock when returning from background
+          if (wasBackground) {
+            const pinSet = await StorageService.hasPinSet();
+            if (pinSet) setIsLocked(true);
           }
-        }).catch(() => {});
-        // Re-ensure the 23:59 day-close notification is scheduled for tonight
-        ensureDayCloseNotificationScheduled().catch(() => {});
-        // Re-lock when returning from background
-        if (wasBackground) {
-          const pinSet = await StorageService.hasPinSet();
-          if (pinSet) setIsLocked(true);
         }
       }
     });
@@ -443,25 +510,47 @@ export default Sentry.wrap(function App() {
       }
     });
 
-    // When the user taps a notification → route by type.
+    // When the user taps a notification → route by type. If the app is
+    // PIN-locked, queue the navigation and replay it after unlock so
+    // sensitive params (wellbeing tier, emotion, tracker) aren't processed
+    // behind the lock screen.
     const notifSub = Notifications.addNotificationResponseReceivedListener(response => {
       if (!isReady.current) return;
       const data = response.notification.request.content.data ?? {};
       const action = data.action;
       const type   = data.type as string | undefined;
 
-      if (action === 'view-summary') {
-        navigationRef.current?.navigate('Journal');
+      if (action === 'view-summary' && typeof data.date === 'string') {
+        // Land on Journal with the specific day open so the summary the
+        // notification refers to is immediately visible.
+        runOrQueue(() => navigationRef.current?.navigate('Journal', { jumpToDate: data.date }));
+      } else if (action === 'view-summary') {
+        runOrQueue(() => navigationRef.current?.navigate('Journal'));
       } else if (type === 'wisdom_short' && data.shortId) {
-        navigationRef.current?.navigate('Wisdom', { shortId: data.shortId });
+        runOrQueue(() => navigationRef.current?.navigate('Wisdom', { shortId: data.shortId }));
       } else if (type === 'week_review_ready') {
-        navigationRef.current?.navigate('Journal', { view: 'week' });
-      } else if (type === 'wellbeing_reentry' || type === 'emotional_followup' || type === 'generic_reflection') {
-        navigationRef.current?.navigate('Home');
-      } else if (type === 'recurring_thought' || type === 'values_divergence') {
-        navigationRef.current?.navigate('Patterns');
+        runOrQueue(() => navigationRef.current?.navigate('Journal', { view: 'week' }));
       } else if (type === 'tracker_nudge') {
-        navigationRef.current?.navigate('Home');
+        // Drop the user straight into the compose flow so they can log the
+        // tracker the notification was nudging about, instead of stranding
+        // them on Home with no obvious next step.
+        runOrQueue(() => navigationRef.current?.navigate('Home', {
+          openCompose: true,
+          composeTracker: data.tracker,
+        }));
+      } else if (type === 'wellbeing_reentry' || type === 'emotional_followup') {
+        // The notification asks how the user is feeling — open compose so
+        // the next tap is "voice it out" rather than "find the right tab".
+        runOrQueue(() => navigationRef.current?.navigate('Home', {
+          openCompose: true,
+          composeReason: type,
+          composeEmotion: data.emotion,
+          composeTier: data.tier,
+        }));
+      } else if (type === 'generic_reflection') {
+        runOrQueue(() => navigationRef.current?.navigate('Home', { openCompose: true }));
+      } else if (type === 'recurring_thought' || type === 'values_divergence') {
+        runOrQueue(() => navigationRef.current?.navigate('Patterns'));
       }
     });
 
@@ -531,7 +620,19 @@ export default Sentry.wrap(function App() {
     <ErrorBoundary>
       <SafeAreaProvider>
         {/* PIN lock overlay — shown on top of everything when the app is locked */}
-        {isLocked && <PinLockScreen onUnlock={() => setIsLocked(false)} />}
+        {isLocked && (
+          <PinLockScreen
+            onUnlock={() => {
+              setIsLocked(false);
+              isLockedRef.current = false;
+              // Replay any deep-link or notification taps that arrived while
+              // the lock screen was up.
+              const queued = pendingActionsRef.current;
+              pendingActionsRef.current = [];
+              queued.forEach(fn => { try { fn(); } catch {} });
+            }}
+          />
+        )}
         <NavigationContainer
           ref={navigationRef}
           onReady={() => { isReady.current = true; }}

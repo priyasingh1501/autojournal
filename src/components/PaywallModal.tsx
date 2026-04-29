@@ -21,7 +21,8 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SubscriptionService, ProPlan } from '../services/SubscriptionService';
+import { SubscriptionService, ProPlan, PlanPricing } from '../services/SubscriptionService';
+import { track } from '../services/AnalyticsService';
 
 interface Props {
   visible: boolean;
@@ -40,7 +41,18 @@ const FEATURES = [
   { icon: 'bar-chart-2',text: 'Monthly deep insights' },
 ];
 
-const PLANS: { key: ProPlan; label: string; price: string; sub: string; badge?: string }[] = [
+interface PlanCard {
+  key:    ProPlan;
+  label:  string;
+  price:  string;
+  sub:    string;
+  badge?: string;
+}
+
+// Fallback copy used only when RC offerings haven't loaded (offline cold-start
+// or RC misconfigured). Shows USD defaults — once `getPlanPricing()` returns,
+// these get replaced with localized prices straight from Google Play.
+const FALLBACK_PLANS: PlanCard[] = [
   {
     key:   'annual',
     label: 'Annual',
@@ -56,24 +68,54 @@ const PLANS: { key: ProPlan; label: string; price: string; sub: string; badge?: 
   },
 ];
 
+function buildPlansFromPricing(p: PlanPricing): PlanCard[] {
+  const plans: PlanCard[] = [];
+  if (p.annual) {
+    plans.push({
+      key:   'annual',
+      label: 'Annual',
+      price: `${p.annual.priceString} / year`,
+      sub:   `just ${p.annual.pricePerMonthString} / month`,
+      badge: p.annual.savingsPct > 0 ? `Best value · saves ${p.annual.savingsPct}%` : 'Best value',
+    });
+  }
+  if (p.monthly) {
+    plans.push({
+      key:   'monthly',
+      label: 'Monthly',
+      price: `${p.monthly.priceString} / month`,
+      sub:   'cancel any time',
+    });
+  }
+  return plans.length > 0 ? plans : FALLBACK_PLANS;
+}
+
 export default function PaywallModal({ visible, onClose, onSuccess, featureHint }: Props) {
   const insets = useSafeAreaInsets();
   const [selectedPlan, setSelectedPlan] = useState<ProPlan>('annual');
   const [loading, setLoading]           = useState(false);
   const [restoring, setRestoring]       = useState(false);
   const [trialDays, setTrialDays]       = useState(0);
+  const [plans, setPlans]               = useState<PlanCard[]>(FALLBACK_PLANS);
 
   useEffect(() => {
     if (visible) {
+      track('paywall_shown', { hint: featureHint ?? null });
       SubscriptionService.getTrialDaysRemaining().then(setTrialDays);
+      SubscriptionService.getPlanPricing()
+        .then(pricing => setPlans(buildPlansFromPricing(pricing)))
+        .catch(() => { /* keep fallback */ });
     }
-  }, [visible]);
+  }, [visible, featureHint]);
 
   const handleSubscribe = async () => {
     setLoading(true);
     try {
       const ok = await SubscriptionService.purchasePro(selectedPlan);
-      if (ok) onSuccess();
+      if (ok) {
+        track('subscription_purchased', { plan: selectedPlan, source: 'purchase' });
+        onSuccess();
+      }
     } catch (e: any) {
       Alert.alert('Purchase failed', e?.message ?? 'Something went wrong. Please try again.');
     } finally {
@@ -86,6 +128,7 @@ export default function PaywallModal({ visible, onClose, onSuccess, featureHint 
     try {
       const ok = await SubscriptionService.restorePurchases();
       if (ok) {
+        track('subscription_purchased', { plan: selectedPlan, source: 'restore' });
         onSuccess();
       } else {
         Alert.alert('No purchases found', 'No active subscription was found for this account.');
@@ -137,7 +180,7 @@ export default function PaywallModal({ visible, onClose, onSuccess, featureHint 
 
           {/* Plan toggle */}
           <View style={s.plans}>
-            {PLANS.map(plan => {
+            {plans.map(plan => {
               const active = selectedPlan === plan.key;
               return (
                 <TouchableOpacity
@@ -174,7 +217,10 @@ export default function PaywallModal({ visible, onClose, onSuccess, featureHint 
             {loading
               ? <ActivityIndicator size="small" color="rgba(224,242,254,0.95)" />
               : <Text style={s.ctaText}>
-                  {selectedPlan === 'annual' ? 'Get untangle Pro — $59.99/yr' : 'Get untangle Pro — $8.99/mo'}
+                  {(() => {
+                    const selected = plans.find(p => p.key === selectedPlan);
+                    return selected ? `Get untangle Pro — ${selected.price}` : 'Get untangle Pro';
+                  })()}
                 </Text>
             }
           </TouchableOpacity>

@@ -6,10 +6,14 @@ const HINGLISH_PROMPT =
   'The speaker may mix Hindi and English freely. For example: "Aaj mera mood thoda off tha, but phir kuch better feel hua." Keep Hindi words as spoken, romanized in English script.';
 
 Deno.serve(async (req) => {
+  let storage_path: string | undefined;
+  let supabase: ReturnType<typeof createClient> | undefined;
   try {
-    const { storage_path, prompt, language } = await req.json();
+    const body = await req.json();
+    storage_path = body.storage_path;
+    const { prompt, language } = body as { prompt?: string; language?: string };
 
-    const supabase = createClient(
+    supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
@@ -17,7 +21,7 @@ Deno.serve(async (req) => {
     // Download audio from Storage (service role bypasses RLS)
     const { data: fileBlob, error: downloadError } = await supabase.storage
       .from('audio-clips')
-      .download(storage_path);
+      .download(storage_path!);
 
     if (downloadError) throw new Error(`Storage download failed: ${downloadError.message}`);
 
@@ -36,14 +40,17 @@ Deno.serve(async (req) => {
 
     const data = await response.json();
 
-    // Delete from Storage — fire-and-forget, don't block the response
-    supabase.storage.from('audio-clips').remove([storage_path]).catch(console.error);
-
-    // Surface OpenAI errors as 5xx so the client throws instead of silently
-    // treating `{error: ...}` as a successful transcription with empty text.
+    // Mirror the upstream status to the client so it can distinguish
+    // permanent rejections (4xx — bad audio, too large, unsupported format)
+    // from transient ones (5xx — OpenAI hiccup) and apply the right retry
+    // policy. Without this, the client would treat every bad clip as
+    // retryable and waste five round-trips before giving up.
     if (!response.ok) {
       const msg = data?.error?.message || `Whisper HTTP ${response.status}`;
-      throw new Error(msg);
+      return new Response(JSON.stringify({ error: msg }), {
+        status: response.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     return new Response(JSON.stringify(data), {
@@ -55,5 +62,15 @@ Deno.serve(async (req) => {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
+  } finally {
+    // Always clean up the uploaded clip — even on download failure or
+    // OpenAI error — so audio never lingers in the bucket. Fire-and-forget;
+    // failures here are logged but don't affect the response.
+    if (supabase && storage_path) {
+      supabase.storage
+        .from('audio-clips')
+        .remove([storage_path])
+        .catch((e: unknown) => console.error('Whisper cleanup failed:', e));
+    }
   }
 });

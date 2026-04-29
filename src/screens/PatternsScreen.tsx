@@ -354,6 +354,7 @@ export default function PatternsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [hasAnyArchive, setHasAnyArchive] = useState<boolean | null>(null);
   const [totalEntryCount, setTotalEntryCount] = useState(0);
+  const [newEntriesSinceReport, setNewEntriesSinceReport] = useState(0);
   const [activeTab, setActiveTab] = useState<'this_month' | 'past_months'>('this_month');
   const [archivedMonths, setArchivedMonths] = useState<Array<{ month: string; report: PatternsReport }>>([]);
 
@@ -421,10 +422,17 @@ export default function PatternsScreen() {
         const hasAny = transcriptDates.length > 0 || summaryDates.length > 0;
         setHasAnyArchive(hasAny);
         setArchivedMonths(archived);
-        const counts = await Promise.all(
-          transcriptDates.map(d => StorageService.getTranscriptsForDate(d).then(e => e.length)),
+        const entriesPerDate = await Promise.all(
+          transcriptDates.map(d => StorageService.getTranscriptsForDate(d)),
         );
-        setTotalEntryCount(counts.reduce((a, b) => a + b, 0));
+        const allEntries = entriesPerDate.flat();
+        setTotalEntryCount(allEntries.length);
+        if (cached) {
+          const since = allEntries.filter(e => e.timestamp > cached.generatedAt).length;
+          setNewEntriesSinceReport(since);
+        } else {
+          setNewEntriesSinceReport(0);
+        }
         if (!cached && hasAny) {
           runGenerate(true).catch(() => {});
         }
@@ -439,8 +447,10 @@ export default function PatternsScreen() {
       const { report: fresh } = await generatePatterns();
       setReport(fresh);
       setLocallyHidden(new Set());
+      setNewEntriesSinceReport(0);
       await runCuration(fresh);
       await SubscriptionService.recordInsightGenerated('patterns');
+      track('patterns_regenerated', { entry_count: fresh.entryCount });
     } catch (e: any) {
       if (e?.message === NOT_ENOUGH_DATA) {
         setError(NOT_ENOUGH_DATA);
@@ -507,6 +517,7 @@ export default function PatternsScreen() {
 
   const pickMind = (mindId: MindCandidate) => {
     if (!sitWithObs) return;
+    track('mind_selected', { mind_id: mindId ?? 'companion', source: 'patterns' });
     track('sit_with_this_opened', { source: 'patterns', mind_id: mindId ?? 'companion' });
     const summary = buildPatternSummary(sitWithObs);
     setTalkSummary(summary);
@@ -572,15 +583,22 @@ export default function PatternsScreen() {
         <View>
           <Text style={styles.screenTitle}>Patterns</Text>
           {report && activeTab === 'this_month' && (
-            <Text style={styles.subtitle}>
-              {(() => {
-                const n = report.entryCount;
-                const label = n === 1 ? 'entry' : 'entries';
-                if (n < 8)  return `${n} ${label} · patterns form early`;
-                if (n <= 20) return `${n} ${label} · patterns emerging`;
-                return `${n} ${label} · ${archiveDays} days`;
-              })()}
-            </Text>
+            <>
+              <Text style={styles.subtitle}>
+                {(() => {
+                  const n = report.entryCount;
+                  const label = n === 1 ? 'entry' : 'entries';
+                  if (n < 8)  return `${n} ${label} · patterns form early`;
+                  if (n <= 20) return `${n} ${label} · patterns emerging`;
+                  return `${n} ${label} · ${archiveDays} days`;
+                })()}
+              </Text>
+              {newEntriesSinceReport > 0 && (
+                <Text style={styles.subtitleHint}>
+                  {newEntriesSinceReport} new {newEntriesSinceReport === 1 ? 'entry' : 'entries'} since last refresh · regenerate to update
+                </Text>
+              )}
+            </>
           )}
         </View>
         {report && activeTab === 'this_month' && (
@@ -625,7 +643,20 @@ export default function PatternsScreen() {
         archivedMonths.length === 0 ? (
           <View style={styles.initialLoading}>
             <Text style={styles.initialLoadingText}>
-              Past months will appear here once a month completes.
+              {(() => {
+                const now = new Date();
+                const monthName = now.toLocaleString('default', { month: 'long' });
+                const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                const daysLeft = Math.max(
+                  0,
+                  Math.ceil((endOfMonth.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+                );
+                const dayWord = daysLeft === 1 ? 'day' : 'days';
+                if (daysLeft === 0) {
+                  return `Your monthly enneagram is in progress. ${monthName} wraps up tonight — check back tomorrow.`;
+                }
+                return `Your monthly enneagram is in progress. Check back in ${daysLeft} ${dayWord} when ${monthName} wraps up.`;
+              })()}
             </Text>
           </View>
         ) : (
@@ -808,6 +839,12 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 12,
     color: 'rgba(152,212,250,0.50)',
+    fontFamily: 'GillSans-Light',
+    marginTop: 2,
+  },
+  subtitleHint: {
+    fontSize: 12,
+    color: 'rgba(253,230,138,0.75)',
     fontFamily: 'GillSans-Light',
     marginTop: 2,
   },

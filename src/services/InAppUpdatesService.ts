@@ -23,6 +23,7 @@
  */
 
 import { Alert, Platform } from 'react-native';
+import { track } from './AnalyticsService';
 
 export async function maybePromptForUpdate(): Promise<void> {
   if (Platform.OS !== 'android') return;
@@ -38,6 +39,7 @@ export async function maybePromptForUpdate(): Promise<void> {
     const result = await inAppUpdates.checkNeedsUpdate();
     if (!result?.shouldUpdate) return;
 
+    track('app_update_prompt_shown');
     // Flexible flow: user keeps using the app while it downloads.
     await inAppUpdates.startUpdate({ updateType: IAUUpdateKind.FLEXIBLE });
 
@@ -52,6 +54,7 @@ export async function maybePromptForUpdate(): Promise<void> {
             {
               text: 'Restart',
               onPress: () => {
+                track('app_update_installed');
                 // Triggers Google's confirm dialog, then restarts the app.
                 inAppUpdates.installUpdate();
               },

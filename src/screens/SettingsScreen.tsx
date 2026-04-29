@@ -30,6 +30,7 @@ import {
 } from '../services/SmartNotificationService';
 import { AppSettings } from '../types';
 import { getCurrentUser, signOut } from '../services/AuthService';
+import { track } from '../services/AnalyticsService';
 
 const DEFAULT_SETTINGS: AppSettings = {
   summaryTime: '21:00',
@@ -337,6 +338,29 @@ export default function SettingsScreen() {
             <Feather name="trash-2" size={14} color="rgba(252,165,165,0.80)" />
             <Text style={styles.clearCacheText}>Clear wisdom image cache</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.clearCacheBtn}
+            onPress={() => {
+              Alert.alert(
+                'Clear stuck recordings',
+                'If the mic is stuck on "thinking…", this removes any pending audio clips that the transcriber kept failing on. Saved entries are not affected.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Clear',
+                    style: 'destructive',
+                    onPress: async () => {
+                      await StorageService.clearPendingClips();
+                      Alert.alert('Done', 'Pending recordings cleared.');
+                    },
+                  },
+                ],
+              );
+            }}
+          >
+            <Feather name="mic-off" size={14} color="rgba(252,165,165,0.80)" />
+            <Text style={styles.clearCacheText}>Clear stuck recordings</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Backup — Android only */}
@@ -381,6 +405,7 @@ export default function SettingsScreen() {
                     text: 'Sign out',
                     style: 'destructive',
                     onPress: async () => {
+                      track('user_signed_out');
                       await signOut();
                     },
                   },

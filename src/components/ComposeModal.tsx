@@ -28,6 +28,7 @@ import { effectiveDateStr } from '../services/dayRollover';
 import { invalidateDigest } from '../services/DigestService';
 import { TranscriptEntry } from '../types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { track } from '../services/AnalyticsService';
 
 interface Props {
   visible: boolean;
@@ -147,6 +148,7 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
   const prevVisibleRef = React.useRef(false);
   React.useEffect(() => {
     if (visible && !prevVisibleRef.current) {
+      track('compose_modal_opened', { is_edit: !!editEntry });
       if (editEntry) {
         setText(editEntry.text);
         setPhotoUri(editEntry.photoUri ?? null);
@@ -167,6 +169,7 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
   };
 
   const handleClose = () => {
+    track('compose_modal_dismissed', { saved: false });
     reset();
     onClose();
   };
@@ -419,6 +422,12 @@ export default function ComposeModal({ visible, onClose, onSaved, onExpensesExtr
               placeholderTextColor="rgba(152, 212, 250, 0.40)"
               value={text}
               onChangeText={setText}
+              // 10k characters is ~30 minutes of dictation — comfortably more
+              // than any real journal entry, and small enough that emotion
+              // analysis + summary prompts stay within budget. Without this,
+              // a paste of arbitrary text inflates AI cost and can blow past
+              // Android's per-app AsyncStorage quota.
+              maxLength={10_000}
               multiline
               textAlignVertical="top"
               scrollEnabled={false}

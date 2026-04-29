@@ -8,7 +8,7 @@
  * Emotional tone throughout: calm, steady, caring. Never alarmed.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -22,6 +22,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { DistressTier } from '../services/WellbeingService';
+import { track } from '../services/AnalyticsService';
 
 // ── Crisis resources ───────────────────────────────────────────────────────────
 
@@ -88,12 +89,18 @@ export default function WellbeingResponseModal({
 }: Props) {
   const [t2View, setT2View] = useState<T2View>('initial');
 
+  useEffect(() => {
+    if (visible) track('wellbeing_modal_shown', { tier });
+  }, [visible, tier]);
+
   const handleClose = () => {
+    track('wellbeing_modal_responded', { tier, action: 'dismiss' });
     setT2View('initial');
     onDismiss();
   };
 
   const handleContinue = () => {
+    track('wellbeing_modal_responded', { tier, action: 'continue' });
     setT2View('initial');
     onContinue();
   };
@@ -133,8 +140,10 @@ export default function WellbeingResponseModal({
           <TouchableOpacity
             style={s.falsePositiveBtn}
             onPress={() => {
+              track('wellbeing_modal_responded', { tier, action: 'false_positive' });
               onFalsePositive?.();
-              handleContinue();
+              setT2View('initial');
+              onContinue();
             }}
           >
             <Text style={s.falsePositiveText}>I was just venting — this doesn't apply</Text>

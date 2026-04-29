@@ -66,6 +66,7 @@ export interface AnalyticsEventProps {
   patterns_section_viewed: { section: string };
   patterns_observation_dismissed: { section: string; reason: 'not_quite' | 'too_soft' };
   patterns_more_expanded: undefined;
+  patterns_regenerated: { entry_count: number };
   day_summary_prose_viewed: undefined;
   day_summary_breakdown_expanded: undefined;
   week_review_opened: undefined;
@@ -77,6 +78,30 @@ export interface AnalyticsEventProps {
   handoff_offered: { from: string; to: string };
   handoff_accepted: { to: string };
   handoff_declined: { to: string; reason: 'stay' | 'not_yet' };
+  // Onboarding funnel
+  onboarding_step_viewed: { step: number };
+  onboarding_completed: undefined;
+  // Compose modal
+  compose_modal_opened: { is_edit: boolean };
+  compose_modal_dismissed: { saved: boolean };
+  // Wellbeing distress modal
+  wellbeing_modal_shown: { tier: number };
+  wellbeing_modal_responded: { tier: number; action: 'continue' | 'dismiss' | 'false_positive' };
+  // Mind picker
+  mind_selected: { mind_id: string; source: string };
+  // Failures (soft, non-crashing — not captured by Sentry)
+  wisdom_image_failed: { short_id: string; reason: string };
+  transcription_failed: { reason: string };
+  call_connect_failed: { mind_id: string; reason: string };
+  // App updates (Android only)
+  app_update_prompt_shown: undefined;
+  app_update_installed: undefined;
+  // PIN lock
+  pin_setup_completed: undefined;
+  pin_unlocked: { method: 'pin' | 'biometric' };
+  // Wisdom feed engagement
+  wisdom_short_viewed: { short_id: string; position: number; dwell_ms_previous: number };
+  wisdom_session_ended: { shorts_viewed: number; max_position: number; total_dwell_ms: number };
 }
 
 export type RedesignEvent = keyof AnalyticsEventProps;

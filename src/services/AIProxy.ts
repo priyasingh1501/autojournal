@@ -8,20 +8,30 @@
  * files require minimal changes.
  */
 
-import { createClient } from '@supabase/supabase-js';
 import * as FileSystem from 'expo-file-system/legacy';
+import { supabase } from './AuthService';
 
 const SUPABASE_URL      = 'https://hgodsuwrdpmaqcdetjjn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhnb2RzdXdyZHBtYXFjZGV0ampuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMTI3MjYsImV4cCI6MjA5MDc4ODcyNn0.PrrHGD7Vx0hq51uLcCLTH4tA-smRFMKTnxom1i5lrCw';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const AUDIO_BUCKET = 'audio-clips';
 
 const BASE = `${SUPABASE_URL}/functions/v1`;
-const HEADERS = {
-  'Content-Type': 'application/json',
-  Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-};
+
+/**
+ * Returns the user's session JWT if signed in, else the anon key. We prefer
+ * the session token so edge functions and storage uploads carry the user's
+ * identity (`auth.uid()` resolves server-side) and so the audio-clips bucket
+ * — which now requires authenticated INSERT — accepts the upload.
+ */
+async function getAuthToken(): Promise<string> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? SUPABASE_ANON_KEY;
+  } catch {
+    return SUPABASE_ANON_KEY;
+  }
+}
 
 // ── Core fetch helper ─────────────────────────────────────────────────────────
 
@@ -29,9 +39,13 @@ async function callEdge<T>(fn: string, body: object, timeoutMs = 30_000): Promis
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const token = await getAuthToken();
     const res = await fetch(`${BASE}/${fn}`, {
       method: 'POST',
-      headers: HEADERS,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -61,7 +75,8 @@ export const claudeProxy = {
 
 export const openaiImageProxy = {
   images: {
-    generate: (params: object) => callEdge<any>('openai-image', params),
+    // DALL-E 3 routinely takes 30–60 s; the default 30 s timeout aborts mid-flight.
+    generate: (params: object) => callEdge<any>('openai-image', params, 90_000),
   },
 };
 
@@ -76,6 +91,7 @@ export const openaiImageProxy = {
 export async function transcribeAudio(uri: string): Promise<string> {
   const path = `clips/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.m4a`;
   const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${AUDIO_BUCKET}/${path}`;
+  const token = await getAuthToken();
 
   // expo-file-system uploadAsync streams the file natively — no JS memory
   // pressure and no fetch(file://) issues on Android.
@@ -83,7 +99,7 @@ export async function transcribeAudio(uri: string): Promise<string> {
     httpMethod: 'POST',
     uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
     headers: {
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'audio/m4a',
     },
   });

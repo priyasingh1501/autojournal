@@ -23,6 +23,11 @@ const LAST_SCHEDULED_KEY = 'day_close_notif_last_target';
 const TARGET_HOUR   = 23;
 const TARGET_MINUTE = 59;
 
+// Module-level lock prevents two concurrent foreground events (mount + AppState
+// 'active') from both passing the LAST_SCHEDULED_KEY guard before either has
+// written, which would otherwise schedule two day-close notifications.
+let scheduleInFlight: Promise<void> | null = null;
+
 function pad(n: number): string { return String(n).padStart(2, '0'); }
 
 function localDateStr(d: Date): string {
@@ -44,6 +49,20 @@ async function cancelExisting(): Promise<void> {
     try { await Notifications.cancelScheduledNotificationAsync(id); } catch { /* already fired */ }
     await AsyncStorage.removeItem(SCHEDULED_ID_KEY);
   }
+
+  // Defensive sweep: cancel any orphaned summary_ready notifications whose
+  // IDs we no longer track (storage cleared, reinstall, race during a previous
+  // schedule call). Without this, the OS scheduler can hold a duplicate that
+  // fires alongside the freshly scheduled one.
+  try {
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    for (const req of all) {
+      const t = (req.content?.data as any)?.type as string | undefined;
+      if (t === 'summary_ready') {
+        try { await Notifications.cancelScheduledNotificationAsync(req.identifier); } catch {}
+      }
+    }
+  } catch { /* best-effort */ }
 }
 
 /**
@@ -52,6 +71,10 @@ async function cancelExisting(): Promise<void> {
  * for the same target date.
  */
 export async function ensureDayCloseNotificationScheduled(): Promise<void> {
+  // Coalesce concurrent calls onto the same in-flight promise to prevent
+  // double-scheduling when mount and AppState 'active' fire near-simultaneously.
+  if (scheduleInFlight) return scheduleInFlight;
+  scheduleInFlight = (async () => {
   try {
     const { status } = await Notifications.getPermissionsAsync();
     if (status !== 'granted') return;
@@ -86,6 +109,12 @@ export async function ensureDayCloseNotificationScheduled(): Promise<void> {
     await AsyncStorage.setItem(LAST_SCHEDULED_KEY, targetDate);
   } catch {
     // Best-effort — the catch-up on next app open covers missed schedules.
+  }
+  })();
+  try {
+    await scheduleInFlight;
+  } finally {
+    scheduleInFlight = null;
   }
 }
 

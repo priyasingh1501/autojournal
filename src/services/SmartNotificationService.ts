@@ -24,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageService } from './StorageService';
 import {
   getPendingReentry,
+  clearPendingReentry,
   isWellbeingEnabled,
 } from './WellbeingService';
 import { SHORTS_LIBRARY } from '../data/shortsLibrary';
@@ -35,6 +36,23 @@ const SCHEDULED_ID_KEY = 'smart_notification_scheduled_id';
 const LAST_SCHEDULED_KEY = 'smart_notification_last_date';
 const DEFAULT_NOTIFICATION_HOUR = 19;
 const DEFAULT_NOTIFICATION_MINUTE = 30;
+
+// Notification data.type values that this service owns. Used to find and
+// cancel orphaned scheduled notifications whose IDs were lost (e.g. after
+// a storage clear, reinstall, or interrupted schedule call).
+const SMART_NOTIFICATION_TYPES = new Set([
+  'wellbeing_reentry',
+  'week_review_ready',
+  'emotional_followup',
+  'tracker_nudge',
+  'wisdom_short',
+  'generic_reflection',
+]);
+
+// Module-level lock prevents two concurrent foreground events (mount + AppState
+// 'active') from both passing the LAST_SCHEDULED_KEY guard before either has
+// written, which would otherwise schedule two notifications for the same day.
+let scheduleInFlight: Promise<void> | null = null;
 
 // Emotion tags (from BatchTranscriptionService EMOTION_SET) that warrant follow-up
 const DISTRESS_EMOTIONS = new Set(['anxious', 'stressed', 'sad', 'overwhelmed', 'lonely', 'frustrated']);
@@ -94,6 +112,20 @@ async function cancelPreviousSmartNotification(): Promise<void> {
     }
     await AsyncStorage.removeItem(SCHEDULED_ID_KEY);
   }
+
+  // Defensive sweep: cancel any orphaned smart notifications whose IDs
+  // we no longer track (storage cleared, reinstall, race during a previous
+  // schedule call). Without this, the OS scheduler can hold a duplicate
+  // that fires alongside today's scheduled one.
+  try {
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    for (const req of all) {
+      const t = (req.content?.data as any)?.type as string | undefined;
+      if (t && SMART_NOTIFICATION_TYPES.has(t)) {
+        try { await Notifications.cancelScheduledNotificationAsync(req.identifier); } catch {}
+      }
+    }
+  } catch { /* best-effort */ }
 }
 
 // ── Build notification candidates ─────────────────────────────────────────────
@@ -116,6 +148,14 @@ async function buildCandidates(): Promise<NotificationCandidate[]> {
           body: message,
           data: { type: 'wellbeing_reentry', tier: String(pending.tier) },
         });
+        // Clear immediately. Without this, the daily scheduler re-enqueues
+        // the same reentry every single day until the user reinstalls — a
+        // tier-3 nag becomes a permanent feature of their notification feed.
+        // One nudge is the design; if the user doesn't respond, we don't
+        // chase them. The notification has already been added to the
+        // candidate list above, so it will still fire today (or tomorrow if
+        // the scheduled time has passed).
+        await clearPendingReentry();
       }
     }
   } catch { /* never block on wellbeing errors */ }
@@ -290,6 +330,11 @@ async function buildCandidates(): Promise<NotificationCandidate[]> {
 export async function scheduleSmartNotifications(
   notificationTimeOverride?: string,
 ): Promise<void> {
+  // Coalesce concurrent calls onto the same in-flight promise. Without this,
+  // mount-time schedule and an AppState 'active' that fires immediately after
+  // can both pass the LAST_SCHEDULED_KEY guard before either has written it.
+  if (scheduleInFlight) return scheduleInFlight;
+  scheduleInFlight = (async () => {
   try {
     // ── Check permission ────────────────────────────────────────────────────
     const { status } = await Notifications.getPermissionsAsync();
@@ -357,6 +402,12 @@ export async function scheduleSmartNotifications(
     await AsyncStorage.setItem(LAST_SCHEDULED_KEY, today);
   } catch (err) {
     console.warn('[SmartNotification] scheduling failed:', err);
+  }
+  })();
+  try {
+    await scheduleInFlight;
+  } finally {
+    scheduleInFlight = null;
   }
 }
 

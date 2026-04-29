@@ -8,15 +8,41 @@
  */
 
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
+// Shared secret configured both here (Supabase function secret) and in the
+// ElevenLabs agent's custom-LLM webhook config under `Authorization` header.
+// Required because verify_jwt is necessarily off for this function — without
+// the secret, anyone with the URL can drain the Anthropic bill.
+const WEBHOOK_SECRET = Deno.env.get('ELEVENLABS_WEBHOOK_SECRET');
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+function unauthorized(reason: string) {
+  console.warn('[elevenlabs-llm] rejected:', reason);
+  return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+    status: 401,
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: CORS_HEADERS });
+  }
+
+  // Fail closed: if the secret isn't configured, refuse all traffic rather
+  // than silently allowing the world to call Anthropic on our dime.
+  if (!WEBHOOK_SECRET) {
+    return unauthorized('ELEVENLABS_WEBHOOK_SECRET not set');
+  }
+  const auth = req.headers.get('authorization') ?? '';
+  // Accept either `Bearer <secret>` or the raw secret — ElevenLabs lets the
+  // user enter just the value or the full header.
+  const presented = auth.replace(/^Bearer\s+/i, '').trim();
+  if (presented !== WEBHOOK_SECRET) {
+    return unauthorized('bad or missing webhook secret');
   }
 
   try {
@@ -54,7 +80,7 @@ Deno.serve(async (req) => {
     const VOICE_DIRECTIVE = `
 
 VOICE MODE
-You are speaking, not writing. Respond in 1–3 short sentences per turn. Leave room for the user to reply. Do not lecture, do not stack multiple teachings in one turn — pick the one thing worth saying and say it. If there is a question worth asking, ask it and stop.`;
+You are speaking, not writing. Leave room for the user to reply. Do not lecture, do not stack multiple teachings in one turn — pick the one thing worth saying and say it. End each turn with one focused question — never two, never zero.`;
     const systemForClaude = (sysContent || '') + VOICE_DIRECTIVE;
     const convMsgs = messages
       .filter((m) => m.role !== 'system')

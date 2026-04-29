@@ -33,6 +33,10 @@ export interface PendingClip {
   uri: string;
   timestamp: number;
   duration: number;
+  // Number of times transcription has failed. Clips that exceed
+  // BatchTranscriptionService's MAX_RETRIES are dropped from the queue so a
+  // permanently bad clip can't pin the mic orb in "thinking…" forever.
+  failureCount?: number;
 }
 
 export interface DailySummary {

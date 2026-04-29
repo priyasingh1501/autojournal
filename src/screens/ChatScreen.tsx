@@ -13,6 +13,8 @@ import {
   Platform,
   Dimensions,
   KeyboardAvoidingView,
+  Alert,
+  Linking,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -547,6 +549,7 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
   const startConversation = async (mindId: string | null, preloadedOpening?: string) => {
     setSelectedMindId(mindId);
     conversationStartedAtRef.current = Date.now();
+    track('chat_session_started', { mind_id: mindId ?? 'companion' });
     setConvState('loading');
     try {
       // API keys now live server-side; apiKeyRef is kept as an empty-string
@@ -694,12 +697,25 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
     try {
       const { status: existing } = await Audio.getPermissionsAsync();
       let granted = existing === 'granted';
+      let canAsk = true;
       if (!granted) {
-        const { status } = await Audio.requestPermissionsAsync();
-        granted = status === 'granted';
+        const res = await Audio.requestPermissionsAsync();
+        granted = res.status === 'granted';
+        canAsk  = res.canAskAgain ?? false;
       }
       if (!granted) {
-        setError('Microphone permission denied.');
+        // Show a friendly Settings dialog instead of a sticky inline error
+        // that would otherwise live in the input bar until manually dismissed.
+        if (!canAsk) {
+          Alert.alert(
+            'Microphone Access Needed',
+            'untangle needs the microphone to record voice notes. Please enable it in your device Settings.',
+            [
+              { text: 'Not Now', style: 'cancel' },
+              { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ],
+          );
+        }
         return;
       }
       await Audio.setAudioModeAsync({
@@ -853,11 +869,17 @@ export default function ChatScreen({ summary, onClose, onCallRequested, initialM
 
     // Record the conversation for recent-minds context regardless of outcome.
     if (conversationStartedAtRef.current > 0) {
+      const endedAt = Date.now();
+      track('chat_session_ended', {
+        mind_id: selectedMindId ?? 'companion',
+        duration_s: Math.round((endedAt - conversationStartedAtRef.current) / 1000),
+        user_messages: userMessages.length,
+      });
       recordCompletedConversation({
         mindId: selectedMindId,
         messages: messagesRef.current.map(m => ({ role: m.role as 'user' | 'assistant', text: m.text })),
         startedAt: conversationStartedAtRef.current,
-        endedAt: Date.now(),
+        endedAt,
       }).catch(() => {});
     }
 

@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video, ResizeMode } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { track } from '../services/AnalyticsService';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -195,8 +196,11 @@ export default function OnboardingScreen({ onComplete }: Props) {
   // 0 = welcome; 1..5 = feature steps; length+1 total screens.
   const [index, setIndex] = useState(0);
 
+  useEffect(() => { track('onboarding_step_viewed', { step: index }); }, [index]);
+
   const handleFinish = async () => {
     try { await AsyncStorage.setItem('onboarding_complete', '1'); } catch {}
+    track('onboarding_completed');
     onComplete();
   };
 

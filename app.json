@@ -76,7 +76,8 @@
           "project": "react-native",
           "organization": "untangle-cn"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {

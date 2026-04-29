@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DeviceEventEmitter } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 import {
   TranscriptEntry, DailySummary, AppSettings, PendingClip, MonthlyInsight,
   EmotionAnalysis, ThoughtPatternAnalysis, PersonalityAnalysis, GrowthTipsAnalysis,
@@ -26,13 +28,21 @@ const KEYS = {
   // code, so any data stored under them on existing installs will remain
   // untouched until the user clears app data.
   EXPENSE_PREFIX: 'expenses_',
-  APP_PIN: 'app_pin_hash',
+  APP_PIN_LEGACY: 'app_pin_hash',       // pre-SecureStore djb2 hash, migrated on first verify
+  APP_PIN_ATTEMPTS: 'app_pin_attempts', // JSON: { count: number, lockoutUntilMs: number }
   WISDOM_SAVED: 'wisdom_saved_shorts',
   WISDOM_SEEN: 'wisdom_seen_shorts',
   WISDOM_SEEN_MIGRATED: 'wisdom_seen_migrated',
   WISDOM_SIGNAL: 'wisdom_journal_signal',
   PUBLISHER_MODE: 'publisher_mode',
   CUSTOM_SHORTS: 'wisdom_custom_shorts',
+};
+
+// Stored in iOS Keychain / Android Keystore via expo-secure-store — not
+// readable by other apps and not present in AsyncStorage exports.
+const SECURE_KEYS = {
+  PIN_HASH: 'untangle_pin_hash_v2',
+  PIN_SALT: 'untangle_pin_salt_v2',
 };
 
 function safeParse<T>(json: string | null, fallback: T): T {
@@ -53,11 +63,11 @@ function todayKey(): string {
 }
 
 /**
- * djb2-based hash with a fixed salt — sufficient for local PIN storage.
- * The PIN never leaves the device; this protects against casual inspection
- * of the AsyncStorage file on a rooted device.
+ * Legacy djb2 hash. Retained ONLY to verify PINs from pre-v2 installs so we
+ * can transparently migrate them to SecureStore + SHA-256 on the next
+ * successful unlock. Never used to set new PINs.
  */
-function _hashPin(rawPin: string): string {
+function _legacyHashPin(rawPin: string): string {
   const salted = `untangle_pin_v1_${rawPin}`;
   let h = 5381;
   for (let i = 0; i < salted.length; i++) {
@@ -67,6 +77,30 @@ function _hashPin(rawPin: string): string {
   // >>> 0 converts to unsigned 32-bit so we never get a leading '-'
   // eslint-disable-next-line no-bitwise
   return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/** SHA-256 hex of (salt + pin). Salt is per-install random, kept in SecureStore. */
+async function _hashPinV2(rawPin: string, salt: string): Promise<string> {
+  return Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    `${salt}|${rawPin}`,
+    { encoding: Crypto.CryptoEncoding.HEX },
+  );
+}
+
+/** Cryptographically random per-install salt (32 bytes hex). */
+async function _generateSalt(): Promise<string> {
+  const bytes = await Crypto.getRandomBytesAsync(32);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Returns the stored salt, generating + persisting one on first call. */
+async function _getOrCreateSalt(): Promise<string> {
+  const existing = await SecureStore.getItemAsync(SECURE_KEYS.PIN_SALT);
+  if (existing) return existing;
+  const fresh = await _generateSalt();
+  await SecureStore.setItemAsync(SECURE_KEYS.PIN_SALT, fresh);
+  return fresh;
 }
 
 export const StorageService = {
@@ -175,6 +209,27 @@ export const StorageService = {
     const clips = await this.getPendingClips();
     const filtered = clips.filter(c => !idSet.has(c.id));
     await AsyncStorage.setItem(KEYS.PENDING_CLIPS, JSON.stringify(filtered));
+  },
+
+  // Atomic apply of one transcription batch's outcome:
+  //   - removedIds: clips done for good (success, missing file, exceeded retries)
+  //   - retriedIds: clips that failed this attempt and should keep their slot
+  //                 in the queue with an incremented failureCount
+  // Reads the live list inside the same call so a clip added by a concurrent
+  // recording during the batch isn't overwritten.
+  async applyPendingClipResults(args: {
+    removedIds: string[];
+    retriedIds: string[];
+  }): Promise<void> {
+    const removed = new Set(args.removedIds);
+    const retried = new Set(args.retriedIds);
+    const clips = await this.getPendingClips();
+    const next = clips
+      .filter(c => !removed.has(c.id))
+      .map(c => retried.has(c.id)
+        ? { ...c, failureCount: (c.failureCount ?? 0) + 1 }
+        : c);
+    await AsyncStorage.setItem(KEYS.PENDING_CLIPS, JSON.stringify(next));
   },
 
   async clearPendingClips(): Promise<void> {
@@ -319,28 +374,113 @@ export const StorageService = {
   },
 
   // ── App lock PIN ────────────────────────────────────────────────────────────
+  // PIN hash + per-install salt live in iOS Keychain / Android Keystore via
+  // expo-secure-store. AsyncStorage may still hold a legacy djb2 hash from
+  // pre-v2 installs; that gets transparently migrated to SecureStore the next
+  // time the user successfully enters their PIN.
 
-  /** Returns true if a PIN has been set. */
+  /** Returns true if a PIN has been set (either v2 or pre-v2). */
   async hasPinSet(): Promise<boolean> {
-    const val = await AsyncStorage.getItem(KEYS.APP_PIN);
-    return val !== null && val.length > 0;
+    const v2 = await SecureStore.getItemAsync(SECURE_KEYS.PIN_HASH);
+    if (v2 && v2.length > 0) return true;
+    const legacy = await AsyncStorage.getItem(KEYS.APP_PIN_LEGACY);
+    return legacy !== null && legacy.length > 0;
   },
 
   /** Hash + save a raw 4-digit PIN. */
   async savePin(rawPin: string): Promise<void> {
-    await AsyncStorage.setItem(KEYS.APP_PIN, _hashPin(rawPin));
+    const salt = await _getOrCreateSalt();
+    const hash = await _hashPinV2(rawPin, salt);
+    await SecureStore.setItemAsync(SECURE_KEYS.PIN_HASH, hash);
+    // Drop any legacy hash so future verifications go through the v2 path.
+    await AsyncStorage.removeItem(KEYS.APP_PIN_LEGACY);
   },
 
   /** Returns true if the raw PIN matches the stored hash. */
   async verifyPin(rawPin: string): Promise<boolean> {
-    const stored = await AsyncStorage.getItem(KEYS.APP_PIN);
-    if (!stored) return false;
-    return _hashPin(rawPin) === stored;
+    const v2Hash = await SecureStore.getItemAsync(SECURE_KEYS.PIN_HASH);
+    if (v2Hash) {
+      const salt = await _getOrCreateSalt();
+      const candidate = await _hashPinV2(rawPin, salt);
+      const ok = candidate === v2Hash;
+      if (ok) {
+        await AsyncStorage.removeItem(KEYS.APP_PIN_ATTEMPTS);
+      }
+      return ok;
+    }
+
+    // Fallback: legacy djb2 in AsyncStorage. On match, transparently migrate
+    // to SecureStore + SHA-256 so the next verification uses v2.
+    const legacy = await AsyncStorage.getItem(KEYS.APP_PIN_LEGACY);
+    if (!legacy) return false;
+    const ok = _legacyHashPin(rawPin) === legacy;
+    if (ok) {
+      try {
+        const salt = await _getOrCreateSalt();
+        const hash = await _hashPinV2(rawPin, salt);
+        await SecureStore.setItemAsync(SECURE_KEYS.PIN_HASH, hash);
+        await AsyncStorage.removeItem(KEYS.APP_PIN_LEGACY);
+      } catch {
+        // If migration fails (SecureStore unavailable), keep legacy hash so
+        // the user isn't locked out — verification still works via fallback.
+      }
+      await AsyncStorage.removeItem(KEYS.APP_PIN_ATTEMPTS);
+    }
+    return ok;
   },
 
   /** Remove the stored PIN (disables app lock). */
   async removePin(): Promise<void> {
-    await AsyncStorage.removeItem(KEYS.APP_PIN);
+    await Promise.all([
+      SecureStore.deleteItemAsync(SECURE_KEYS.PIN_HASH).catch(() => {}),
+      SecureStore.deleteItemAsync(SECURE_KEYS.PIN_SALT).catch(() => {}),
+      AsyncStorage.multiRemove([KEYS.APP_PIN_LEGACY, KEYS.APP_PIN_ATTEMPTS]),
+    ]);
+  },
+
+  // ── PIN lockout (brute-force protection) ──────────────────────────────────
+  // Lockout schedule (milliseconds), indexed by attempt count.
+  // First four wrong PINs are free; from the fifth onward we ramp.
+  // Persisted across app kill so force-quit can't reset the counter.
+
+  /**
+   * Returns the current lockout state. `lockoutUntilMs === 0` means not locked.
+   */
+  async getPinLockoutState(): Promise<{ count: number; lockoutUntilMs: number }> {
+    const raw = await AsyncStorage.getItem(KEYS.APP_PIN_ATTEMPTS);
+    if (!raw) return { count: 0, lockoutUntilMs: 0 };
+    try {
+      const parsed = JSON.parse(raw);
+      return {
+        count: typeof parsed.count === 'number' ? parsed.count : 0,
+        lockoutUntilMs: typeof parsed.lockoutUntilMs === 'number' ? parsed.lockoutUntilMs : 0,
+      };
+    } catch {
+      return { count: 0, lockoutUntilMs: 0 };
+    }
+  },
+
+  /**
+   * Record a failed PIN attempt. Returns the new state, including a
+   * `lockoutUntilMs` timestamp when the user should be allowed to try again.
+   */
+  async recordFailedPinAttempt(): Promise<{ count: number; lockoutUntilMs: number }> {
+    const current = await this.getPinLockoutState();
+    const count = current.count + 1;
+    // Exponential backoff after the 4th wrong attempt.
+    // 5→30s, 6→1m, 7→5m, 8→15m, 9+→1h.
+    const lockoutMs = (() => {
+      if (count < 5) return 0;
+      if (count === 5) return 30_000;
+      if (count === 6) return 60_000;
+      if (count === 7) return 5 * 60_000;
+      if (count === 8) return 15 * 60_000;
+      return 60 * 60_000;
+    })();
+    const lockoutUntilMs = lockoutMs > 0 ? Date.now() + lockoutMs : 0;
+    const next = { count, lockoutUntilMs };
+    await AsyncStorage.setItem(KEYS.APP_PIN_ATTEMPTS, JSON.stringify(next));
+    return next;
   },
 
   // ── Wisdom Shorts ───────────────────────────────────────────────────────────
@@ -451,5 +591,31 @@ export const StorageService = {
     const existing = await this.getCustomShorts();
     const filtered = existing.filter(s => s.id !== id);
     await AsyncStorage.setItem(KEYS.CUSTOM_SHORTS, JSON.stringify(filtered));
+  },
+
+  // ── Sign-out cleanup ────────────────────────────────────────────────────────
+  /**
+   * Wipes every AsyncStorage key that belongs to the previously signed-in user.
+   * Preserves Supabase-managed auth tokens (`sb-*`) and the device-level
+   * onboarding flag — everything else is user data and must not survive a
+   * different account signing in on the same device.
+   *
+   * Allowlist keys to keep, not the other way round, so any new per-user key
+   * added later is cleared by default.
+   */
+  async clearAllUserData(): Promise<void> {
+    const PRESERVE_KEYS = new Set<string>(['onboarding_complete']);
+    const PRESERVE_PREFIXES = ['sb-']; // Supabase auth tokens
+    const allKeys = await AsyncStorage.getAllKeys();
+    const toRemove = allKeys.filter(
+      k => !PRESERVE_KEYS.has(k) && !PRESERVE_PREFIXES.some(p => k.startsWith(p)),
+    );
+    await Promise.all([
+      toRemove.length > 0 ? AsyncStorage.multiRemove(toRemove) : Promise.resolve(),
+      // SecureStore is outside AsyncStorage — must be cleared explicitly,
+      // otherwise the prior user's PIN hash + salt persist for the next user.
+      SecureStore.deleteItemAsync(SECURE_KEYS.PIN_HASH).catch(() => {}),
+      SecureStore.deleteItemAsync(SECURE_KEYS.PIN_SALT).catch(() => {}),
+    ]);
   },
 };

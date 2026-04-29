@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { StorageService } from '../services/StorageService';
+import { track } from '../services/AnalyticsService';
 
 interface Props {
   onUnlock: () => void;
@@ -25,10 +26,40 @@ const PAD_ROWS = [
   ['', '0', 'del'],
 ] as const;
 
+function formatLockoutRemaining(ms: number): string {
+  const totalSec = Math.ceil(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.ceil(totalSec / 60);
+  if (min < 60) return `${min} min`;
+  const hr = Math.ceil(min / 60);
+  return `${hr} hr`;
+}
+
 export default function PinLockScreen({ onUnlock }: Props) {
   const [digits, setDigits] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
+  const [lockoutUntilMs, setLockoutUntilMs] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const shakeAnim = useRef(new Animated.Value(0)).current;
+
+  // On mount, restore any persisted lockout (so force-quit can't bypass it).
+  useEffect(() => {
+    StorageService.getPinLockoutState().then(state => {
+      if (state.lockoutUntilMs > Date.now()) {
+        setLockoutUntilMs(state.lockoutUntilMs);
+      }
+    });
+  }, []);
+
+  // Tick every second while locked out so the countdown updates.
+  useEffect(() => {
+    if (lockoutUntilMs <= now) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [lockoutUntilMs, now]);
+
+  const remainingMs = Math.max(0, lockoutUntilMs - now);
+  const isLockedOut = remainingMs > 0;
 
   const triggerShake = (msg: string) => {
     setErrorMsg(msg);
@@ -43,6 +74,7 @@ export default function PinLockScreen({ onUnlock }: Props) {
   };
 
   const handleDigit = async (d: string) => {
+    if (isLockedOut) return;
     if (digits.length >= DOT_COUNT) return;
     setErrorMsg('');
     const next = [...digits, d];
@@ -52,9 +84,17 @@ export default function PinLockScreen({ onUnlock }: Props) {
       const entered = next.join('');
       const ok = await StorageService.verifyPin(entered);
       if (ok) {
+        track('pin_unlocked', { method: 'pin' });
         onUnlock();
       } else {
-        triggerShake('Incorrect PIN — try again');
+        const state = await StorageService.recordFailedPinAttempt();
+        if (state.lockoutUntilMs > Date.now()) {
+          setLockoutUntilMs(state.lockoutUntilMs);
+          setNow(Date.now());
+          triggerShake(`Too many attempts — try again in ${formatLockoutRemaining(state.lockoutUntilMs - Date.now())}`);
+        } else {
+          triggerShake('Incorrect PIN — try again');
+        }
       }
     }
   };
@@ -70,10 +110,20 @@ export default function PinLockScreen({ onUnlock }: Props) {
         <View style={s.inner}>
           {/* Branding */}
           <Text style={s.appName}>untangle</Text>
-          <Text style={s.subtitle}>Enter your PIN to continue</Text>
+          <Text style={s.subtitle}>
+            {isLockedOut
+              ? `Locked. Try again in ${formatLockoutRemaining(remainingMs)}`
+              : 'Enter your PIN to continue'}
+          </Text>
 
-          {/* PIN dots */}
-          <Animated.View style={[s.dots, { transform: [{ translateX: shakeAnim }] }]}>
+          {/* PIN dots — hidden from screen readers so progress (number of
+              digits entered, error state) isn't announced aloud to anyone
+              within earshot of the device speaker. */}
+          <Animated.View
+            style={[s.dots, { transform: [{ translateX: shakeAnim }] }]}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
             {Array.from({ length: DOT_COUNT }).map((_, i) => (
               <View
                 key={i}
@@ -86,8 +136,15 @@ export default function PinLockScreen({ onUnlock }: Props) {
             ))}
           </Animated.View>
 
-          {/* Fixed-height error placeholder so dots don't shift */}
-          <Text style={s.errorText}>{errorMsg}</Text>
+          {/* Fixed-height error placeholder so dots don't shift. Live region
+              ensures incorrect-PIN / lockout messages reach screen readers. */}
+          <Text
+            style={s.errorText}
+            accessibilityLiveRegion="polite"
+            accessibilityRole="alert"
+          >
+            {errorMsg}
+          </Text>
 
           {/* Number pad */}
           <View style={s.pad}>
@@ -104,6 +161,9 @@ export default function PinLockScreen({ onUnlock }: Props) {
                         style={s.key}
                         onPress={handleBackspace}
                         activeOpacity={0.55}
+                        accessibilityRole="button"
+                        accessibilityLabel="Delete"
+                        accessibilityHint="Removes the last entered digit"
                       >
                         <Feather name="delete" size={22} color="rgba(152, 212, 250, 0.80)" />
                       </TouchableOpacity>
@@ -112,11 +172,15 @@ export default function PinLockScreen({ onUnlock }: Props) {
                   return (
                     <TouchableOpacity
                       key={ki}
-                      style={s.key}
+                      style={[s.key, isLockedOut && s.keyDisabled]}
                       onPress={() => handleDigit(key)}
                       activeOpacity={0.55}
+                      disabled={isLockedOut}
+                      accessibilityRole="button"
+                      accessibilityLabel={key}
+                      accessibilityState={{ disabled: isLockedOut }}
                     >
-                      <Text style={s.keyText}>{key}</Text>
+                      <Text style={[s.keyText, isLockedOut && s.keyTextDisabled]}>{key}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -218,5 +282,11 @@ const s = StyleSheet.create({
     fontSize: 26,
     fontFamily: 'GillSans-Light',
     color: 'rgba(224, 242, 254, 0.92)',
+  },
+  keyDisabled: {
+    opacity: 0.35,
+  },
+  keyTextDisabled: {
+    color: 'rgba(224, 242, 254, 0.55)',
   },
 });

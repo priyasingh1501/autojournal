@@ -11,6 +11,7 @@ import {
   getActiveIntentions,
 } from './IntentionsService';
 import { parseWeekReviewOutput as parseWeekReviewOutputPure } from './weekReviewParser';
+import { track } from './AnalyticsService';
 
 export { parseWeekReviewOutput } from './weekReviewParser';
 
@@ -253,6 +254,7 @@ null`;
   };
 
   await StorageService.saveSummary(summary);
+  track('summary_generated', { date, transcript_count: transcripts.length });
 
   // Extract journal signal for wisdom feed contextualisation — use insightText
   // since summary (full breakdown) is now generated lazily.

@@ -47,6 +47,7 @@ import {
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
 import { ELEVENLABS_AGENT_ID, getConversationToken } from '../services/ElevenLabsConvAIService';
 import { SourceContext } from '../services/openingLineSelector';
+import { track } from '../services/AnalyticsService';
 import { getMindV2 } from '../services/mindsConfigV2';
 import { Audio } from 'expo-av';
 
@@ -271,6 +272,7 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
       if (activeRef.current) {
         setConvState('active');
         setUIPhase('listening');
+        track('talk_session_started', { mind_id: selectedMindIdRef.current ?? 'companion' });
       }
     },
     onDisconnect: () => {
@@ -454,7 +456,12 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
       } as any); // `as any` until @elevenlabs/react-native types stabilise
 
     } catch (e: any) {
-      setError(e?.message ?? 'Could not connect.');
+      const reason = e?.message ?? 'Could not connect.';
+      track('call_connect_failed', {
+        mind_id: selectedMindIdRef.current ?? 'companion',
+        reason,
+      });
+      setError(reason);
       setConvState('error');
     }
   }, [conversation, effectiveSummary, sourceContext]);
@@ -477,12 +484,21 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
 
     // Record conversation for UserContextV2.
     const userMessages = messagesRef.current.filter(m => m.role === 'user');
+    const endedAt = Date.now();
+    if (conversationStartedAtRef.current > 0) {
+      track('talk_session_ended', {
+        mind_id: selectedMindIdRef.current ?? 'companion',
+        duration_s: Math.round((endedAt - conversationStartedAtRef.current) / 1000),
+        user_messages: userMessages.length,
+        max_distress_tier: callDistressRef.current,
+      });
+    }
     if (userMessages.length > 0 && conversationStartedAtRef.current > 0) {
       recordCompletedConversation({
         mindId: selectedMindIdRef.current,
         messages: messagesRef.current.map(m => ({ role: m.role as 'user' | 'assistant', text: m.text })),
         startedAt: conversationStartedAtRef.current,
-        endedAt: Date.now(),
+        endedAt,
       }).catch(() => {});
     }
 
@@ -516,14 +532,22 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
     onClose();
   }, [postCallReflection, effectiveSummary.date, onClose]);
 
-  // ── handleAvatarTap — interrupt AI speech ───────────────────────────────────
+  // ── handleAvatarTap — interrupt AI speech, OR retry after a dropped call ────
   const handleAvatarTap = useCallback(() => {
-    // The SDK's VAD will naturally detect the user speaking and cut the agent
-    // off. A tap interrupt can additionally signal this via a manual stop if
-    // the SDK supports it — for now we trigger VAD by doing nothing (the
-    // microphone is always live). If the SDK exposes an interrupt() method in
-    // future versions it can be called here.
-  }, []);
+    // Error state: the state pill says "Tap to retry" — actually retry.
+    // Without this, the only way out of a dropped call was to close the
+    // sheet and re-pick the mind from scratch.
+    if (convState === 'error') {
+      activeRef.current = true;
+      startBoot(selectedMindIdRef.current);
+      return;
+    }
+    // Active call: the SDK's VAD will naturally detect the user speaking and
+    // cut the agent off. A tap interrupt can additionally signal this via a
+    // manual stop if the SDK supports it — for now we trigger VAD by doing
+    // nothing (the microphone is always live). If the SDK exposes an
+    // interrupt() method in future versions it can be called here.
+  }, [convState, startBoot]);
 
   // ── Derived UI values ────────────────────────────────────────────────────────
   const stateLabel = convState === 'connecting' ? 'Connecting…'

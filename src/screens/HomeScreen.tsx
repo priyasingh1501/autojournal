@@ -320,10 +320,23 @@ export default function HomeScreen() {
 
   // ── AppState: video pause + foreground recovery ──────────────────────────────
   useEffect(() => {
+    // Drain any pending clips left over from a previous session. AppState
+    // only fires on transitions, so without this an app cold-started with
+    // stuck clips wouldn't process them until the user backgrounds the app.
+    // handleTranscribeNow's own isTranscribingRef guard makes this safe to
+    // call alongside the AppState listener below.
+    StorageService.getPendingClips().then(clips => {
+      if (clips.length > 0) handleTranscribeNow();
+    }).catch(() => {});
+
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         setShouldPlay(true);
-        isTranscribingRef.current = false;
+        // NOTE: don't reset isTranscribingRef here. If a transcription is
+        // in flight when the user backgrounds and returns, resetting the
+        // guard would let a second handleTranscribeNow start concurrently
+        // and race on the AsyncStorage write. The transcribe loop's own
+        // finally block always clears the ref when it completes.
         StorageService.getPendingClips().then(clips => {
           if (clips.length > 0) handleTranscribeNow();
         }).catch(() => {});
@@ -370,11 +383,14 @@ export default function HomeScreen() {
     isTranscribingRef.current  = true;
     batchWellbeingFiredRef.current = false;
     setMicState('processing');
-    setBatchProgress({ total: 0, completed: 0, failed: 0 });
+    setBatchProgress({ total: 0, completed: 0, failed: 0, dropped: 0 });
     let entryProduced = false;
     let finalCompleted = 0;
+    let attemptedIds: string[] = [];
+    let droppedCount = 0;
+    let hadSuccess = false;
     try {
-      await transcribePendingClips(
+      const result = await transcribePendingClips(
         (p) => { setBatchProgress(p); finalCompleted = p.completed; },
         (entry) => {
           entryProduced = true;
@@ -384,6 +400,9 @@ export default function HomeScreen() {
           checkEntryMilestone().then(text => { if (text) setMilestoneText(text); }).catch(() => {});
         },
       );
+      attemptedIds = result.attemptedIds;
+      droppedCount = result.droppedCount;
+      hadSuccess = result.hadSuccess;
     } catch (err) {
       console.warn('[HomeScreen] transcribePendingClips error:', err);
     } finally {
@@ -400,10 +419,24 @@ export default function HomeScreen() {
           "Couldn't catch that",
           'The audio was too quiet to transcribe. Try recording a bit closer to the mic.',
         );
+      } else if (droppedCount > 0) {
+        // Clips that hit MAX_RETRIES are gone for good — tell the user so
+        // they don't wonder where their recording went.
+        Alert.alert(
+          "Couldn't transcribe a recording",
+          droppedCount === 1
+            ? "One recording kept failing to transcribe and was removed. Try recording again — usually a fresh attempt works."
+            : `${droppedCount} recordings kept failing to transcribe and were removed. Try recording again.`,
+        );
       }
-      // Retry any clips that arrived during this batch
+      // Only re-run if NEW clips arrived during this batch (concurrent
+      // recording). Without this guard, the same persistently-failing clip
+      // would re-enter the loop on every iteration of the finally block,
+      // pinning the orb in "thinking…" until MAX_RETRIES drops it.
+      const attemptedSet = new Set(attemptedIds);
       StorageService.getPendingClips().then(remaining => {
-        if (remaining.length > 0) handleTranscribeNow();
+        const hasNew = remaining.some(c => !attemptedSet.has(c.id));
+        if (hasNew) handleTranscribeNow();
       }).catch(() => {});
     }
   };
@@ -411,6 +444,7 @@ export default function HomeScreen() {
   // ── Intention card handlers ──────────────────────────────────────────────────
   const handleAcceptSuggestion = async (s: SuggestedIntention) => {
     await acceptSuggestion(s).catch(() => {});
+    track('intention_declared', { source: 'detected' });
     setPendingSuggestion(null);
   };
 
@@ -632,6 +666,7 @@ export default function HomeScreen() {
         result={curation}
         wellbeingState={curationWellbeing}
         onPick={(mindId) => {
+          track('mind_selected', { mind_id: mindId ?? 'companion', source: 'home' });
           setCuration(null);
           setCurationWellbeing(undefined);
           setPerspectiveInitialMindId(mindId ?? null);

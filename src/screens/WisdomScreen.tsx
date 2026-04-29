@@ -254,7 +254,19 @@ export default function WisdomScreen() {
   // Pagination
   const [currentIndex, setCurrentIndex]       = useState(0);
   const currentIndexRef                       = useRef(0);
+  // Track the *id* of the currently visible short so we can restore the
+  // scroll position when the feed reorders mid-session (e.g. saving a short
+  // updates savedIds, which is an input to buildFeed's ranking — without
+  // pinning by id, the FlatList stays at the same numerical index and ends
+  // up showing a different card, often the first one).
+  const currentShortIdRef                     = useRef<string | null>(null);
   const flatListRef                           = useRef<FlatList<WisdomShort>>(null);
+
+  // Engagement tracking — dwell time per card + session depth
+  const lastViewedAtRef                       = useRef(0);
+  const maxPositionRef                        = useRef(0);
+  const viewedIdsRef                          = useRef<Set<string>>(new Set());
+  const totalDwellMsRef                       = useRef(0);
 
   // ── Pagination helpers ────────────────────────────────────────────────────
   const scrollToIndex = useCallback((idx: number, animated = true) => {
@@ -357,6 +369,63 @@ export default function WisdomScreen() {
     );
     return flattenFeed(feedSelection);
   }, [activeSignal, savedIds, seenIds, selectedEmotion, becauseFilter, showSaved, fullLibrary, loopState, forYouToday]);
+
+  // ── Engagement: fire wisdom_short_viewed when current card changes ────────
+  useEffect(() => {
+    const short = feed[currentIndex];
+    if (!short) return;
+    currentShortIdRef.current = short.id;
+    const now = Date.now();
+    const dwell = lastViewedAtRef.current ? now - lastViewedAtRef.current : 0;
+    if (dwell > 0) totalDwellMsRef.current += dwell;
+    lastViewedAtRef.current = now;
+    if (currentIndex > maxPositionRef.current) maxPositionRef.current = currentIndex;
+    viewedIdsRef.current.add(short.id);
+    track('wisdom_short_viewed', {
+      short_id: short.id,
+      position: currentIndex,
+      dwell_ms_previous: dwell,
+    });
+  }, [feed, currentIndex]);
+
+  // ── Pin scroll position to the current short across feed regenerations ───
+  // When savedIds/seenIds change mid-session (e.g. user taps Save), the
+  // memoized feed rebuilds and the underlying FlatList may snap back to the
+  // start. Find the current short's new index and restore the scroll position
+  // so the user stays where they were.
+  useEffect(() => {
+    const id = currentShortIdRef.current;
+    if (!id || feed.length === 0) return;
+    const newIdx = feed.findIndex(s => s.id === id);
+    if (newIdx === -1) return;
+    if (newIdx !== currentIndexRef.current) {
+      scrollToIndex(newIdx, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feed]);
+
+  // ── Engagement: fire wisdom_session_ended on screen blur ──────────────────
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Add the dwell on the final card before reporting.
+        if (lastViewedAtRef.current) {
+          totalDwellMsRef.current += Date.now() - lastViewedAtRef.current;
+        }
+        if (viewedIdsRef.current.size > 0) {
+          track('wisdom_session_ended', {
+            shorts_viewed: viewedIdsRef.current.size,
+            max_position: maxPositionRef.current,
+            total_dwell_ms: totalDwellMsRef.current,
+          });
+        }
+        lastViewedAtRef.current = 0;
+        maxPositionRef.current = 0;
+        totalDwellMsRef.current = 0;
+        viewedIdsRef.current = new Set();
+      };
+    }, []),
+  );
 
   // ── Deep-link: scroll to a specific short (from notification tap) ─────────
   useEffect(() => {
@@ -577,6 +646,7 @@ export default function WisdomScreen() {
           onMomentumScrollEnd={e => {
             const newIdx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
             currentIndexRef.current = newIdx;
+            currentShortIdRef.current = feed[newIdx]?.id ?? null;
             setCurrentIndex(newIdx);
           }}
           onScrollToIndexFailed={info => {

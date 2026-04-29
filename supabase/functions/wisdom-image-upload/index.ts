@@ -14,6 +14,10 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const BUCKET = 'wisdom-images';
+// 1024×1024 standard JPEG is well under 1 MB; 5 MB base64 (~3.6 MB binary)
+// gives generous headroom while bounding storage growth from a malicious or
+// runaway client that sends a huge payload.
+const MAX_IMAGE_BASE64_LEN = 5 * 1024 * 1024;
 
 Deno.serve(async (req) => {
   try {
@@ -24,6 +28,9 @@ Deno.serve(async (req) => {
     }
     if (typeof image_base64 !== 'string' || !image_base64) {
       throw new Error('image_base64 is required');
+    }
+    if (image_base64.length > MAX_IMAGE_BASE64_LEN) {
+      throw new Error(`image_base64 exceeds ${MAX_IMAGE_BASE64_LEN} bytes`);
     }
 
     const supabase = createClient(

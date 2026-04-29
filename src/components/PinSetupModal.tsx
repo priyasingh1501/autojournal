@@ -34,6 +34,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { StorageService } from '../services/StorageService';
+import { track } from '../services/AnalyticsService';
 
 interface Props {
   visible: boolean;
@@ -82,7 +83,11 @@ function PinDots({
   shakeAnim: Animated.Value;
 }) {
   return (
-    <Animated.View style={[s.dots, { transform: [{ translateX: shakeAnim }] }]}>
+    <Animated.View
+      style={[s.dots, { transform: [{ translateX: shakeAnim }] }]}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
       {Array.from({ length: count }).map((_, i) => (
         <View
           key={i}
@@ -189,6 +194,7 @@ export default function PinSetupModal({
       // Confirm step
       if (entered === firstPin) {
         await StorageService.savePin(entered);
+        track('pin_setup_completed');
         reset();
         onDone();
       } else {
@@ -253,7 +259,13 @@ export default function PinSetupModal({
             />
 
             {/* Fixed-height error line */}
-            <Text style={s.errorText}>{errorMsg}</Text>
+            <Text
+              style={s.errorText}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+            >
+              {errorMsg}
+            </Text>
 
             {/* Number pad */}
             <View style={s.pad}>
@@ -270,6 +282,9 @@ export default function PinSetupModal({
                           style={s.key}
                           onPress={handleBackspace}
                           activeOpacity={0.55}
+                          accessibilityRole="button"
+                          accessibilityLabel="Delete"
+                          accessibilityHint="Removes the last entered digit"
                         >
                           <Feather name="delete" size={22} color="rgba(152, 212, 250, 0.80)" />
                         </TouchableOpacity>
@@ -281,6 +296,8 @@ export default function PinSetupModal({
                         style={s.key}
                         onPress={() => handleDigit(key)}
                         activeOpacity={0.55}
+                        accessibilityRole="button"
+                        accessibilityLabel={key}
                       >
                         <Text style={s.keyText}>{key}</Text>
                       </TouchableOpacity>

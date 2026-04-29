@@ -434,6 +434,7 @@ export default function JournalScreen() {
       const newer = e.length - (s?.transcriptCount ?? 0);
       setStaleCount(Math.max(0, newer));
       setSummaryLoading(false);
+      if (s) track('summary_viewed', { date: s.date });
     })().catch(() => { if (!cancelled) setSummaryLoading(false); });
     return () => { cancelled = true; };
   }, [viewingDate, focusTick]);
@@ -633,6 +634,7 @@ export default function JournalScreen() {
         dialogTitle: `Save summary for ${formatDate(item.date)}`,
         UTI: 'public.plain-text',
       });
+      track('summary_shared', { date: item.date });
     } catch (err: any) {
       Alert.alert('Export failed', err?.message ?? 'Could not export.');
     }
@@ -879,7 +881,10 @@ export default function JournalScreen() {
         visible={!!curation}
         result={curation}
         wellbeingState={curationWellbeing}
-        onPick={openChatWithCuratedMind}
+        onPick={(mindId) => {
+          track('mind_selected', { mind_id: mindId ?? 'companion', source: 'day_summary' });
+          openChatWithCuratedMind(mindId);
+        }}
         onClose={() => {
           setCuration(null);
           setCurationWellbeing(undefined);

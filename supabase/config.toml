@@ -451,10 +451,23 @@ entrypoint = "./functions/elevenlabs-tts/index.ts"
 # static_files = [ "./functions/elevenlabs-tts/*.html" ]
 
 # Called by ElevenLabs Conversational AI as a custom LLM webhook — they can't
-# send a Supabase JWT, so JWT verification must be off. The Anthropic API key
-# stays server-side.
+# send a Supabase JWT, so JWT verification must be off. Auth is enforced
+# inside the function via the ELEVENLABS_WEBHOOK_SECRET shared secret —
+# anything else with the URL is refused with 401.
 [functions.elevenlabs-llm]
 enabled = true
 verify_jwt = false
 import_map = "./functions/elevenlabs-llm/deno.json"
 entrypoint = "./functions/elevenlabs-llm/index.ts"
+
+[functions.elevenlabs-signed-url]
+enabled = true
+verify_jwt = true
+import_map = "./functions/elevenlabs-signed-url/deno.json"
+entrypoint = "./functions/elevenlabs-signed-url/index.ts"
+
+[functions.wisdom-image-upload]
+enabled = true
+verify_jwt = true
+import_map = "./functions/wisdom-image-upload/deno.json"
+entrypoint = "./functions/wisdom-image-upload/index.ts"

@@ -6,10 +6,12 @@ import { extractAndSaveExpenses } from './ExpenseService';
 import { claudeProxy } from './AIProxy';
 import { UserContextService } from './UserContextService';
 import { ActionablesService } from './ActionablesService';
+import { MAX_CLIP_BYTES } from './AudioRecorderService';
 import { detectAndSuggestIntention, getActive, recordMention } from './IntentionsService';
 import { extractPromptsForEntry } from './PerspectivePromptsService';
 import { effectiveDateStr } from './dayRollover';
 import { invalidateDigest } from './DigestService';
+import { track } from './AnalyticsService';
 
 const EMOTION_SET = [
   'calm', 'anxious', 'excited', 'sad', 'frustrated', 'content',
@@ -65,6 +67,10 @@ async function detectIntentionMentions(entry: TranscriptEntry): Promise<void> {
         : false;
       if (textHit || labelHit) {
         await recordMention(intention.id, entry.id, entry.timestamp);
+        track('intention_mentioned', {
+          intention_id: intention.id,
+          day: effectiveDateStr(entry.timestamp),
+        });
       }
     }
   } catch { /* mention detection must never block transcription */ }
@@ -74,26 +80,87 @@ export type BatchProgress = {
   total: number;
   completed: number;
   failed: number;
+  // Clips removed from the queue without producing transcripts (missing file
+  // or exceeded MAX_RETRIES). Surfacing this lets the caller tell the user
+  // we gave up on a recording, instead of silently losing it.
+  dropped: number;
+};
+
+// A clip that fails this many consecutive times with a recoverable server
+// error is dropped from the pending queue. Without this cap, a clip the
+// server permanently rejects (e.g. corrupt audio with a flaky 5xx) would
+// re-enter the loop on every app foreground and pin the mic orb in the
+// "thinking…" state forever — even across app kills, since the queue is
+// persisted to AsyncStorage.
+const MAX_RETRIES = 5;
+
+type ErrorClass = 'drop-now' | 'count' | 'transient';
+
+/**
+ * Classify a transcription error so we don't burn the user's recording on
+ * conditions they can recover from (offline, expired JWT, server hiccup):
+ *
+ *   - 'drop-now'  → audio is permanently rejected (HTTP 400/413/415/422).
+ *                   Don't waste retries; remove the clip immediately.
+ *   - 'count'     → server responded with 5xx / 408 / 429. Plausibly
+ *                   transient, but keeps coming back — count toward
+ *                   MAX_RETRIES so a hard-broken clip doesn't sit forever.
+ *   - 'transient' → no server response (network, abort, timeout) or
+ *                   401/403 auth issue. The user can recover (reconnect,
+ *                   re-sign-in), so leave the clip alone — don't count
+ *                   this attempt against it.
+ */
+function classifyTranscriptionError(err: any): ErrorClass {
+  const msg = err?.message ?? String(err);
+  // AIProxy's two failure shapes both embed the HTTP status:
+  //   "[AIProxy] Storage upload failed: 401 ..."
+  //   "[AIProxy/openai-whisper] HTTP 500: ..."
+  const m = msg.match(/(?:HTTP |upload failed: )(\d{3})/);
+  if (!m) return 'transient'; // network failure, fetch abort, timeout
+  const status = parseInt(m[1], 10);
+  if (status === 401 || status === 403) return 'transient'; // user can re-auth
+  if (status === 408 || status === 429) return 'count';
+  if (status >= 400 && status < 500) return 'drop-now';
+  return 'count'; // 5xx
+}
+
+export type BatchResult = {
+  /** IDs of clips that were in this batch — used by the caller to detect new clips. */
+  attemptedIds: string[];
+  /** Clips removed because retries were exhausted or the file was missing. */
+  droppedCount: number;
+  /** Whether at least one clip produced a usable transcript (forward progress). */
+  hadSuccess: boolean;
 };
 
 export async function transcribePendingClips(
   onProgress: (progress: BatchProgress) => void,
   onBatchComplete: (entry: TranscriptEntry) => void,
-): Promise<void> {
+): Promise<BatchResult> {
   const clips = await StorageService.getPendingClips();
-  if (clips.length === 0) return;
+  if (clips.length === 0) {
+    return { attemptedIds: [], droppedCount: 0, hadSuccess: false };
+  }
 
   // Sort clips by timestamp so the merged text reads chronologically
   const sorted = [...clips].sort((a, b) => a.timestamp - b.timestamp);
 
-  const progress: BatchProgress = { total: sorted.length, completed: 0, failed: 0 };
+  const progress: BatchProgress = {
+    total: sorted.length, completed: 0, failed: 0, dropped: 0,
+  };
   onProgress({ ...progress });
 
   const segments: string[] = [];
   let totalDuration = 0;
   const processedIds: string[] = [];
   const processedUris: string[] = [];
-  const missingIds: string[] = [];
+  // Clips we're giving up on (missing file OR too many failures). Their files
+  // get deleted; their slots get cleared from AsyncStorage.
+  const droppedIds: string[] = [];
+  const droppedUris: string[] = [];
+  // Clips that failed this attempt but haven't hit MAX_RETRIES yet — keep
+  // them in the queue with an incremented failureCount.
+  const retryIds: string[] = [];
 
   for (const clip of sorted) {
     try {
@@ -101,8 +168,29 @@ export async function transcribePendingClips(
       // remove the stale pending entry rather than looping on it forever.
       const info = await FileSystem.getInfoAsync(clip.uri);
       if (!info.exists) {
-        missingIds.push(clip.id);
+        droppedIds.push(clip.id);
         progress.failed++;
+        progress.dropped++;
+        onProgress({ ...progress });
+        continue;
+      }
+
+      // Guard: an oversized clip will always 413 from Whisper (25 MB hard
+      // limit). Drop it locally instead of burning an upload round-trip.
+      // AudioRecorderService catches this at save-time for new clips, but
+      // this check covers legacy clips recorded under the old high-bitrate
+      // profile that may still be sitting in the pending queue.
+      if ((info.size ?? 0) > MAX_CLIP_BYTES) {
+        console.warn(`[BatchTranscription] clip ${clip.id} too large (${info.size}B), dropping`);
+        track('transcription_failed', {
+          reason: 'oversize_local',
+          size: info.size,
+          error_class: 'drop-now',
+        });
+        droppedIds.push(clip.id);
+        droppedUris.push(clip.uri);
+        progress.failed++;
+        progress.dropped++;
         onProgress({ ...progress });
         continue;
       }
@@ -119,23 +207,44 @@ export async function transcribePendingClips(
       // the new clip's entry can be silently overwritten and lost.
       processedIds.push(clip.id);
       processedUris.push(clip.uri);
-    } catch (err) {
+    } catch (err: any) {
       console.error(`[BatchTranscription] clip ${clip.id} failed:`, err);
+      const cls = classifyTranscriptionError(err);
+      track('transcription_failed', {
+        reason: err?.message ?? String(err),
+        error_class: cls,
+      });
       progress.failed++;
+      if (cls === 'drop-now') {
+        droppedIds.push(clip.id);
+        droppedUris.push(clip.uri);
+        progress.dropped++;
+      } else if (cls === 'count') {
+        const nextCount = (clip.failureCount ?? 0) + 1;
+        if (nextCount >= MAX_RETRIES) {
+          droppedIds.push(clip.id);
+          droppedUris.push(clip.uri);
+          progress.dropped++;
+        } else {
+          retryIds.push(clip.id);
+        }
+      }
+      // 'transient' → leave the clip's failureCount unchanged. The user is
+      // offline / signed-out / hit a network blip; we'll try again on the
+      // next foreground or recording without burning a retry.
     } finally {
       onProgress({ ...progress });
     }
   }
 
-  // Single atomic remove of all successfully processed (and missing) clips.
-  // This ensures any clip added by a concurrent recording during the loop
-  // is visible in the pending-clips list after this write, so the retry
-  // in handleTranscribeNow's finally block can pick it up.
-  const idsToRemove = [...processedIds, ...missingIds];
-  if (idsToRemove.length > 0) {
-    await StorageService.removeManyPendingClips(idsToRemove);
+  // Single atomic write that removes processed/dropped clips and bumps
+  // failureCount on retry clips. Any clip added by a concurrent recording
+  // during the loop is preserved (the live list is read inside the call).
+  const removedIds = [...processedIds, ...droppedIds];
+  if (removedIds.length > 0 || retryIds.length > 0) {
+    await StorageService.applyPendingClipResults({ removedIds, retriedIds: retryIds });
   }
-  for (const uri of processedUris) {
+  for (const uri of [...processedUris, ...droppedUris]) {
     try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
   }
 
@@ -184,4 +293,10 @@ export async function transcribePendingClips(
     // Summary generation is deferred to the 23:59 close-out — no per-entry
     // generation during the day.
   }
+
+  return {
+    attemptedIds: sorted.map(c => c.id),
+    droppedCount: progress.dropped,
+    hadSuccess: segments.length > 0,
+  };
 }

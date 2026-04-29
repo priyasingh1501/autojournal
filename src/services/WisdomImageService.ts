@@ -16,6 +16,7 @@ import { StorageService } from './StorageService';
 import { fetchShortImageUrl } from './SupabaseService';
 import { supabase } from './AuthService';
 import { WisdomShort } from '../types';
+import { track } from './AnalyticsService';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -67,29 +68,36 @@ async function _generateNow(short: WisdomShort): Promise<string | null> {
 
     console.log('[WisdomImage] Generating image for:', short.id, '\nPrompt:', storedPrompt);
 
-    let response = await openaiImageProxy.images.generate({
+    const callDallE = (prompt: string) => openaiImageProxy.images.generate({
       model: 'dall-e-3',
-      prompt: storedPrompt,
+      prompt,
       size: '1024x1024',
       quality: 'standard',
       n: 1,
-    }).catch(async (err: any) => {
-      // OpenAI safety rejection — retry with a generic prompt that avoids
-      // mentioning real people or content that triggers the safety filter.
+    });
+
+    const isSafetyError = (msg: string) =>
+      msg.includes('safety') || msg.includes('content_policy') || msg.includes('rejected') ||
+      (msg.includes('400') && !msg.includes('429'));
+
+    let response: any;
+    try {
+      response = await callDallE(storedPrompt);
+    } catch (err: any) {
       const msg: string = err?.message ?? '';
-      if (msg.includes('safety') || msg.includes('400') || msg.includes('rejected')) {
+      if (isSafetyError(msg)) {
+        // Content-policy rejection — retry once with a generic prompt that avoids
+        // names or content that may trigger the safety filter.
         const fallbackPrompt = buildAutoPrompt(short);
         console.warn('[WisdomImage] Safety rejection for', short.id, '— retrying with fallback prompt');
-        return openaiImageProxy.images.generate({
-          model: 'dall-e-3',
-          prompt: fallbackPrompt,
-          size: '1024x1024',
-          quality: 'standard',
-          n: 1,
-        });
+        response = await callDallE(fallbackPrompt);
+      } else {
+        // Transient failure (timeout, 429, 5xx, network) — single retry after backoff.
+        console.warn('[WisdomImage] Transient failure for', short.id, '— retrying once:', msg);
+        await new Promise(r => setTimeout(r, 1500));
+        response = await callDallE(storedPrompt);
       }
-      throw err;
-    });
+    }
 
     const imageUrl = response.data?.[0]?.url;
     if (!imageUrl) {
@@ -114,8 +122,9 @@ async function _generateNow(short: WisdomShort): Promise<string | null> {
     );
 
     return localPath;
-  } catch (err) {
+  } catch (err: any) {
     console.error('[WisdomImage] Generation failed for:', short.id, err);
+    track('wisdom_image_failed', { short_id: short.id, reason: err?.message ?? String(err) });
     return null;
   }
 }
