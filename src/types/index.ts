@@ -1,10 +1,15 @@
 export type PerspectivePromptCategory =
   | 'decision'          // user is weighing options, hasn't committed
-  | 'conflict'          // interpersonal friction or internal tension
-  | 'loaded_emotion'    // entry carries a strong negative tag tied to a specific topic
-  | 'question'          // unresolved wondering — no answer landed
+  | 'conflict'          // interpersonal friction or internal tug-of-war
+  | 'loaded_emotion'    // strong feeling (any tone) tied to a specific topic
+  | 'question'          // explicit wondering — no answer landed (any tone)
   | 'avoidance'         // named something wanted-to-do that keeps being deferred
-  | 'values_tension';   // stated value clashes with described action
+  | 'values_tension'    // stated value clashes with described action
+  | 'pattern'           // recurring shape in own behavior, feelings, interactions
+  | 'connection'        // missing / drifting from someone; not active conflict
+  | 'direction'         // orientation question bigger than a single decision
+  | 'body'              // somatic signal — sleep, energy, pain, felt sense
+  | 'win';              // breakthrough / pride / weighty gratitude worth metabolizing
 
 /**
  * A tappable "worth talking about" prompt extracted from a journal entry or
@@ -15,6 +20,7 @@ export interface PerspectivePrompt {
   topic: string;                      // short phrase shown on the chip (≤ 48 chars)
   category: PerspectivePromptCategory;
   why?: string;                       // one-sentence context for the opener
+  source?: 'entry' | 'summary';      // which source was extracted from
 }
 
 export interface TranscriptEntry {
@@ -56,6 +62,7 @@ export interface DailySummary {
   reflection?: string;
   whatTheDayHeld?: Array<{ label: string; content: string }>;
   moodArc?: { morning: string; afternoon: string; evening: string } | null;
+  perspectivePrompts?: PerspectivePrompt[]; // extracted from reflection + insightText post-generation
 }
 
 export interface AppSettings {

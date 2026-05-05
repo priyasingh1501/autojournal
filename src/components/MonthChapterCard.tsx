@@ -23,7 +23,6 @@ import {
   ensureChapter,
   regenerateChapter,
 } from '../services/MonthChapterService';
-import EnneagramWheel from './EnneagramWheel';
 
 interface Props {
   month: string;             // YYYY-MM
@@ -127,11 +126,29 @@ export default function MonthChapterCard({ month, report }: Props) {
             <Text style={s.fallbackBody}>{report.thisMonth.reflection}</Text>
           ) : null}
 
-          {/* Enneagram */}
-          {chapter?.enneagram && chapter.enneagram.some(w => w > 0) && (
-            <View style={s.wheelWrap}>
-              <Text style={s.wheelHeading}>How you showed up</Text>
-              <EnneagramWheel weights={chapter.enneagram} size={200} />
+          {/* Theme pills */}
+          {report.thisMonth.whatsLoud?.length > 0 && (
+            <View style={s.pillsRow}>
+              {report.thisMonth.whatsLoud.slice(0, 5).map(theme => (
+                <View key={theme} style={s.pill}>
+                  <Text style={s.pillText}>{theme}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Archetypes */}
+          {chapter?.enneagram && chapter.enneagram.some(w => w >= 0.5) && (
+            <View style={s.archetypeWrap}>
+              <Text style={s.archetypeHeading}>How you showed up</Text>
+              <View style={s.archetypeRow}>
+                {topArchetypes(chapter.enneagram).map(a => (
+                  <View key={a.name} style={s.archetypeChip}>
+                    <Text style={s.archetypeName}>{a.name}</Text>
+                    <Text style={s.archetypeDesc}>{a.desc}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           )}
 
@@ -152,6 +169,26 @@ export default function MonthChapterCard({ month, report }: Props) {
       </ScrollView>
     </View>
   );
+}
+
+const ARCHETYPES = [
+  { name: 'The Reformer',    desc: 'principled, purposeful' },
+  { name: 'The Helper',      desc: 'caring, interpersonal' },
+  { name: 'The Achiever',    desc: 'adaptable, driven' },
+  { name: 'The Individualist', desc: 'sensitive, introspective' },
+  { name: 'The Investigator', desc: 'perceptive, private' },
+  { name: 'The Loyalist',    desc: 'committed, vigilant' },
+  { name: 'The Enthusiast',  desc: 'spontaneous, scattered' },
+  { name: 'The Challenger',  desc: 'decisive, assertive' },
+  { name: 'The Peacemaker',  desc: 'receptive, accommodating' },
+];
+
+function topArchetypes(weights: number[]) {
+  return weights
+    .map((w, i) => ({ ...ARCHETYPES[i], weight: w }))
+    .filter(a => a.weight >= 0.5)
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 2);
 }
 
 function monthLabelOf(month: string): string {
@@ -239,17 +276,59 @@ const s = StyleSheet.create({
     color: 'rgba(152,212,250,0.60)',
     fontFamily: 'GillSans-Light',
   },
-  wheelWrap: {
-    marginTop: 32,
-    alignItems: 'center',
+  pillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 16,
   },
-  wheelHeading: {
+  pill: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.18)',
+    backgroundColor: 'rgba(152,212,250,0.06)',
+  },
+  pillText: {
+    fontSize: 12,
+    color: 'rgba(152,212,250,0.70)',
+    fontFamily: 'GillSans-Light',
+  },
+  archetypeWrap: {
+    marginTop: 32,
+  },
+  archetypeHeading: {
     fontSize: 11,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: 'rgba(152,212,250,0.55)',
     fontFamily: 'GillSans-Light',
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  archetypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  archetypeChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(152,212,250,0.16)',
+    backgroundColor: 'rgba(9,41,173,0.10)',
+  },
+  archetypeName: {
+    fontSize: 14,
+    color: 'rgba(224,242,254,0.90)',
+    fontFamily: 'Baskerville',
+    marginBottom: 2,
+  },
+  archetypeDesc: {
+    fontSize: 11.5,
+    color: 'rgba(152,212,250,0.55)',
+    fontFamily: 'GillSans-Light',
   },
   footer: {
     marginTop: 32,

@@ -18,6 +18,7 @@ import { claudeProxy } from './AIProxy';
 import { StorageService } from './StorageService';
 import { effectiveDateStr } from './dayRollover';
 import {
+  DailySummary,
   PerspectivePrompt,
   PerspectivePromptCategory,
   TranscriptEntry,
@@ -25,37 +26,62 @@ import {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MIN_ENTRY_CHARS   = 60;   // skip trivially short entries ("had coffee")
+const MIN_ENTRY_CHARS       = 60;  // skip trivially short entries ("had coffee")
 const MAX_PROMPTS_PER_ENTRY = 2;
-const TOPIC_MAX_CHARS   = 48;   // keep chips readable
+const MAX_PROMPTS_PER_SUMMARY = 3; // summaries cover a full day — allow one more
+const TOPIC_MAX_CHARS       = 48;  // keep chips readable
 
 const VALID_CATEGORIES: Set<PerspectivePromptCategory> = new Set([
   'decision', 'conflict', 'loaded_emotion',
   'question', 'avoidance', 'values_tension',
+  'pattern', 'connection', 'direction',
+  'body', 'win',
 ]);
 
 // ── Extraction prompt ────────────────────────────────────────────────────────
 
-const EXTRACTION_SYSTEM = `You are reading a single journal entry and picking out topics the user might want a second perspective on.
+const EXTRACTION_SYSTEM = `You are reading a single journal entry and picking out topics the user might benefit from talking through with another perspective.
 
-Return between 0 and 2 prompts. Prefer 0 when nothing stands out — false positives are worse than misses. Only pull a topic if it falls cleanly into one of these categories:
+Return between 0 and 2 prompts. Pull a topic if it falls cleanly into one of these categories:
 
-- "decision": user is weighing options and hasn't committed ("should I", "thinking about whether", "torn between")
-- "conflict": interpersonal friction or internal tension ("we argued", "can't get over what they said")
-- "loaded_emotion": a strong negative feeling (anxious, ashamed, angry, lonely, overwhelmed) tied to a SPECIFIC topic — not a free-floating mood
-- "question": user explicitly wondering, no answer landed ("don't know why", "can't figure out", "what if")
-- "avoidance": named something they want to do but keep deferring ("keep putting off", "still haven't")
-- "values_tension": a stated value clashes with described action ("said I'd prioritise X, spent the day on Y")
+- "decision": user is weighing options and hasn't committed
+  e.g. "torn between staying and applying to the open role"
+- "conflict": active friction with a person, OR internal tug-of-war between parts of themselves
+  e.g. "the fight with mum on Sunday — still replaying it"
+- "loaded_emotion": a strong feeling (any tone — anxious, ashamed, proud, relieved, grieving, in love) tied to a SPECIFIC topic, not a free-floating mood
+  e.g. "the dread before standup", "the relief after the call"
+- "question": user explicitly wondering, no answer has landed; can be curious or anxious in tone
+  e.g. "wondering whether my work actually matters to anyone"
+- "avoidance": named something they want or need to do but keep deferring
+  e.g. "still haven't booked the dentist"
+- "values_tension": a stated value clashes with the described action
+  e.g. "said I'd protect mornings; spent another one doomscrolling"
+- "pattern": user notices a recurring shape in their own behavior, feelings, or interactions — "I keep doing X every time Y"
+  e.g. "I always go quiet around Sam"
+- "connection": missing someone, drifting from someone, wanting closeness; NOT active conflict
+  e.g. "haven't talked to Maya in months and it's starting to bother me"
+- "direction": orientation question bigger than any single decision — what game am I playing, where am I going, who am I becoming
+  e.g. "not sure I want the life this career is pointing me toward"
+- "body": somatic signal worth attending to — sleep, energy, persistent pain, appetite, a felt sense
+  e.g. "the tension in my chest hasn't gone away in weeks"
+- "win": something genuinely good worth metabolizing — a breakthrough, a moment of pride, gratitude with weight, an honest exchange. NOT a flat positive update.
+  e.g. "had the conversation with dad I'd been avoiding for a year and it went well"
 
 Each prompt is an object with:
-- "topic": 3–8 word phrase the user would recognise as the thing, lowercase, no trailing punctuation (e.g. "whether to quit the job", "the fight with Sam")
-- "category": one of the 6 strings above
-- "why": ONE sentence in the user's voice explaining what's unresolved (e.g. "keeps circling whether the new role is the right move")
+- "topic": 3–8 word phrase the user would recognise as the thing, lowercase, no trailing punctuation (e.g. "whether to quit the job", "the fight with sam", "the talk with dad")
+- "category": one of the 11 strings above
+- "why": ONE sentence in the user's voice explaining what's worth examining (e.g. "keeps circling whether the new role is the right move")
+
+Skip if:
+- The entry is purely factual ("had coffee, went to the gym")
+- The mention is casual with no weight behind it
+- The user has already resolved the topic within the same entry
+- A "win" reads as a flat update with no resonance ("did the laundry")
 
 Return ONLY a JSON object of this exact shape — no preamble, no fences:
   { "prompts": [ { "topic": "...", "category": "...", "why": "..." }, ... ] }
 
-Return { "prompts": [] } when the entry is purely factual, a gratitude note, or otherwise doesn't contain a topic matching the categories above.`;
+Return { "prompts": [] } if nothing in the entry has enough weight to be worth a conversation.`;
 
 // ── Parsing ──────────────────────────────────────────────────────────────────
 
@@ -130,16 +156,82 @@ export async function extractPromptsForEntry(entry: TranscriptEntry): Promise<vo
   }
 }
 
+// ── Summary-level extraction ─────────────────────────────────────────────────
+
+const SUMMARY_EXTRACTION_SYSTEM = `You are reading a synthesised daily reflection written by an AI after reviewing a full day of journal entries. Extract topics the user might benefit from talking through.
+
+Return between 0 and 3 prompts. Because this text is already synthesised, only pull topics with genuine unresolved weight — patterns, tensions, and direction questions are especially worth surfacing here.
+
+Use the same 11 categories as individual entries:
+- "decision": weighing options, hasn't committed
+- "conflict": interpersonal friction or internal tug-of-war
+- "loaded_emotion": strong feeling tied to a specific topic (not a free-floating mood)
+- "question": explicit wondering, no answer has landed
+- "avoidance": named something they keep deferring
+- "values_tension": a stated value clashes with a described action
+- "pattern": recurring shape in behavior, feelings, or interactions noticed across the day
+- "connection": missing / drifting from someone; not active conflict
+- "direction": orientation question bigger than a single decision — where am I going, who am I becoming
+- "body": somatic signal worth attending to
+- "win": something genuinely good worth metabolizing — NOT a flat positive update
+
+Each prompt:
+- "topic": 3–8 word phrase the user would recognise, lowercase, no trailing punctuation
+- "category": one of the 11 strings above
+- "why": ONE sentence in the user's voice explaining what's worth examining
+
+Skip anything that reads as a closed observation. Prefer unresolved things.
+
+Return ONLY a JSON object — no preamble, no fences:
+  { "prompts": [ { "topic": "...", "category": "...", "why": "..." }, ... ] }
+
+Return { "prompts": [] } if nothing has enough unresolved weight.`;
+
+/**
+ * Fire-and-forget extraction from a daily summary's reflection + insightText.
+ * Persists results back onto the DailySummary in StorageService.
+ * Never throws — must not affect the caller.
+ */
+export async function extractPromptsFromSummary(
+  summary: DailySummary,
+  date: string,
+): Promise<void> {
+  try {
+    if (summary.perspectivePrompts !== undefined) return; // already extracted
+
+    const text = [summary.reflection, summary.insightText].filter(Boolean).join('\n\n');
+    if (!text || text.trim().length < MIN_ENTRY_CHARS) return;
+
+    const response = await claudeProxy.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 400,
+      system: SUMMARY_EXTRACTION_SYSTEM,
+      messages: [{ role: 'user', content: text }],
+    });
+    const raw = response.content
+      .filter((b: any) => b.type === 'text')
+      .map((b: any) => b.text)
+      .join('');
+    const parsed = parseExtractionResponse(raw).slice(0, MAX_PROMPTS_PER_SUMMARY);
+    const prompts: PerspectivePrompt[] = parsed.map(p => ({ ...p, source: 'summary' as const }));
+
+    await StorageService.saveSummary({ ...summary, perspectivePrompts: prompts });
+    DeviceEventEmitter.emit('perspectivePromptsUpdated', { date });
+  } catch {
+    // Non-fatal.
+  }
+}
+
 // ── Aggregation for Home carousel ────────────────────────────────────────────
 
 export interface ResolvedPerspectivePrompt extends PerspectivePrompt {
-  /** ID of the entry this prompt was extracted from. */
+  /** ID of the source entry, or `summary-{date}` for summary-derived prompts. */
   entryId: string;
-  /** YYYY-MM-DD this entry belongs to (rollover-aware). */
+  /** YYYY-MM-DD this prompt belongs to (rollover-aware). */
   date: string;
-  /** Timestamp of the source entry — used for "newest first" ordering. */
+  /** Timestamp used for "newest first" ordering. */
   entryTimestamp: number;
-  /** Raw entry text — useful for the chat opener to quote the moment. */
+  /** Source text — entry transcript or summary reflection — for the chat opener. */
   entryText: string;
 }
 
@@ -157,18 +249,28 @@ export async function getPromptsForDate(
   cap = 6,
 ): Promise<ResolvedPerspectivePrompt[]> {
   try {
-    const entries = await StorageService.getTranscriptsForDate(date);
+    const [entries, summary] = await Promise.all([
+      StorageService.getTranscriptsForDate(date),
+      StorageService.getSummaryForDate(date),
+    ]);
 
     const all: ResolvedPerspectivePrompt[] = [];
+
     for (const e of entries) {
       if (!e.perspectivePrompts || e.perspectivePrompts.length === 0) continue;
       for (const p of e.perspectivePrompts) {
+        all.push({ ...p, entryId: e.id, date, entryTimestamp: e.timestamp, entryText: e.text });
+      }
+    }
+
+    if (summary?.perspectivePrompts?.length) {
+      for (const p of summary.perspectivePrompts) {
         all.push({
           ...p,
-          entryId: e.id,
+          entryId: `summary-${date}`,
           date,
-          entryTimestamp: e.timestamp,
-          entryText: e.text,
+          entryTimestamp: summary.createdAt,
+          entryText: summary.reflection ?? '',
         });
       }
     }
@@ -206,6 +308,7 @@ export async function getRecentPerspectivePrompts(
       windowDates.map(async (d) => ({
         date: d,
         entries: await StorageService.getTranscriptsForDate(d),
+        summary: await StorageService.getSummaryForDate(d),
       })),
     );
 
@@ -214,18 +317,23 @@ export async function getRecentPerspectivePrompts(
       for (const e of b.entries) {
         if (!e.perspectivePrompts || e.perspectivePrompts.length === 0) continue;
         for (const p of e.perspectivePrompts) {
+          all.push({ ...p, entryId: e.id, date: b.date, entryTimestamp: e.timestamp, entryText: e.text });
+        }
+      }
+      if (b.summary?.perspectivePrompts?.length) {
+        for (const p of b.summary.perspectivePrompts) {
           all.push({
             ...p,
-            entryId: e.id,
+            entryId: `summary-${b.date}`,
             date: b.date,
-            entryTimestamp: e.timestamp,
-            entryText: e.text,
+            entryTimestamp: b.summary.createdAt,
+            entryText: b.summary.reflection ?? '',
           });
         }
       }
     }
 
-    // Newest entry first, then by category stability within the same timestamp
+    // Newest first — summary prompts sort after the entries they synthesise
     all.sort((a, b) => b.entryTimestamp - a.entryTimestamp);
 
     // Dedup by normalised topic — first occurrence (newest) wins

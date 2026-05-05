@@ -41,10 +41,15 @@ interface Props {
 const CATEGORY_ICON: Record<PerspectivePromptCategory, keyof typeof Feather.glyphMap> = {
   decision:       'git-branch',
   conflict:       'alert-triangle',
-  loaded_emotion: 'cloud-rain',
+  loaded_emotion: 'cloud',
   question:       'help-circle',
   avoidance:      'clock',
   values_tension: 'compass',
+  pattern:        'repeat',
+  connection:     'users',
+  direction:      'map',
+  body:           'activity',
+  win:            'star',
 };
 
 export default function PerspectiveCarousel({ prompts, onTap, label }: Props) {

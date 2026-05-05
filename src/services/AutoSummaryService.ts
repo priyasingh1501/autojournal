@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { StorageService } from './StorageService';
 import { generateDailySummary } from './SummaryService';
+import { extractPromptsFromSummary } from './PerspectivePromptsService';
 import { effectiveTodayStr, effectiveDateStr } from './dayRollover';
 
 const NOTIFICATION_CHANNEL = 'daily-summary';
@@ -96,14 +97,11 @@ export async function generateIfNeeded(date: string, regenerate = false): Promis
       }
     }
 
-    await generateDailySummary(transcripts, date);
+    const newSummary = await generateDailySummary(transcripts, date);
 
-    // Only notify for today's first-ever summary — not for background catch-up of
-    // old dates (regenerate=true path) or for regenerations of existing summaries.
-    const todayStr = new Date().toISOString().split('T')[0];
-    if (!existing && !regenerate && date === todayStr) {
-      await sendSummaryReadyNotification(date);
-    }
+    // Fire-and-forget — must not block the summary flow
+    extractPromptsFromSummary(newSummary, date).catch(() => {});
+
     return true;
   } catch {
     return false;

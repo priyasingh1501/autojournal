@@ -220,10 +220,10 @@ VOICE:
 - FORBIDDEN: trait labels ("you are a perfectionist"), advice, prescriptions, clinical jargon, mood-tracking framing.
 
 STRUCTURE:
-- 2 to 3 short paragraphs of prose.
+- 1 short paragraph of prose (4–6 sentences max).
 - Open with the texture of the month — the felt sense, not a stat.
-- Move through specifics: who showed up, what kept coming back, what shifted.
-- Close with a quiet, observational beat — never a lesson, never a moral.
+- Touch on who showed up and what kept coming back.
+- End on a quiet, observational beat — never a lesson, never a moral.
 
 CHAPTER TITLE:
 - 3 to 7 words. Evocative, specific, not a summary.

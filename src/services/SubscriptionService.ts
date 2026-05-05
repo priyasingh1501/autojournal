@@ -90,6 +90,20 @@ let rcConfigured = false;
  * surface a user-facing "subscriptions unavailable" message.
  */
 function configureRevenueCat(): void {
+  // Log a diagnostic line every time so the live state is observable in
+  // `adb logcat` / Metro logs even if RC ends up disabled. Filter for
+  // `[RC diag]` to find it.
+  const apiKeyRaw = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY;
+  const apiKeyPresent = !!apiKeyRaw;
+  const apiKeyLooksValid = !!apiKeyRaw && apiKeyRaw.startsWith('goog_') && !apiKeyRaw.includes('...');
+  console.log('[RC diag]', {
+    platform:        Platform.OS,
+    nativeModule:    !!getPurchases() ? 'loaded' : 'missing',
+    apiKeyPresent,
+    apiKeyLooksValid,
+    apiKeyPrefix:    apiKeyRaw ? `${apiKeyRaw.slice(0, 5)}…(${apiKeyRaw.length} chars)` : null,
+    rcConfigured,
+  });
   if (rcConfigured || !isRcAvailable()) return;
   const Purchases = getPurchases();
   if (!Purchases) return;
@@ -301,13 +315,23 @@ export interface PlanPricing {
 }
 
 async function getCurrentOffering(): Promise<PurchasesOffering | null> {
-  if (!rcConfigured) return null;
+  if (!rcConfigured) {
+    console.log('[RC diag] getCurrentOffering skipped: rc not configured');
+    return null;
+  }
   const Purchases = getPurchases();
   if (!Purchases) return null;
   try {
     const offerings = await Purchases.getOfferings();
-    return offerings?.current ?? offerings?.all?.[OFFERING_ID] ?? null;
-  } catch {
+    const offering = offerings?.current ?? offerings?.all?.[OFFERING_ID] ?? null;
+    console.log('[RC diag] offerings:', {
+      currentId:   offerings?.current?.identifier ?? null,
+      allKeys:     offerings?.all ? Object.keys(offerings.all) : [],
+      packages:    offering?.availablePackages?.map((p: PurchasesPackage) => `${p.identifier}→${p.product?.identifier ?? '?'}`) ?? [],
+    });
+    return offering;
+  } catch (e) {
+    console.warn('[RC diag] getOfferings failed:', e);
     return null;
   }
 }

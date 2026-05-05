@@ -80,7 +80,10 @@ Deno.serve(async (req) => {
     const VOICE_DIRECTIVE = `
 
 VOICE MODE
-You are speaking, not writing. Leave room for the user to reply. Do not lecture, do not stack multiple teachings in one turn — pick the one thing worth saying and say it. End each turn with one focused question — never two, never zero.`;
+You are speaking, not writing. Leave room for the user to reply. Do not lecture, do not stack multiple teachings in one turn — pick the one thing worth saying and say it. End each turn with one focused question — never two, never zero.
+
+DISTRESS RESPONSE
+If the person sounds like they are crying, overwhelmed, or emotionally flooded: slow down, use shorter sentences, and do not advance to the next journaling prompt. "Take your time. I'm here." is enough. Never say "calm down" or offer unsolicited solutions. If you see an [Internal note: ...] in the conversation, treat it as a live instruction that overrides the normal session flow.`;
     const systemForClaude = (sysContent || '') + VOICE_DIRECTIVE;
     const convMsgs = messages
       .filter((m) => m.role !== 'system')

@@ -23,7 +23,7 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  Dimensions, ActivityIndicator, ScrollView, Platform,
+  Dimensions, ActivityIndicator, ScrollView, Platform, AppState,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -39,10 +39,11 @@ import {
   getSystemPromptWithContext,
 } from '../services/ConversationService';
 import { StorageService } from '../services/StorageService';
+import { detectEmotions } from '../services/BatchTranscriptionService';
 import { recordCompletedConversation } from '../services/ConversationHistoryService';
 import { useActiveMindsRoster } from '../hooks/useActiveMindsRoster';
 import {
-  analyzeCallTurn, queueReentry, DistressTier,
+  analyzeCallTurn, checkForCrisis, queueReentry, DistressTier,
 } from '../services/WellbeingService';
 import WellbeingResponseModal from '../components/WellbeingResponseModal';
 import { ELEVENLABS_AGENT_ID, getConversationToken } from '../services/ElevenLabsConvAIService';
@@ -50,6 +51,7 @@ import { SourceContext } from '../services/openingLineSelector';
 import { track } from '../services/AnalyticsService';
 import { getMindV2 } from '../services/mindsConfigV2';
 import { Audio } from 'expo-av';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -306,18 +308,55 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
       if (source === 'user') {
         allUserTextsRef.current.push(message.trim());
 
-        // Fire-and-forget distress detection (same logic as TalkScreen).
+        // Fast parallel crisis scan — runs on every turn, no lock.
+        // Catches explicit Tier 3 signals immediately without waiting for
+        // the full analyzeCallTurn to complete or being blocked by its lock.
+        if (!tier3Delivered.current) {
+          checkForCrisis(message.trim())
+            .then(isCrisis => {
+              if (isCrisis && !tier3Delivered.current && activeRef.current) {
+                tier3Delivered.current = true;
+                callDistressRef.current = 3;
+                conversation.sendContextualUpdate(
+                  '[Internal note: The person has expressed acute crisis language. Do NOT ' +
+                  'continue journaling. Acknowledge what you heard directly and simply. Ask ' +
+                  'if they are safe right now. Stay present. Do not offer platitudes.]'
+                );
+                wellbeingModalActiveRef.current = true;
+                setWellbeingAlert(3);
+              }
+            })
+            .catch(() => {});
+        }
+
+        // Full distress analysis (Tier 1–3, accumulated context, with lock).
         const turnCount = allUserTextsRef.current.length;
         if (!distressChecking.current && turnCount >= 2) {
           distressChecking.current = true;
           analyzeCallTurn(allUserTextsRef.current, turnCount)
             .then(tier => {
-              if (tier && tier > callDistressRef.current) {
-                callDistressRef.current = tier;
-                if (tier >= 2 && activeRef.current) {
-                  wellbeingModalActiveRef.current = true;
-                  setWellbeingAlert(tier);
-                }
+              if (!tier || tier <= callDistressRef.current) return;
+              callDistressRef.current = tier;
+              if (!activeRef.current) return;
+
+              if (tier === 2) {
+                conversation.sendContextualUpdate(
+                  '[Internal note: The person is showing signs of sustained distress — ' +
+                  'hopelessness, withdrawal, or emotional flooding. Slow down. Do not advance ' +
+                  'journaling prompts. Hold space. One gentle check-in only: ask how they are ' +
+                  'feeling right now, nothing more.]'
+                );
+                wellbeingModalActiveRef.current = true;
+                setWellbeingAlert(tier);
+              } else if (tier === 3 && !tier3Delivered.current) {
+                tier3Delivered.current = true;
+                conversation.sendContextualUpdate(
+                  '[Internal note: The person has expressed acute crisis language. Do NOT ' +
+                  'continue journaling. Acknowledge what you heard directly and simply. Ask ' +
+                  'if they are safe right now. Stay present. Do not offer platitudes.]'
+                );
+                wellbeingModalActiveRef.current = true;
+                setWellbeingAlert(tier);
               }
             })
             .catch(() => {})
@@ -351,6 +390,37 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
     return () => clearTimeout(t);
   }, [conversation.isSpeaking, convState, stopRing]);
 
+
+  // Keep screen on and audio session alive through screen lock.
+  // activateKeepAwakeAsync prevents auto-sleep on both iOS and Android.
+  // staysActiveInBackground covers iOS manual lock (power button).
+  useEffect(() => {
+    if (convState === 'connecting' || convState === 'active') {
+      activateKeepAwakeAsync('call').catch(() => {});
+      Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+      }).catch(e => console.warn('[TalkScreenV2] audio mode error:', e));
+    }
+  }, [convState]);
+
+  // Re-activate audio session on foreground return.
+  // If iOS interrupted the audio session during lock, re-setting the mode
+  // after the user unlocks restores it so the WebRTC stream can resume.
+  useEffect(() => {
+    if (convState !== 'active' && convState !== 'connecting') return;
+    const sub = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active' && activeRef.current) {
+        Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+        }).catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, [convState]);
 
   // Call timer.
   useEffect(() => {
@@ -471,6 +541,12 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
     activeRef.current = false;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     stopRing();
+    deactivateKeepAwake('call');
+    Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: false,
+      staysActiveInBackground: false,
+    }).catch(() => {});
 
     // Record distress reentry if needed.
     const maxTier = callDistressRef.current;
@@ -521,13 +597,21 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   // ── Post-call actions ───────────────────────────────────────────────────────
   const handleSaveReflectionToSummary = useCallback(() => {
     if (postCallReflection) {
-      StorageService.addTranscript({
+      const entry = {
         id: `call_${Date.now()}`,
         timestamp: Date.now(),
         text: postCallReflection,
         duration: 0,
-        kind: 'manual',
-      }, { storageDate: effectiveSummary.date }).catch(() => {});
+        kind: 'manual' as const,
+      };
+      const date = effectiveSummary.date;
+      StorageService.addTranscript(entry, { storageDate: date })
+        .then(() => detectEmotions(entry.text))
+        .then(tags => {
+          if (tags.length === 0) return;
+          StorageService.updateTranscript({ ...entry, emotionTags: tags }, date).catch(() => {});
+        })
+        .catch(() => {});
     }
     onClose();
   }, [postCallReflection, effectiveSummary.date, onClose]);

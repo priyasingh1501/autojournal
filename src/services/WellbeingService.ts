@@ -221,6 +221,37 @@ Return ONLY: {"tier":1} or {"tier":2} or {"tier":3}`,
 }
 
 /**
+ * Lightweight single-turn crisis scan. Runs on every user turn independently
+ * of analyzeCallTurn — no lock, no accumulation. Only fires on unambiguous
+ * crisis language so false-positive rate stays near zero.
+ *
+ * @param latestText  The most recent user utterance only (not accumulated).
+ * @returns           true if explicit crisis signals are present, false otherwise.
+ */
+export async function checkForCrisis(latestText: string): Promise<boolean> {
+  try {
+    if (latestText.trim().split(/\s+/).length < 3) return false;
+
+    const enabled = await isWellbeingEnabled();
+    if (!enabled) return false;
+
+    const response = await claudeProxy.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 5,
+      system: `Does this message contain explicit crisis signals — suicidal ideation, self-harm language, wanting to not be alive, or wanting to permanently disappear? Be conservative: only answer YES for clear, unambiguous signals. Venting, frustration, or general sadness is not a crisis signal. Answer YES or NO only.`,
+      messages: [{ role: 'user', content: latestText.slice(0, 500) }],
+    });
+
+    const raw = response.content[0]?.type === 'text'
+      ? response.content[0].text.trim().toUpperCase()
+      : '';
+    return raw.startsWith('YES');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Analyze a transcript entry for emotional distress.
  *
  * @param entry  The transcript entry to analyze.

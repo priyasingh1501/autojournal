@@ -93,8 +93,8 @@ export async function ensureDayCloseNotificationScheduled(): Promise<void> {
     // we fire at 23:59 (still before the rollover).
     const notifId = await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Your day is ready to look back on',
-        body: 'I pulled your notes together — open when you have a minute.',
+        title: "Today's notes are wrapped up",
+        body: 'Your summary is ready whenever you want it.',
         data: { type: 'summary_ready', action: 'view-summary', date: targetDate },
         ...(Platform.OS === 'android' ? { channelId: CHANNEL } : {}),
         sound: true,

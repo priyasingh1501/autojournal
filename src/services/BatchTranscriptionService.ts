@@ -19,21 +19,31 @@ const EMOTION_SET = [
   'lonely', 'overwhelmed', 'motivated',
 ] as const;
 
+const DEGREE_SET = ['slightly', 'quite', 'deeply'] as const;
+
 /**
- * Infers 1–3 emotional tone tags from the transcript text using Haiku.
+ * Infers 1–3 degree-qualified emotion tags from the transcript text using Haiku.
+ * Tags are formatted as "[degree] [emotion]" e.g. "slightly anxious", "deeply sad".
  * Returns an empty array on failure — never throws.
  */
 export async function detectEmotions(text: string): Promise<string[]> {
   try {
     const wordCount = text.trim().split(/\s+/).length;
-    if (wordCount < 5) return []; // too short to classify reliably
+    if (wordCount < 5) return [];
 
     const response = await claudeProxy.messages.create({
       model: 'claude-haiku-4-5',
-      max_tokens: 40,
-      system: `You detect emotional tone from voice journal transcripts. The text may be in English, Hindi, or a mix of both (Hinglish). Choose 1–3 tags from this exact list:
-${EMOTION_SET.join(', ')}
-Return ONLY valid JSON: {"emotions":["tag1"]} or {"emotions":["tag1","tag2"]} etc.`,
+      max_tokens: 60,
+      system: `You detect emotional tone from voice journal transcripts. The text may be in English, Hindi, or Hinglish.
+
+Return 1–3 emotion tags. Each tag must pair a degree word with an emotion word.
+Degree words: slightly, quite, deeply
+Emotion words: ${EMOTION_SET.join(', ')}
+
+Choose the degree that reflects how strongly the emotion comes through — not just its presence.
+Examples: "slightly anxious", "quite frustrated", "deeply sad"
+
+Return ONLY valid JSON: {"emotions":["slightly anxious"]} or {"emotions":["quite frustrated","deeply sad"]} etc.`,
       messages: [{ role: 'user', content: `Transcript:\n"${text.slice(0, 800)}"` }],
     });
 
@@ -44,7 +54,13 @@ Return ONLY valid JSON: {"emotions":["tag1"]} or {"emotions":["tag1","tag2"]} et
     const parsed = JSON.parse(raw.slice(start, end + 1));
     if (!Array.isArray(parsed.emotions)) return [];
     return parsed.emotions
-      .filter((e: any) => typeof e === 'string' && (EMOTION_SET as readonly string[]).includes(e))
+      .filter((e: any) => {
+        if (typeof e !== 'string') return false;
+        const parts = e.trim().split(' ');
+        return parts.length === 2 &&
+          (DEGREE_SET as readonly string[]).includes(parts[0] as any) &&
+          (EMOTION_SET as readonly string[]).includes(parts[1] as any);
+      })
       .slice(0, 3);
   } catch {
     return [];

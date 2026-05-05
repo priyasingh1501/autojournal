@@ -96,12 +96,13 @@ try { initAnalytics(); } catch (e) { console.warn('[Analytics] init failed:', e)
 // starts with an anonymous identity and we call `logIn` on SIGNED_IN below.
 try { SubscriptionService.configureRevenueCat(); } catch (e) { console.warn('[RevenueCat] configure failed:', e); }
 
-// Show notifications when app is in foreground too
+// Suppress notifications when app is in foreground — user is already here.
+// Background notifications are handled by the OS and unaffected by this handler.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
+    shouldShowAlert: false,
+    shouldShowBanner: false,
+    shouldShowList: false,
     shouldPlaySound: false,
     shouldSetBadge: false,
   }),

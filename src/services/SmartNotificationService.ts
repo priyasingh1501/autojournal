@@ -203,9 +203,13 @@ async function buildCandidates(): Promise<NotificationCandidate[]> {
     if (summary) {
       const transcripts = await StorageService.getTranscriptsForDate(yesterday);
       const tags: string[] = transcripts.flatMap(t => t.emotionTags ?? []);
-      const distressTags = tags.filter(t => DISTRESS_EMOTIONS.has(t));
+      const distressTags = tags.filter(t => {
+        const baseEmotion = t.includes(' ') ? t.split(' ')[1] : t;
+        return DISTRESS_EMOTIONS.has(baseEmotion);
+      });
       if (distressTags.length > 0) {
         const tag = distressTags[0];
+        const baseTag = tag.includes(' ') ? tag.split(' ')[1] : tag;
         const messages: Record<string, { title: string; body: string }> = {
           anxious:     { title: 'How are you sitting with it?', body: 'Yesterday felt anxious. A moment to check in — has anything shifted?' },
           stressed:    { title: 'Breathing a little easier today?', body: 'Yesterday had some stress in it. How\'s today starting?' },
@@ -214,7 +218,7 @@ async function buildCandidates(): Promise<NotificationCandidate[]> {
           lonely:      { title: 'A moment with yourself', body: 'Yesterday had a quiet ache to it. Your journal is always here.' },
           frustrated:  { title: 'How\'s the tension today?', body: 'Yesterday felt frustrating. Sometimes naming it again helps it move.' },
         };
-        const msg = messages[tag] ?? { title: 'How are you today?', body: 'Yesterday had some weight to it. How are you feeling now?' };
+        const msg = messages[baseTag] ?? { title: 'How are you today?', body: 'Yesterday had some weight to it. How are you feeling now?' };
         candidates.push({
           priority: 2,
           title: msg.title,
@@ -265,7 +269,10 @@ async function buildCandidates(): Promise<NotificationCandidate[]> {
     const transcripts = await StorageService.getTranscriptsForDate(yesterday);
     const tags: string[] = transcripts.flatMap(t => t.emotionTags ?? []);
 
-    const targetSignals = tags.flatMap(t => EMOTION_TO_SIGNAL[t] ?? []);
+    const targetSignals = tags.flatMap(t => {
+      const baseEmotion = t.includes(' ') ? t.split(' ')[1] : t;
+      return EMOTION_TO_SIGNAL[baseEmotion] ?? [];
+    });
     const uniqueSignals = [...new Set(targetSignals)];
 
     let matched: WisdomShort | null = null;
