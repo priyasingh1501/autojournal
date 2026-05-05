@@ -486,11 +486,20 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
         );
       }
 
+      // 15-second boot timeout — guards against a hanging fetch (Supabase cold
+      // start) or a stalled startSession. Without this the ring plays forever.
+      const bootTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Connection timed out — please try again.')), 15_000),
+      );
+
       // Build system prompt + conversation token in parallel (both are cached
       // after the first call, so subsequent sessions are near-instant).
-      const [systemPrompt, conversationToken] = await Promise.all([
-        getSystemPromptWithContext(mindId, undefined),
-        getConversationToken(ELEVENLABS_AGENT_ID),
+      const [systemPrompt, conversationToken] = await Promise.race([
+        Promise.all([
+          getSystemPromptWithContext(mindId, undefined),
+          getConversationToken(ELEVENLABS_AGENT_ID),
+        ]),
+        bootTimeout,
       ]);
 
       // Opening message — uses the handcrafted opener pool in mindsConfigV2.
@@ -512,20 +521,24 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
 
       if (!activeRef.current) return;
 
-      await conversation.startSession({
-        conversationToken,
-        // Dynamic variables are substituted into the agent's system prompt
-        // template ({{full_system_prompt}}) and first_message ({{first_message}})
-        // before the session starts. Overrides would be stronger but seem to
-        // destabilise agent boot when the prompt is long — the dynamic-variable
-        // route is what reliably connects.
-        dynamicVariables: {
-          full_system_prompt: systemPrompt,
-          first_message: opening,
-        },
-      } as any); // `as any` until @elevenlabs/react-native types stabilise
+      await Promise.race([
+        conversation.startSession({
+          conversationToken,
+          // Dynamic variables are substituted into the agent's system prompt
+          // template ({{full_system_prompt}}) and first_message ({{first_message}})
+          // before the session starts. Overrides would be stronger but seem to
+          // destabilise agent boot when the prompt is long — the dynamic-variable
+          // route is what reliably connects.
+          dynamicVariables: {
+            full_system_prompt: systemPrompt,
+            first_message: opening,
+          },
+        } as any), // `as any` until @elevenlabs/react-native types stabilise
+        bootTimeout,
+      ]);
 
     } catch (e: any) {
+      stopRing(); // always stop the ring — catch fires before onError for pre-session failures
       const reason = e?.message ?? 'Could not connect.';
       track('call_connect_failed', {
         mind_id: selectedMindIdRef.current ?? 'companion',
