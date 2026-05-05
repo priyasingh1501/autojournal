@@ -19,6 +19,7 @@ import {
   Intention,
   IntentionCadence,
   IntentionCategory,
+  IntentionCheckIn,
   IntentionSource,
   IntentionStatus,
   SuggestedIntention,
@@ -68,7 +69,7 @@ function deriveFallbackShortLabel(text: string): string {
 }
 
 /** ISO-8601 week key, e.g. "2026-W16". Monday-based, UTC. */
-function getWeekKey(ts: number): string {
+export function getWeekKey(ts: number): string {
   const d = new Date(ts);
   const day = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - day);
@@ -117,6 +118,9 @@ function migrateIntention(raw: any): Intention {
     targetCadence:        raw.targetCadence,
     nudgeEnabled:         raw.nudgeEnabled ?? true,
     nudgeSnoozedUntil:    raw.nudgeSnoozedUntil,
+    isCommitted:          raw.isCommitted ?? false,
+    committedAt:          raw.committedAt,
+    checkIns:             raw.checkIns ?? [],
     active:               status === 'active',
   };
 }
@@ -410,6 +414,74 @@ export async function recordMention(
     weeklyMentionCounts:  pruneWeeklyCounts(counts),
   };
   await saveAllIntentions(all);
+}
+
+// ── Commitment layer ──────────────────────────────────────────────────────────
+
+/**
+ * Promote an intention to a tracked commitment.
+ * Sets cadence (the active tracking cadence), captures whyText if provided,
+ * and flips isCommitted on. Idempotent: re-promoting an already-committed
+ * intention just updates cadence/why.
+ */
+export async function promoteToCommitment(
+  intentionId: string,
+  cadence: Exclude<IntentionCadence, null>,
+  whyText?: string,
+): Promise<void> {
+  const all = await getAllIntentions();
+  const idx = all.findIndex(i => i.id === intentionId);
+  if (idx === -1) return;
+  const now = Date.now();
+  all[idx] = {
+    ...all[idx],
+    isCommitted:     true,
+    committedAt:     all[idx].committedAt ?? now,
+    cadence,
+    status:          'active',
+    statusChangedAt: all[idx].status === 'active' ? all[idx].statusChangedAt : now,
+    active:          true,
+    checkIns:        all[idx].checkIns ?? [],
+    ...(whyText && whyText.trim() ? { whyText: whyText.trim() } : {}),
+  };
+  await saveAllIntentions(all);
+}
+
+/**
+ * Demote a commitment back to a plain intention.
+ * Keeps check-in history (read-only after demotion); clears isCommitted.
+ */
+export async function demoteFromCommitment(intentionId: string): Promise<void> {
+  const all = await getAllIntentions();
+  const idx = all.findIndex(i => i.id === intentionId);
+  if (idx === -1) return;
+  all[idx] = { ...all[idx], isCommitted: false };
+  await saveAllIntentions(all);
+}
+
+/**
+ * Record a manual check-in on a committed intention.
+ * Distinct from recordMention (which is keyword-driven from journal entries) —
+ * this is the user explicitly saying "I did the thing."
+ */
+export async function recordCheckIn(
+  intentionId: string,
+  timestamp: number = Date.now(),
+  note?: string,
+): Promise<void> {
+  const all = await getAllIntentions();
+  const idx = all.findIndex(i => i.id === intentionId);
+  if (idx === -1) return;
+  const i = all[idx];
+  const checkIn: IntentionCheckIn = note ? { timestamp, note } : { timestamp };
+  const checkIns = [...(i.checkIns ?? []), checkIn];
+  all[idx] = { ...i, checkIns };
+  await saveAllIntentions(all);
+}
+
+/** Returns active intentions where isCommitted === true. */
+export async function getCommitments(): Promise<Intention[]> {
+  return (await getActive()).filter(i => i.isCommitted === true);
 }
 
 // ── Fading logic ──────────────────────────────────────────────────────────────

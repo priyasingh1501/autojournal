@@ -492,6 +492,12 @@ export type IntentionCategory =
   | 'health' | 'relationships' | 'work' | 'mind'
   | 'creative' | 'spiritual' | 'financial' | 'other';
 
+/** Manual check-in on a committed intention. Distinct from auto-detected mentions. */
+export interface IntentionCheckIn {
+  timestamp: number;
+  note?: string;
+}
+
 export interface Intention {
   id: string;
   text: string;
@@ -514,6 +520,10 @@ export interface Intention {
   targetCadence?: number;
   nudgeEnabled: boolean;
   nudgeSnoozedUntil?: number;
+  /** Active commitment layer: user has promoted this intention to a tracked commitment. */
+  isCommitted?: boolean;
+  committedAt?: number;
+  checkIns?: IntentionCheckIn[];
   /** @deprecated Use status === 'active'. Kept for backward compat with IntentionsScreen. */
   active: boolean;
 }

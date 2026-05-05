@@ -28,7 +28,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import {
   AcrossTimeObservation,
@@ -348,6 +348,7 @@ function PastMonthsCarousel({
 // ── Main screen ──────────────────────────────────────────────────────────────
 
 export default function PatternsScreen() {
+  const navigation = useNavigation<any>();
   const [report, setReport]   = useState<PatternsReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -601,17 +602,25 @@ export default function PatternsScreen() {
             </>
           )}
         </View>
-        {report && activeTab === 'this_month' && (
+        <View style={styles.topRightCol}>
           <TouchableOpacity
-            onPress={onRegeneratePress}
-            disabled={loading}
+            onPress={() => navigation.navigate('Intentions')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            {loading
-              ? <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
-              : <Text style={styles.topLink}>Regenerate</Text>}
+            <Text style={styles.topLink}>Intentions</Text>
           </TouchableOpacity>
-        )}
+          {report && activeTab === 'this_month' && (
+            <TouchableOpacity
+              onPress={onRegeneratePress}
+              disabled={loading}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color="rgba(152,212,250,0.70)" />
+                : <Text style={styles.topLink}>Regenerate</Text>}
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Tab switcher */}
@@ -854,6 +863,10 @@ const styles = StyleSheet.create({
     fontFamily: 'GillSans-Light',
     letterSpacing: 0.2,
     marginTop: 4,
+  },
+  topRightCol: {
+    alignItems: 'flex-end',
+    gap: 6,
   },
 
   tabRow: {

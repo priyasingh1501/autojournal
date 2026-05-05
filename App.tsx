@@ -15,6 +15,7 @@ import * as Notifications from 'expo-notifications';
 import HomeScreen from './src/screens/HomeScreen';
 import JournalScreen from './src/screens/JournalScreen';
 import PatternsScreen from './src/screens/PatternsScreen';
+import IntentionsScreen from './src/screens/IntentionsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
 import WisdomScreen from './src/screens/WisdomScreen';
@@ -159,11 +160,12 @@ function withBoundary<P extends object>(Screen: React.ComponentType<P>): React.C
 // new function on every render, causing React Navigation to unmount+remount
 // the active screen whenever state updates — which crashes screens that hold
 // native audio/video resources.
-const BoundedHomeScreen     = withBoundary(HomeScreen);
-const BoundedJournalScreen  = withBoundary(JournalScreen);
-const BoundedPatternsScreen = withBoundary(PatternsScreen);
-const BoundedWisdomScreen   = withBoundary(WisdomScreen);
-const BoundedSettingsScreen = withBoundary(SettingsScreen);
+const BoundedHomeScreen       = withBoundary(HomeScreen);
+const BoundedJournalScreen    = withBoundary(JournalScreen);
+const BoundedPatternsScreen   = withBoundary(PatternsScreen);
+const BoundedIntentionsScreen = withBoundary(IntentionsScreen);
+const BoundedWisdomScreen     = withBoundary(WisdomScreen);
+const BoundedSettingsScreen   = withBoundary(SettingsScreen);
 
 /** Rendered inside SafeAreaProvider so useSafeAreaInsets() works correctly. */
 function AppTabs() {
@@ -251,6 +253,16 @@ function AppTabs() {
           tabBarButton: () => null,
           tabBarStyle: { display: 'none' },
         })}
+      />
+      <Tab.Screen
+        name="Intentions"
+        component={BoundedIntentionsScreen}
+        options={{
+          // Custom in-screen header; no native header, hidden from tab bar.
+          headerShown: false,
+          tabBarButton: () => null,
+          tabBarStyle: { display: 'none' },
+        }}
       />
     </Tab.Navigator>
   );
