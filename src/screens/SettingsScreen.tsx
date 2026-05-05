@@ -440,7 +440,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>untangle v1.3.4</Text>
+          <Text style={styles.footerText}>untangle v1.4.0</Text>
         </View>
       </ScrollView>
 
