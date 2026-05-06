@@ -23,7 +23,7 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated,
-  Dimensions, ActivityIndicator, ScrollView, Platform, AppState,
+  Dimensions, ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -391,35 +391,19 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
   }, [conversation.isSpeaking, convState, stopRing]);
 
 
-  // Keep screen on and audio session alive through screen lock.
-  // activateKeepAwakeAsync prevents auto-sleep on both iOS and Android.
-  // staysActiveInBackground covers iOS manual lock (power button).
+  // Keep screen on while the call is connecting or active.
+  // The ElevenLabs SDK owns the audio session (LiveKit AudioSession.configureAudio
+  // + startAudioSession in @elevenlabs/react-native). Calling expo-av's
+  // setAudioModeAsync alongside it caused two regressions on Android:
+  //   • the call_ring.mp3 (MUSIC stream) was silenced because the expo-av call
+  //     fired before startRing and grabbed audio focus
+  //   • the agent's first turn cut off after ~2 words because the same effect
+  //     re-fired on connecting→active and reset audio focus mid-stream
+  // Letting the SDK be the only thing touching the audio session fixes both.
   useEffect(() => {
     if (convState === 'connecting' || convState === 'active') {
       activateKeepAwakeAsync('call').catch(() => {});
-      Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-      }).catch(e => console.warn('[TalkScreenV2] audio mode error:', e));
     }
-  }, [convState]);
-
-  // Re-activate audio session on foreground return.
-  // If iOS interrupted the audio session during lock, re-setting the mode
-  // after the user unlocks restores it so the WebRTC stream can resume.
-  useEffect(() => {
-    if (convState !== 'active' && convState !== 'connecting') return;
-    const sub = AppState.addEventListener('change', nextState => {
-      if (nextState === 'active' && activeRef.current) {
-        Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-        }).catch(() => {});
-      }
-    });
-    return () => sub.remove();
   }, [convState]);
 
   // Call timer.
@@ -555,11 +539,6 @@ function TalkScreenInner({ summary, onClose, initialMindId, sourceContext }: Pro
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     stopRing();
     deactivateKeepAwake('call');
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: false,
-      staysActiveInBackground: false,
-    }).catch(() => {});
 
     // Record distress reentry if needed.
     const maxTier = callDistressRef.current;

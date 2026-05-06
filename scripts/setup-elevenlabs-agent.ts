@@ -7,8 +7,10 @@
  * Usage:
  *   ELEVENLABS_API_KEY=sk_... npx tsx scripts/setup-elevenlabs-agent.ts [voice_id]
  *
- * voice_id defaults to Rachel (21m00Tcm4TlvDq8ikWAM) — pass your preferred
- * ElevenLabs voice ID as the first argument to override.
+ * voice_id defaults to a Starter-plan-compatible voice (7wlfJf72PCt9FjPj0Beg).
+ * Pass your preferred ElevenLabs voice ID as the first argument to override.
+ * Note: Professional Voices require Creator plan or above — the agent will
+ * connect but produce no audio if the voice isn't available on the workspace plan.
  */
 
 const EL_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -21,7 +23,7 @@ if (!EL_API_KEY) {
 const SUPABASE_URL = 'https://hgodsuwrdpmaqcdetjjn.supabase.co';
 const LLM_WEBHOOK = `${SUPABASE_URL}/functions/v1/elevenlabs-llm`;
 
-const voiceId = process.argv[2] ?? '21m00Tcm4TlvDq8ikWAM'; // Rachel
+const voiceId = process.argv[2] ?? '7wlfJf72PCt9FjPj0Beg';
 
 const agentPayload = {
   name: 'untangle-companion',
