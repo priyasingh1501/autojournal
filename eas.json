@@ -3,12 +3,40 @@
     "version": ">= 12.0.0"
   },
   "build": {
-    "preview": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_APP_VARIANT": "development"
+      },
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false
+      }
+    },
+    "preview": {
+      "env": {
+        "EXPO_PUBLIC_APP_VARIANT": "preview"
+      },
+      "ios": {
+        "simulator": true
+      },
+      "android": {
+        "buildType": "apk",
+        "distribution": "internal"
+      }
+    },
+    "device": {
+      "ios": {
+        "distribution": "internal"
       }
     },
     "production": {
+      "env": {
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
+      },
       "android": {
         "buildType": "app-bundle"
       }

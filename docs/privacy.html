@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy · untangle</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #02060E;
+      color: #c8dff0;
+      line-height: 1.75;
+      padding: 40px 20px 80px;
+    }
+    .container { max-width: 680px; margin: 0 auto; }
+    h1 {
+      font-family: Baskerville, Georgia, serif;
+      font-size: 2rem;
+      color: #e0f2fe;
+      margin-bottom: 6px;
+    }
+    .subtitle { font-size: 0.9rem; color: #6b9cb8; margin-bottom: 40px; }
+    h2 {
+      font-size: 1.1rem;
+      color: #98d4fa;
+      margin: 36px 0 10px;
+      letter-spacing: 0.02em;
+    }
+    p { margin-bottom: 12px; }
+    ul { padding-left: 20px; margin-bottom: 12px; }
+    li { margin-bottom: 6px; }
+    a { color: #63b3ed; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .card {
+      background: rgba(3, 18, 40, 0.72);
+      border: 1px solid rgba(152, 212, 250, 0.13);
+      border-radius: 16px;
+      padding: 24px 28px;
+      margin-top: 12px;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      background: rgba(9, 41, 173, 0.22);
+      border: 1px solid rgba(152, 212, 250, 0.25);
+      border-radius: 20px;
+      padding: 2px 10px;
+      color: #98d4fa;
+      margin-bottom: 16px;
+    }
+    hr { border: none; border-top: 1px solid rgba(152, 212, 250, 0.10); margin: 40px 0; }
+    footer { font-size: 0.8rem; color: #4a7a9b; margin-top: 48px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <h1>Privacy Policy</h1>
+    <p class="subtitle">Last updated: April 18, 2026 &nbsp;·&nbsp; App version 1.3.0</p>
+
+    <div class="card">
+      <span class="tag">Short version</span>
+      <p>
+        untangle is a personal journal. Your voice recordings, transcripts, photos,
+        and notes live on your device. We never sell your data. Audio and text are
+        sent to AI providers solely to generate your summaries and insights — nothing
+        is stored on their servers beyond the duration of each request.
+      </p>
+    </div>
+
+    <h2>1. Who we are</h2>
+    <p>
+      untangle is an independently developed app by Priya Singh. If you have any
+      questions about this policy, email us at
+      <a href="mailto:privacy@liveuntangle.com">privacy@liveuntangle.com</a>.
+    </p>
+
+    <h2>2. What data untangle collects</h2>
+
+    <p><strong>Voice recordings</strong><br />
+    When you use the microphone, untangle records audio and stores it temporarily
+    on your device. The audio is sent to OpenAI Whisper (via our secure server)
+    to produce a text transcript. The audio file is then deleted from our server
+    immediately after transcription. The resulting transcript is stored on your
+    device only.</p>
+
+    <p><strong>Journal entries and transcripts</strong><br />
+    All journal entries, transcripts, summaries, and insights are stored locally
+    on your device using encrypted on-device storage. We do not sync your journal
+    to any cloud database. We do not have access to your journal content.</p>
+
+    <p><strong>Photos</strong><br />
+    Photos you attach to journal entries are stored locally on your device.
+    If a photo is included in a summary request, it is sent to Anthropic Claude
+    (via our secure server) solely to generate your summary, and is not retained
+    by us or Anthropic beyond that request.</p>
+
+    <p><strong>Account &amp; email address</strong><br />
+    If you sign in, your email address is stored by Supabase Authentication solely
+    to identify your account session. We do not use it for marketing.</p>
+
+    <p><strong>Wellbeing &amp; mood data</strong><br />
+    If you use wellbeing check-ins, your mood and distress scores are stored
+    locally on your device and are never transmitted to our servers.</p>
+
+    <p><strong>Expense data</strong><br />
+    If you log expenses, amounts, categories, and descriptions are stored
+    locally on your device only.</p>
+
+    <p><strong>ElevenLabs voice synthesis</strong><br />
+    If you use the Call feature, the text of your summary is sent to ElevenLabs
+    (via our secure server) to generate a spoken audio response. The text is not
+    retained by ElevenLabs beyond the duration of the request.</p>
+
+    <p><strong>Wisdom Shorts</strong><br />
+    The Wisdom Shorts feed is loaded from our Supabase database. This request
+    contains no personal information — only a request for the public content list.</p>
+
+    <p><strong>What we do NOT collect</strong></p>
+    <ul>
+      <li>We do not collect your name, phone number, location, or contacts</li>
+      <li>We do not use advertising SDKs or sell your data</li>
+      <li>We do not build profiles or share data with third parties for marketing</li>
+      <li>We do not have access to your journal entries or recordings</li>
+      <li>We do not collect device identifiers (IMEI, Android ID)</li>
+    </ul>
+
+    <h2>3. Third-party services we use</h2>
+
+    <p>To provide AI-powered features, your content is processed by the following
+    services. Each request is proxied through our server — your device never
+    contacts these APIs directly, and your API keys are never embedded in the app.</p>
+
+    <ul>
+      <li>
+        <strong>OpenAI (Whisper)</strong> — audio transcription.<br />
+        <a href="https://openai.com/policies/privacy-policy" target="_blank" rel="noopener">OpenAI Privacy Policy</a>
+      </li>
+      <li>
+        <strong>Anthropic (Claude)</strong> — daily summaries and journal insights.<br />
+        <a href="https://www.anthropic.com/privacy" target="_blank" rel="noopener">Anthropic Privacy Policy</a>
+      </li>
+      <li>
+        <strong>ElevenLabs</strong> — text-to-speech for the Call feature.<br />
+        <a href="https://elevenlabs.io/privacy" target="_blank" rel="noopener">ElevenLabs Privacy Policy</a>
+      </li>
+      <li>
+        <strong>Supabase</strong> — hosts the Wisdom Shorts database and our AI proxy functions.<br />
+        <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase Privacy Policy</a>
+      </li>
+      <li>
+        <strong>RevenueCat</strong> — manages in-app subscription purchases. Receives your subscription status and purchase events.<br />
+        <a href="https://www.revenuecat.com/privacy" target="_blank" rel="noopener">RevenueCat Privacy Policy</a>
+      </li>
+      <li>
+        <strong>PostHog</strong> — product analytics. Receives anonymised event names (e.g. "recording_started", "summary_viewed") and your user ID. No journal content is ever included.<br />
+        <a href="https://posthog.com/privacy" target="_blank" rel="noopener">PostHog Privacy Policy</a>
+      </li>
+    </ul>
+
+    <h2>4. Permissions</h2>
+
+    <ul>
+      <li><strong>Microphone</strong> — to record your voice for journal entries.</li>
+      <li><strong>Camera &amp; Photo Library</strong> — to attach photos to journal entries.</li>
+      <li><strong>Notifications</strong> — to alert you when your daily summary is ready.</li>
+    </ul>
+
+    <h2>5. Data retention and deletion</h2>
+    <p>
+      All your journal data (entries, transcripts, summaries, photos) is stored
+      on your device. You can delete individual entries from within the app at
+      any time. Uninstalling the app removes all locally stored data.
+    </p>
+    <p>
+      AI requests are not retained by us or our AI providers beyond the time
+      required to generate a response (typically a few seconds).
+    </p>
+
+    <h2>6. Children's privacy</h2>
+    <p>
+      untangle is not directed at children under 13. We do not knowingly collect
+      any information from children under 13.
+    </p>
+
+    <h2>7. Changes to this policy</h2>
+    <p>
+      If we make material changes to this policy, we will update the "Last updated"
+      date at the top of this page and, where appropriate, notify you within the app.
+    </p>
+
+    <h2>8. Contact</h2>
+    <p>
+      Questions or requests about your privacy?<br />
+      Email: <a href="mailto:privacy@liveuntangle.com">privacy@liveuntangle.com</a>
+    </p>
+
+    <hr />
+    <footer>
+      &copy; 2026 untangle. All rights reserved.
+    </footer>
+
+  </div>
+</body>
+</html>

@@ -7,13 +7,16 @@ dist/
 web-build/
 
 # Native builds
-android/
-ios/
+# android/ and ios/ are committed so EAS Build can find gradlew/Podfile
 
 # Environment & secrets
 .env
 .env.local
 .env.*.local
+keystore.properties
+*.jks
+*.keystore
+!android/app/debug.keystore
 
 # EAS
 eas-build-local-nodejs/
@@ -26,6 +29,16 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Claude Code local config
+.claude/settings.local.json
+
 # Logs
 *.log
 npm-debug.log*
+
+credentials/
+.env.local
+
+# Sentry — auth tokens for sourcemap upload, never commit.
+android/sentry.properties
+ios/sentry.properties

@@ -1,0 +1,251 @@
+[
+  {
+    "id": "koob_addiction_three_stage_trap",
+    "title": "Addiction Moves Through Three Distinct Traps",
+    "short": "Addiction isn't one problem. It's three problems wearing a trench coat. First, something feels so good your brain starts screaming that it matters more than anything else. That's the binge stage — your wanting system gets hijacked. Second, when the thing is gone, you don't just return to normal. You drop below normal. Everything feels flat, bleak, and stressful. That's withdrawal — not just from the substance, but from your own ability to feel okay. Third, the part of your brain that pumps the brakes stops working properly. You know the thing is destroying you, but the craving overrides your judgment. These three stages feed each other in a loop. You chase the high, crash into a low, lose the ability to choose clearly, and chase it again. It's not a failure of willpower. It's a system that has been fundamentally rewired.",
+    "pullquote": "You chase the high, crash into a low, lose the ability to choose clearly, and chase it again.",
+    "source_author": "George F. Koob",
+    "source_url": "https://pubmed.ncbi.nlm.nih.gov/27475769/",
+    "source_type": "paper",
+    "discipline": "neuroscience",
+    "themes": [
+      "craving",
+      "habit",
+      "motivation",
+      "behavior-change"
+    ],
+    "emotional_states": [
+      "stuck",
+      "seeking",
+      "overwhelmed",
+      "hopeless"
+    ],
+    "cognitive_patterns": [
+      "avoidance",
+      "learned-helplessness"
+    ],
+    "enneagram_resonance": [
+      7,
+      8
+    ],
+    "cognitive_style": [
+      "analytical",
+      "reflective"
+    ],
+    "values": [
+      "freedom",
+      "clarity"
+    ],
+    "depth": "mid",
+    "confidence_level": "high",
+    "_score": {
+      "id": "koob_addiction_three_stage_trap",
+      "clarity": 8,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 6,
+      "total": 30,
+      "keep": true
+    }
+  },
+  {
+    "id": "koob_reward_deficit_below_baseline",
+    "title": "Addiction Doesn't Remove Pleasure — It Lowers Your Floor",
+    "short": "Here's what most people get wrong about addiction. They think the problem is that someone keeps chasing a high. But the deeper problem is what happens to your baseline. Repeated use doesn't just wear out the pleasure response. It actively recruits stress systems. Your brain releases compounds that make everything feel bleak and threatening — not as a side effect, but as a counterbalance. So withdrawal isn't just the absence of pleasure. It's the presence of a new kind of misery your brain manufactured to compensate. You're no longer using to feel good. You're using to stop feeling awful. The entire motivation flips. And that flip is what makes addiction so hard to escape — because now sobriety itself feels like the threat.",
+    "pullquote": "You're no longer using to feel good — you're using to stop feeling awful.",
+    "source_author": "George F. Koob",
+    "source_url": "https://pubmed.ncbi.nlm.nih.gov/27475769/",
+    "source_type": "paper",
+    "discipline": "neuroscience",
+    "themes": [
+      "craving",
+      "stress",
+      "pleasure",
+      "motivation"
+    ],
+    "emotional_states": [
+      "numb",
+      "hopeless",
+      "stuck",
+      "anxious"
+    ],
+    "cognitive_patterns": [
+      "avoidance",
+      "emotional-suppression"
+    ],
+    "enneagram_resonance": [
+      4,
+      7
+    ],
+    "cognitive_style": [
+      "reflective",
+      "analytical"
+    ],
+    "values": [
+      "clarity",
+      "freedom"
+    ],
+    "depth": "deep",
+    "confidence_level": "high",
+    "_score": {
+      "id": "koob_reward_deficit_below_baseline",
+      "clarity": 9,
+      "non_obvious": 8,
+      "voice_fit": 9,
+      "standalone": 7,
+      "total": 33,
+      "keep": true
+    }
+  },
+  {
+    "id": "koob_wanting_hijacks_before_habit",
+    "title": "Wanting Turns Into Habit Before You Notice",
+    "short": "Addiction starts with wanting, not habit. At first, something lights up your reward system so intensely that your brain flags it as urgently important — far more important than it actually is. That exaggerated sense of importance is the first crack. Then repetition does its work. The behavior gets encoded in the circuits that run your automatic routines — the same ones that let you drive home without thinking. Now it's not even desire anymore. It's autopilot. This is why people in recovery describe doing things they didn't even want to do. The wanting came first, built the highway, and then the habit took the wheel. By the time you notice what's happening, the behavior has moved from the conscious part of your brain to the automatic part.",
+    "pullquote": "The wanting came first, built the highway, and then the habit took the wheel.",
+    "source_author": "George F. Koob",
+    "source_url": "https://pubmed.ncbi.nlm.nih.gov/27475769/",
+    "source_type": "paper",
+    "discipline": "neuroscience",
+    "themes": [
+      "habit",
+      "craving",
+      "attention",
+      "drive"
+    ],
+    "emotional_states": [
+      "seeking",
+      "restless",
+      "stuck",
+      "numb"
+    ],
+    "cognitive_patterns": [
+      "avoidance",
+      "over-analysis"
+    ],
+    "enneagram_resonance": [
+      7,
+      3
+    ],
+    "cognitive_style": [
+      "analytical",
+      "reflective"
+    ],
+    "values": [
+      "freedom",
+      "clarity",
+      "authenticity"
+    ],
+    "depth": "mid",
+    "confidence_level": "high",
+    "_score": {
+      "id": "koob_wanting_hijacks_before_habit",
+      "clarity": 8,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 7,
+      "total": 31,
+      "keep": true
+    }
+  },
+  {
+    "id": "koob_brakes_fail_last",
+    "title": "Your Brain's Brake System Fails Last and Worst",
+    "short": "The part of your brain that weighs consequences, plans ahead, and overrides impulses — your internal brake system — is the last thing to fall in addiction, and it falls hard. By the time craving hits, this system is already compromised. It's not that you see the consequences and choose to ignore them. It's that the signal from the brake system is genuinely weaker than the signal from the craving. Imagine trying to stop a car rolling downhill with a brake pedal that only half works. That's what's happening neurologically. People around the addicted person see someone making terrible choices. But from the inside, it's more like the choosing machinery itself has been damaged. This is why shame is such a useless response to addiction — it demands a capacity the condition has already eroded.",
+    "pullquote": "Shame demands a capacity the condition has already eroded.",
+    "source_author": "George F. Koob",
+    "source_url": "https://pubmed.ncbi.nlm.nih.gov/27475769/",
+    "source_type": "paper",
+    "discipline": "neuroscience",
+    "themes": [
+      "decision-making",
+      "craving",
+      "shame",
+      "control"
+    ],
+    "emotional_states": [
+      "ashamed",
+      "stuck",
+      "hopeless",
+      "overwhelmed"
+    ],
+    "cognitive_patterns": [
+      "should-statements",
+      "learned-helplessness",
+      "personalisation"
+    ],
+    "enneagram_resonance": [
+      1,
+      6
+    ],
+    "cognitive_style": [
+      "reflective",
+      "analytical"
+    ],
+    "values": [
+      "self-worth",
+      "clarity",
+      "freedom"
+    ],
+    "depth": "deep",
+    "confidence_level": "high",
+    "_score": {
+      "id": "koob_brakes_fail_last",
+      "clarity": 8,
+      "non_obvious": 7,
+      "voice_fit": 9,
+      "standalone": 8,
+      "total": 32,
+      "keep": true
+    }
+  },
+  {
+    "id": "koob_stress_system_recruited_not_residual",
+    "title": "Stress in Withdrawal Is Manufactured Not Residual",
+    "short": "When someone in withdrawal feels crushing anxiety, irritability, and dread, it's not just the absence of the drug wearing off. The brain has actively built new stress infrastructure. It recruited dedicated stress chemicals and amplified the threat-detection system — on purpose, as a counterweight to all the artificial pleasure. This matters because it means withdrawal isn't simply returning to zero. The brain overshot. It created a new, worse-than-normal state that didn't exist before the addiction. Recovery, then, isn't just about stopping a behavior. It's about waiting for stress systems that were deliberately ramped up to slowly wind back down. That takes time — often much longer than people expect — which is why early recovery feels so disproportionately terrible.",
+    "pullquote": "The brain didn't just remove the pleasure — it built new stress infrastructure to compensate.",
+    "source_author": "George F. Koob",
+    "source_url": "https://pubmed.ncbi.nlm.nih.gov/27475769/",
+    "source_type": "paper",
+    "discipline": "neuroscience",
+    "themes": [
+      "stress",
+      "anxiety",
+      "craving",
+      "behavior-change"
+    ],
+    "emotional_states": [
+      "anxious",
+      "overwhelmed",
+      "hopeless",
+      "restless"
+    ],
+    "cognitive_patterns": [
+      "catastrophising",
+      "avoidance"
+    ],
+    "enneagram_resonance": [
+      6,
+      4
+    ],
+    "cognitive_style": [
+      "analytical",
+      "reflective"
+    ],
+    "values": [
+      "clarity",
+      "peace",
+      "freedom"
+    ],
+    "depth": "mid",
+    "confidence_level": "high",
+    "_score": {
+      "id": "koob_stress_system_recruited_not_residual",
+      "clarity": 8,
+      "non_obvious": 8,
+      "voice_fit": 8,
+      "standalone": 6,
+      "total": 30,
+      "keep": true
+    }
+  }
+]
